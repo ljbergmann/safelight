@@ -70,6 +70,15 @@ struct LibraryView: View {
                             .disabled(selected.isEmpty)
                     }
                     ToolbarItem(placement: .primaryAction) {
+                        Menu("Compare", systemImage: "rectangle.split.2x1") {
+                            Button("Compare", systemImage: "rectangle.split.2x1") { choose(.compare) }
+                                .disabled(selected.count < 2)
+                            Button("Survey", systemImage: "square.grid.2x2") { choose(.survey) }
+                                .disabled(selected.count < 2)
+                        }
+                        .disabled(selected.count < 2)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button("Export", systemImage: "square.and.arrow.up") { exporting = true }
                             .disabled(selected.isEmpty)
                     }
@@ -129,6 +138,12 @@ struct LibraryView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(item: Bindable(model).info) { request in InfoSheet(model: model, ids: request.ids) }
+        .fullScreenCover(item: Bindable(model).choosing) { request in
+            switch request.mode {
+            case .compare: CompareView(model: model, ids: request.ids)
+            case .survey: SurveyView(model: model, ids: request.ids)
+            }
+        }
         .modifier(FileAlerts(model: model))
         .modifier(CopyAlerts(model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy))
         .onChange(of: path) { _, open in columns = open.isEmpty ? .all : .detailOnly }
@@ -143,6 +158,11 @@ struct LibraryView: View {
             if args.contains("-virtual-copy-test") { await model.virtualCopyTest() }
             if args.contains("-file-ops-test") { await model.fileOpsTest() }
             if args.contains("-stack-test") { await model.stackTest() }
+            // -survey / -compare: open on four photos, to look at, passing
+            // over the test charts, which have no preview.
+            let four = Array(model.shown.filter { !$0.path.hasSuffix("-d65.dng") }.prefix(4)).map(\.id)
+            if args.contains("-survey") { model.choosing = ChoosingRequest(mode: .survey, ids: four) }
+            if args.contains("-compare") { model.choosing = ChoosingRequest(mode: .compare, ids: four) }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,
@@ -202,6 +222,11 @@ struct LibraryView: View {
         .background(Theme.raised, in: Capsule())
         .overlay(Capsule().stroke(Theme.line, lineWidth: 0.5))
         .frame(maxWidth: 560)
+    }
+
+    /// Opens Compare or Survey on the photos chosen, in the grid's order.
+    private func choose(_ mode: ChoosingRequest.Mode) {
+        model.choosing = ChoosingRequest(mode: mode, ids: model.shown.map(\.id).filter(selected.contains))
     }
 
     /// Makes every thumbnail, four at a time, and prints how long it took:

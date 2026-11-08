@@ -56,7 +56,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [ ] Import a Lightroom Classic catalog (`.lrcat`) or a Lightroom cloud
       library, with edits (the desktop has both; M–L)
 - [x] Swipe between photos in the editor, in the grid's order
-- [ ] Compare and Survey views (M)
+- [x] Compare and Survey: a Select and a Candidate side by side, or the
+      chosen photos at once, each with its flag and stars
 - [x] Lightroom's sort orders, either way
 - [x] Stacks: group, unstack, move to top, expand and collapse, Auto-Stack by
       capture time

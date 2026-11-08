@@ -71,7 +71,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
   the Files app, and RAW originals from the Photos library;
   thumbnails; ratings, flags, colour labels,
   filters, Lightroom's sort orders, stacks, collections and the Quick
-  Collection;
+  Collection; Compare and Survey, to choose between photos;
   title, caption, creator, copyright and keywords, and the camera info;
   virtual copies; deleting (to Recently Deleted), renaming and moving photos
   and folders.
@@ -90,8 +90,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
   onto one photo or many.
 - **Export** to JPEG, TIFF or PNG, and the share sheet.
 
-What's missing compared with the desktop, and what comes next (Compare
-and Survey, a Lightroom catalog, sync…), is in the
+What's missing compared with the desktop, and what comes next (a
+Lightroom catalog, sync…), is in the
 [roadmap](docs/ROADMAP.md). Measurements are in
 [MEASUREMENTS.md](MEASUREMENTS.md).
 
@@ -153,6 +153,7 @@ them after `--`):
 | `-metadata-test` | Sets and reads back a title and a keyword on a test copy, with its camera info, then takes them off |
 | `-virtual-copy-test` | Makes a virtual copy of the test copy, renames it and removes it |
 | `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
+| `-survey`, `-compare` | Opens Survey or Compare on four photos, passing over the test charts |
 | `-stack-test` | Stacks three photos of the test copy's folder, expands and unstacks them (`-keep` leaves the stack) |
 | `-photos-import-test` | Imports a copy of a catalog photo the way the Photos picker's originals come in; it must be found already there |
 | `-open <file>` | Opens a photo of the catalog in the editor |

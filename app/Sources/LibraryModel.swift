@@ -49,6 +49,8 @@ final class LibraryModel {
     /// The library's folders, for Move to Folder, and what Recently Deleted holds.
     var folders: [FolderInfo] = []
     var deletedFiles: UInt64 = 0
+    /// Compare or Survey, open for the photos chosen.
+    var choosing: ChoosingRequest?
     /// The photos the Info sheet is open for.
     var info: InfoRequest?
     /// What the last import brought in and left out, for the toolbar.
