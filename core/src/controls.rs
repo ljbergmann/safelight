@@ -36,6 +36,9 @@ pub enum Control {
     ProfileAmount,
     /// A mask's Amount, which scales all its sliders (0–200%).
     MaskAmount { mask: u32 },
+    /// A Point Color swatch's setting: `which` 0 to 2 its Hue, Saturation
+    /// and Luminance shifts, 3 its Variance, 4 its Range.
+    PointColor { swatch: u32, which: u32 },
     /// A range part's setting: Color Range's Refine (`which` 0); Luminance
     /// Range's low, high, and the falloff below and above (0 to 3).
     Range {
@@ -304,6 +307,18 @@ impl Control {
                 signed: false,
                 unit: "",
             }),
+            Control::PointColor { which, .. } => Some(Spec {
+                label: ["Hue Shift", "Sat Shift", "Lum Shift", "Variance", "Range"]
+                    .get(which as usize)?
+                    .to_string(),
+                min: if which == 4 { 0. } else { -1. },
+                max: 1.,
+                step: 0.,
+                scale: 100.,
+                decimals: 0,
+                signed: which != 4,
+                unit: "",
+            }),
             Control::ProfileAmount => Some(Spec {
                 label: "Profile Amount".into(),
                 min: 0.,
@@ -383,6 +398,15 @@ impl Control {
             }
             Control::ProfileAmount => Some(r.profile_amount),
             Control::MaskAmount { mask } => Some(r.masks.get(mask as usize)?.amount),
+            Control::PointColor { swatch, which } => {
+                let p = r.point_colors.get(swatch as usize)?;
+                match which {
+                    0..=2 => Some(p.shift[which as usize]),
+                    3 => Some(p.variance),
+                    4 => Some(p.range),
+                    _ => None,
+                }
+            }
             Control::Range {
                 mask,
                 component,
@@ -425,6 +449,15 @@ impl Control {
                 grade[channel as usize] = value;
             }
             Control::MaskAmount { mask } => r.masks.get_mut(mask as usize)?.amount = value,
+            Control::PointColor { swatch, which } => {
+                let p = r.point_colors.get_mut(swatch as usize)?;
+                match which {
+                    0..=2 => p.shift[which as usize] = value,
+                    3 => p.variance = value,
+                    4 => p.range = value,
+                    _ => return None,
+                }
+            }
             Control::Range {
                 mask,
                 component,
@@ -463,16 +496,31 @@ impl Control {
             control: self,
             text: spec.text(value),
             label: spec.label,
-            reset: self
-                .get(defaults, photo)
-                .unwrap_or(value)
-                .clamp(spec.min, spec.max),
+            reset: match self {
+                // A swatch resets to a newly sampled one's: no shifts or
+                // Variance, Range 50.
+                Control::PointColor { which, .. } => {
+                    if which == 4 {
+                        0.5
+                    } else {
+                        0.
+                    }
+                }
+                _ => self.get(defaults, photo).unwrap_or(value),
+            }
+            .clamp(spec.min, spec.max),
             value,
             min: spec.min,
             max: spec.max,
             step: spec.step,
         })
     }
+}
+
+/// Control `control`'s slider in `r`, for a control with no default in the
+/// photo's starting settings (a Point Color swatch's).
+pub(crate) fn slider(control: Control, r: &Recipe, photo: &Metadata) -> Option<SliderState> {
+    control.state(r, photo, r)
 }
 
 impl Spec {

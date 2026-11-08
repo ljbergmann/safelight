@@ -1024,6 +1024,75 @@ impl LiveView {
         Ok(true)
     }
 
+    /// Point Color's swatches, with their sliders.
+    pub fn point_colors(&self) -> Vec<crate::point_color::SwatchInfo> {
+        self.shared
+            .edit()
+            .as_ref()
+            .map(|e| crate::point_color::swatches(e.recipe(), &e.metadata))
+            .unwrap_or_default()
+    }
+
+    /// Samples the color at `at` (fractions across the photo as shown) and
+    /// adds it as a Point Color swatch, one History step. Returns its index,
+    /// or why it wasn't added. Takes a moment (it renders around the point):
+    /// call it off the main thread. A sample of a photo edited meanwhile is
+    /// dropped, as on the desktop.
+    pub fn add_point_color(&self, at: Vec<f32>) -> Result<u32, RenderError> {
+        let failed = |message: &str| RenderError::Failed {
+            message: message.into(),
+        };
+        let [u, v] = point(&at).ok_or_else(|| failed("No point"))?;
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| failed("No photo is open"))?;
+        let (sampled, id) = self
+            .shared
+            .edit()
+            .as_ref()
+            .map(|e| (e.recipe().clone(), e.id))
+            .ok_or_else(|| failed("No photo is open"))?;
+        let recipe = sampled.clone();
+        let source = on_core_thread(move || {
+            Ok(rawmakase_engine::develop::quality::point_color_pick(
+                &image,
+                &recipe,
+                u,
+                v,
+                Cancel::NEVER,
+            )?)
+        })?;
+        let index = {
+            let mut guard = self.shared.edit();
+            let edit = guard
+                .as_mut()
+                .filter(|e| e.id == id && *e.recipe() == sampled)
+                .ok_or_else(|| {
+                    failed("The photo changed while sampling; sample the color again")
+                })?;
+            edit.add_point_color(source).map_err(|m| failed(&m))?
+        };
+        self.shared.request(|_| {});
+        Ok(index as u32)
+    }
+
+    /// Deletes Point Color swatch `index`, or every swatch with `None`: one
+    /// History step.
+    pub fn delete_point_color(&self, index: Option<u32>) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.delete_point_color(index.map(|i| i as usize)));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// Shows the edit with `applied` of History's steps applied, as tapping
     /// a step in the History list does.
     pub fn go_to_step(&self, applied: u32) {

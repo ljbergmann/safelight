@@ -493,6 +493,35 @@ impl OpenEdit {
         }
     }
 
+    /// Adds a Point Color swatch of `source` as one History step ("Point
+    /// Color", "Add Swatch", as the desktop names it). Returns its index, or
+    /// why it was refused.
+    pub(crate) fn add_point_color(&mut self, source: [f32; 3]) -> Result<usize, String> {
+        self.session.finish_gesture();
+        let mut after = self.session.recipe().clone();
+        let index = crate::point_color::add(&mut after, source)?;
+        self.session
+            .change(Some(Step::new("Point Color", "Add Swatch")), |r| *r = after);
+        Ok(index)
+    }
+
+    /// Deletes swatch `index`, or all of them: one History step.
+    pub(crate) fn delete_point_color(&mut self, index: Option<usize>) -> bool {
+        let list = &self.session.recipe().point_colors;
+        let value = match index {
+            Some(i) if i < list.len() => "Delete Swatch",
+            None if !list.is_empty() => "Delete All Swatches",
+            _ => return false,
+        };
+        self.change("Point Color", value, |r| match index {
+            Some(i) => {
+                r.point_colors.remove(i);
+            }
+            None => r.point_colors.clear(),
+        });
+        true
+    }
+
     /// The photo's starting settings: its raw defaults, as a photo opened
     /// with no edit gets them.
     pub(crate) fn starting_settings(&self) -> Recipe {
@@ -1000,6 +1029,40 @@ pub(crate) mod tests {
         assert_eq!(edit.state().steps, ["AI Denoise On"]);
         // Amount is its own section's slider, at the desktop's default.
         assert_eq!((amount.label.as_str(), amount.value), ("Amount", 0.5));
+    }
+
+    #[test]
+    fn point_color_swatches_are_added_changed_and_deleted_as_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let steps = edit.state().steps.len();
+        assert_eq!(edit.add_point_color([0.5, 0.6, 0.4]), Ok(0));
+        assert!(
+            edit.add_point_color([0.5, 0.6, 0.4]).is_err(),
+            "the same color"
+        );
+        assert_eq!(edit.add_point_color([3.5, 0.5, 0.3]), Ok(1));
+        edit.set(
+            Control::PointColor {
+                swatch: 1,
+                which: 1,
+            },
+            -0.5,
+            true,
+        );
+        assert_eq!(edit.recipe().point_colors[1].shift[1], -0.5);
+        assert!(edit.delete_point_color(Some(0)));
+        assert_eq!(edit.recipe().point_colors.len(), 1);
+        let names = edit.state().steps;
+        assert_eq!(names.len(), steps + 4, "{names:?}");
+        assert!(names[steps].starts_with("Point Color"), "{names:?}");
+
+        assert!(edit.delete_point_color(None));
+        assert!(edit.recipe().point_colors.is_empty());
+        assert!(!edit.delete_point_color(None), "nothing left");
+        edit.step(-1);
+        assert_eq!(edit.recipe().point_colors.len(), 1);
     }
 
     #[test]
