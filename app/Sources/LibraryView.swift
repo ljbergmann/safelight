@@ -97,6 +97,10 @@ struct LibraryView: View {
                 }
                 if selecting {
                     ToolbarItem(placement: .primaryAction) {
+                        Button("Info", systemImage: "info.circle") { model.info = InfoRequest(ids: Array(selected)) }
+                            .disabled(selected.isEmpty)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button("Export", systemImage: "square.and.arrow.up") { exporting = true }
                             .disabled(selected.isEmpty)
                     }
@@ -154,6 +158,7 @@ struct LibraryView: View {
             }
         }
         }
+        .sheet(item: Bindable(model).info) { request in InfoSheet(model: model, ids: request.ids) }
         .onChange(of: path) { _, open in columns = open.isEmpty ? .automatic : .detailOnly }
         .task {
             await model.open()
@@ -162,6 +167,7 @@ struct LibraryView: View {
             if args.contains("-photos-import-test") { await model.photosImportTest() }
             if args.contains("-import-screen-test") { await model.importScreenTest() }
             if args.contains("-sort-test") { model.sortTest() }
+            if args.contains("-metadata-test") { model.metadataTest() }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,
@@ -280,6 +286,7 @@ struct PhotoMenu: View {
             }
             Button("None") { model.setLabel(photo, to: "") }
         }
+        Button("Info…", systemImage: "info.circle") { model.info = InfoRequest(ids: [photo.id]) }
         if model.inQuickCollection(photo) {
             Button("Remove from Quick Collection", systemImage: "circle.slash") { model.setQuickCollection([photo.id], false) }
         } else {
@@ -418,6 +425,9 @@ struct EditorView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 2) {
+                    Button("Info", systemImage: "info.circle") { model.info = InfoRequest(ids: [shown.id]) }
+                        .labelStyle(.iconOnly)
+                    Divider().frame(height: 20)
                     Button { model.setFlag(shown, to: flag == 1 ? 0 : 1) } label: {
                         Image(systemName: flag == 1 ? "flag.fill" : "flag")
                     }

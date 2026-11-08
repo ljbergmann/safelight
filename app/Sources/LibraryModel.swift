@@ -37,6 +37,8 @@ final class LibraryModel {
     private(set) var error: String?
     /// The last import's timings, for measuring.
     private(set) var lastImport: String?
+    /// The photos the Info sheet is open for.
+    var info: InfoRequest?
     /// What the last import brought in and left out, for the toolbar.
     var notice: String?
     /// An import that can be cancelled, while it runs.

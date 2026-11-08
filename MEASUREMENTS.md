@@ -339,3 +339,21 @@ on the fork for it, either way.
 | --- | --- | --- |
 | File Name by digits' value, Rating reversed | Mac, core test | `a`, `IMG_9`, `IMG_10`; the five-star photo first |
 | `-sort-test` | M1 iPad Pro | each of the ten orders lists, Capture Time reversed starts with the newest |
+
+## Metadata and keywords (2026-11-08)
+
+The Info sheet (a photo's menu, the editor's ⓘ, or several photos chosen
+in the grid) edits what the catalog keeps as the desktop's Metadata and
+Keywording panels do: text overrides the file's own, an emptied field is
+cleared, keywords are hierarchical ("Places > Berlin"). Camera info is read
+from the file the first time, as the desktop reads it (a RAW through its
+decoder, moved into `rawmakase-decode` on the fork), and kept.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| Per photo, survives reopening, a keyword taken off one photo stays on another, emptied is cleared; camera info read once | Mac, core tests | pass |
+| `-metadata-test` on the test copy | M1 iPad Pro | title and `Safelight test > Info` read back; camera `EOS R5, 40mm F1.4 DG HSM \| Art 018, 1/60 sec at f/5.6, 40 mm, ISO 1600, 5464 × 8192`; both taken off again |
+
+- **Found on the iPad:** reading a CR3's camera info from its EXIF alone
+  found none (the desktop opens a RAW through its decoder), and the empty
+  result was kept; an empty record is now read again.

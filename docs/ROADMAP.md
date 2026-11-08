@@ -59,7 +59,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [ ] Compare and Survey views (M)
 - [x] Lightroom's sort orders, either way
 - [ ] Stacks (M)
-- [ ] Metadata (title, caption, creator, copyright) and keywords (M)
+- [x] Metadata (title, caption, creator, copyright), keywords and camera
+      info, for one photo or several
 - [ ] Virtual copies (M)
 - [ ] Delete photos, move and rename files and folders (M)
 
