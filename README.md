@@ -88,8 +88,8 @@ You need a Mac with Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 and rustup's stable toolchain with the iPad targets:
 
 ```sh
-git clone --recurse-submodules https://github.com/ljbergmann/rawmakase-ios
-cd rawmakase-ios
+git clone --recurse-submodules https://github.com/ljbergmann/safelight
+cd safelight
 rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim
 scripts/build-core.sh    # the Rust core and its Swift bindings
 scripts/build-ort.sh     # Microsoft's ONNX Runtime for iOS, for the AI features

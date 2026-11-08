@@ -17,7 +17,7 @@ status and in [MEASUREMENTS.md](../MEASUREMENTS.md).
 - **Your fork of `pch/rawmakase`**, for changes to its crates. Keep them few
   and mechanical, so pch's updates still merge, and so some can be offered
   upstream.
-- **A new repository, `rawmakase-ios`** (this one), for everything iPad-only: the Rust
+- **A new repository, `rawmakase-ios`** (this one, renamed `safelight` with the app), for everything iPad-only: the Rust
   bridge crate and the Xcode project. It depends on the fork's crates by path
   or Git revision.
 

@@ -13,7 +13,7 @@ You need Xcode, XcodeGen and rustup's stable toolchain with the iPad targets
 (the README's [Build](README.md) section has the commands):
 
 ```sh
-git clone --recurse-submodules https://github.com/ljbergmann/rawmakase-ios
+git clone --recurse-submodules https://github.com/ljbergmann/safelight
 rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim
 scripts/build-core.sh    # the Rust core and its Swift bindings
 scripts/build-ort.sh     # ONNX Runtime for iOS, for the AI features
