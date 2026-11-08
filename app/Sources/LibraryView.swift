@@ -13,10 +13,15 @@ struct LibraryView: View {
     @State private var exporting = false
 
     var body: some View {
+        NavigationSplitView {
+            LibrarySidebar(model: model)
+        } detail: {
         NavigationStack(path: $path) {
             ScrollView {
+                FilterBar(model: model)
+                    .padding(.horizontal)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-                    ForEach(model.photos, id: \.id) { photo in
+                    ForEach(model.shown, id: \.id) { photo in
                         if selecting {
                             Button {
                                 if selected.contains(photo.id) { selected.remove(photo.id) } else { selected.insert(photo.id) }
@@ -33,7 +38,7 @@ struct LibraryView: View {
                                 ThumbnailCell(photo: photo, model: model)
                             }
                             .buttonStyle(.plain)
-                            .contextMenu { RatingMenu(photo: photo, model: model) }
+                            .contextMenu { PhotoMenu(photo: photo, model: model) }
                         }
                     }
                 }
@@ -90,7 +95,7 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $exporting) {
                 if let library = model.library {
-                    ExportSheet(library: library, ids: model.photos.map(\.id).filter(selected.contains))
+                    ExportSheet(library: library, ids: model.shown.map(\.id).filter(selected.contains))
                 }
             }
             .fileImporter(
@@ -110,6 +115,7 @@ struct LibraryView: View {
                     EditorView(photo: photo, model: model)
                 }
             }
+        }
         }
         .task {
             await model.open()
@@ -177,7 +183,14 @@ struct ThumbnailCell: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-            HStack {
+            HStack(spacing: 4) {
+                if !photo.label.isEmpty {
+                    Circle().fill(labelColor(photo.label)).frame(width: 8, height: 8)
+                }
+                if photo.flag != 0 {
+                    Image(systemName: photo.flag > 0 ? "flag.fill" : "xmark.circle.fill")
+                        .font(.caption2).foregroundStyle(photo.flag > 0 ? Color.primary : Color.red)
+                }
                 Text(photo.filename).font(.caption).lineLimit(1)
                 Spacer()
                 Stars(rating: photo.rating).font(.caption2)
@@ -202,15 +215,110 @@ struct Stars: View {
     }
 }
 
-struct RatingMenu: View {
+/// A photo's long-press menu: rating, flag, label and Quick Collection.
+struct PhotoMenu: View {
     let photo: LibraryPhoto
     let model: LibraryModel
     var body: some View {
-        ForEach(0...5, id: \.self) { n in
-            Button(n == 0 ? "No rating" : String(repeating: "★", count: n)) {
-                model.setRating(photo, to: Int32(n))
+        Menu("Rating") {
+            ForEach(0...5, id: \.self) { n in
+                Button(n == 0 ? "No rating" : String(repeating: "★", count: n)) {
+                    model.setRating(photo, to: Int32(n))
+                }
             }
         }
+        Menu("Flag") {
+            Button("Pick", systemImage: "flag.fill") { model.setFlag(photo, to: 1) }
+            Button("Reject", systemImage: "xmark.circle") { model.setFlag(photo, to: -1) }
+            Button("Unflag", systemImage: "flag.slash") { model.setFlag(photo, to: 0) }
+        }
+        Menu("Label") {
+            ForEach(labels, id: \.self) { label in
+                Button(label) { model.setLabel(photo, to: label) }
+            }
+            Button("None") { model.setLabel(photo, to: "") }
+        }
+        if model.inQuickCollection(photo) {
+            Button("Remove from Quick Collection", systemImage: "circle.slash") { model.setQuickCollection([photo.id], false) }
+        } else {
+            Button("Add to Quick Collection", systemImage: "circle.inset.filled") { model.setQuickCollection([photo.id], true) }
+        }
+    }
+}
+
+/// Lightroom's colour labels.
+let labels = ["Red", "Yellow", "Green", "Blue", "Purple"]
+
+func labelColor(_ label: String) -> Color {
+    switch label {
+    case "Red": .red
+    case "Yellow": .yellow
+    case "Green": .green
+    case "Blue": .blue
+    case "Purple": .purple
+    default: .gray
+    }
+}
+
+/// All Photographs, the Quick Collection and the catalog's collections.
+struct LibrarySidebar: View {
+    let model: LibraryModel
+
+    private var selection: Binding<Int64?> {
+        Binding(
+            get: { model.collection ?? -1 },
+            set: { model.collection = ($0 == nil || $0 == -1) ? nil : $0 }
+        )
+    }
+
+    var body: some View {
+        List(selection: selection) {
+            Label("All Photographs", systemImage: "photo.on.rectangle").tag(Int64?.some(-1))
+            SwiftUI.Section("Collections") {
+                ForEach(model.collections, id: \.id) { c in
+                    CollectionRow(collection: c).tag(Int64?.some(c.id))
+                }
+            }
+        }
+        .navigationTitle("Catalog")
+    }
+}
+
+struct CollectionRow: View {
+    let collection: CollectionInfo
+    var body: some View {
+        Label(
+            "\(collection.name) (\(collection.photos.count))",
+            systemImage: collection.quick ? "circle.inset.filled" : "rectangle.stack")
+    }
+}
+
+/// Lightroom's Library Filter: rating, flag and label, and the order.
+struct FilterBar: View {
+    @Bindable var model: LibraryModel
+    var body: some View {
+        HStack(spacing: 16) {
+            Picker("Rating", selection: $model.minRating) {
+                Text("Any rating").tag(Int32(0))
+                ForEach(1...5, id: \.self) { n in Text("≥ " + String(repeating: "★", count: n)).tag(Int32(n)) }
+            }
+            Picker("Flag", selection: $model.flagFilter) {
+                Text("Any flag").tag(Int32?.none)
+                Text("Picked").tag(Int32?.some(1))
+                Text("Unflagged").tag(Int32?.some(0))
+                Text("Rejected").tag(Int32?.some(-1))
+            }
+            Picker("Label", selection: $model.labelFilter) {
+                Text("Any label").tag(String?.none)
+                ForEach(labels, id: \.self) { Text($0).tag(String?.some($0)) }
+            }
+            Spacer()
+            Picker("Order", selection: $model.byCaptureTime) {
+                Text("Capture time").tag(true)
+                Text("File name").tag(false)
+            }
+        }
+        .pickerStyle(.menu)
     }
 }
 
@@ -224,6 +332,7 @@ struct EditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var rating: Int32 { model.photos.first { $0.id == photo.id }?.rating ?? photo.rating }
+    private var flag: Int32 { model.photos.first { $0.id == photo.id }?.flag ?? photo.flag }
 
     var body: some View {
         Group {
@@ -242,6 +351,14 @@ struct EditorView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 2) {
+                    Button { model.setFlag(photo, to: flag == 1 ? 0 : 1) } label: {
+                        Image(systemName: flag == 1 ? "flag.fill" : "flag")
+                    }
+                    Button { model.setFlag(photo, to: flag == -1 ? 0 : -1) } label: {
+                        Image(systemName: flag == -1 ? "xmark.circle.fill" : "xmark.circle")
+                            .foregroundStyle(flag == -1 ? .red : .secondary)
+                    }
+                    Divider().frame(height: 20)
                     ForEach(1...5, id: \.self) { n in
                         Button {
                             model.setRating(photo, to: rating == n ? 0 : Int32(n))

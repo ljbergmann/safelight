@@ -17,7 +17,7 @@ pub use export::{ExportChoice, ExportFormat};
 mod library;
 pub use edit::{EditState, Orientation};
 mod live;
-pub use library::{Added, Library, LibraryPhoto};
+pub use library::{Added, CollectionInfo, Library, LibraryPhoto};
 mod render;
 mod transfer;
 pub use live::{FrameStats, LiveView, Zoom};

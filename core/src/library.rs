@@ -24,6 +24,20 @@ pub struct LibraryPhoto {
     pub captured: String,
     /// 0 to 5 stars.
     pub rating: i32,
+    /// Lightroom's flag: 1 picked, -1 rejected, 0 unflagged.
+    pub flag: i32,
+    /// Lightroom's colour label ("Red", "Yellow", "Green", "Blue", "Purple"),
+    /// or empty.
+    pub label: String,
+}
+
+/// A collection and its photos.
+#[derive(uniffi::Record)]
+pub struct CollectionInfo {
+    pub id: i64,
+    pub name: String,
+    pub photos: Vec<i64>,
+    pub quick: bool,
 }
 
 /// What adding the new photos did.
@@ -84,6 +98,8 @@ impl Library {
         let t = Instant::now();
         let mut catalog = self.catalog();
         let (added, _) = catalog.add_folder_with(&self.photos, &NewPhotoDefaults::default())?;
+        drop(catalog);
+        self.fill_capture_times()?;
         Ok(Added {
             added: added as u32,
             ms: t.elapsed().as_secs_f64() * 1000.,
@@ -102,24 +118,95 @@ impl Library {
                 filename: p.filename,
                 captured: p.captured,
                 rating: p.rating,
+                flag: p.flag,
+                label: p.label,
             })
             .collect();
         photos.sort_by(|a, b| (&a.captured, &a.filename).cmp(&(&b.captured, &b.filename)));
         Ok(photos)
     }
 
+    /// Reads the capture time of every photo that has none yet, as the
+    /// desktop does in the background after an import: the EXIF date, else
+    /// the RAW container's own (CR3 and others). Returns how many it found.
+    pub fn fill_capture_times(&self) -> Result<u32, RenderError> {
+        let (todo, unread) = {
+            let catalog = self.catalog();
+            let unread: std::collections::HashSet<PhotoId> =
+                catalog.photos_to_read_exif_capture()?.into_iter().collect();
+            (catalog.photos()?, unread)
+        };
+        let reads: Vec<(PhotoId, Option<String>)> = todo
+            .into_iter()
+            .filter(|p| p.master.is_none() && (p.captured.is_empty() || unread.contains(&p.id)))
+            .map(|p| {
+                let time = rawmakase_interop::exif::capture_time(&p.path)
+                    .or_else(|| rawmakase_decode::raw::capture_time(&p.path));
+                (p.id, time)
+            })
+            .collect();
+        let found = reads.iter().filter(|(_, t)| t.is_some()).count() as u32;
+        if !reads.is_empty() {
+            self.catalog().record_capture_reads(&reads)?;
+        }
+        Ok(found)
+    }
+
+    /// Sets a photo's flag: 1 picked, -1 rejected, 0 none.
+    pub fn set_flag(&self, id: i64, flag: i32) -> Result<(), RenderError> {
+        self.change_metadata(id, |_, f, _| *f = flag.clamp(-1, 1))
+    }
+
+    /// Sets a photo's colour label, or clears it with an empty one.
+    pub fn set_label(&self, id: i64, label: String) -> Result<(), RenderError> {
+        self.change_metadata(id, |_, _, l| *l = label)
+    }
+
+    /// Every collection, with its photos; the Quick Collection first.
+    pub fn collections(&self) -> Result<Vec<CollectionInfo>, RenderError> {
+        let mut catalog = self.catalog();
+        let quick = catalog.quick_collection()?;
+        let members = catalog.collection_photos()?;
+        let mut list: Vec<CollectionInfo> = catalog
+            .collections()?
+            .into_iter()
+            .filter(|c| {
+                c.id == quick || c.kind == rawmakase_catalog::catalog::CollectionKind::Collection
+            })
+            .map(|c| CollectionInfo {
+                quick: c.id == quick,
+                name: if c.id == quick {
+                    "Quick Collection".into()
+                } else {
+                    c.name
+                },
+                photos: members
+                    .get(&c.id)
+                    .map(|m| m.iter().map(|p| p.0).collect())
+                    .unwrap_or_default(),
+                id: c.id.0,
+            })
+            .collect();
+        list.sort_by_key(|c| (!c.quick, c.name.to_lowercase()));
+        Ok(list)
+    }
+
+    /// Adds photos `ids` to the Quick Collection, or takes them out.
+    pub fn set_quick_collection(&self, ids: Vec<i64>, on: bool) -> Result<(), RenderError> {
+        let mut catalog = self.catalog();
+        let quick = catalog.quick_collection()?;
+        let ids: Vec<PhotoId> = ids.into_iter().map(PhotoId).collect();
+        if on {
+            catalog.change_collection(quick, &ids, &[])?;
+        } else {
+            catalog.change_collection(quick, &[], &ids)?;
+        }
+        Ok(())
+    }
+
     /// Sets a photo's star rating, 0 to 5, keeping its flag and label.
     pub fn set_rating(&self, id: i64, rating: i32) -> Result<(), RenderError> {
-        let mut catalog = self.catalog();
-        let photo = catalog
-            .photos()?
-            .into_iter()
-            .find(|p| p.id.0 == id)
-            .ok_or_else(|| RenderError::Failed {
-                message: format!("No photo {id} in the catalog"),
-            })?;
-        catalog.set_metadata_of(&[(PhotoId(id), rating.clamp(0, 5), photo.flag, photo.label)])?;
-        Ok(())
+        self.change_metadata(id, |r, _, _| *r = rating)
     }
 
     /// A JPEG of the photo's embedded preview, `edge` pixels on its long side,
@@ -160,6 +247,27 @@ impl Library {
     pub(crate) fn decode_cache(&self) -> rawmakase_decode::decode_cache::DecodeCache {
         let dir = self.thumbnails.with_file_name("Decoded");
         rawmakase_decode::decode_cache::DecodeCache::new(dir, 2 << 30)
+    }
+
+    /// Changes a photo's rating, flag or label, keeping the others, in one
+    /// transaction.
+    fn change_metadata(
+        &self,
+        id: i64,
+        change: impl FnOnce(&mut i32, &mut i32, &mut String),
+    ) -> Result<(), RenderError> {
+        let mut catalog = self.catalog();
+        let photo = catalog
+            .photos()?
+            .into_iter()
+            .find(|p| p.id.0 == id)
+            .ok_or_else(|| RenderError::Failed {
+                message: format!("No photo {id} in the catalog"),
+            })?;
+        let (mut rating, mut flag, mut label) = (photo.rating, photo.flag, photo.label);
+        change(&mut rating, &mut flag, &mut label);
+        catalog.set_metadata_of(&[(PhotoId(id), rating.clamp(0, 5), flag, label)])?;
+        Ok(())
     }
 
     /// The catalog, for the open photo's edit to load and save through the
@@ -324,6 +432,41 @@ mod tests {
         assert_eq!(photos.len(), 1);
         assert!(Path::new(&photos[0].path).exists(), "{}", photos[0].path);
         assert!(photos[0].path.starts_with(new.to_str().unwrap()));
+    }
+
+    #[test]
+    fn flags_labels_and_the_quick_collection_survive_reopening() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = open(dir.path());
+        let day = Path::new(&library.photos_folder()).join("d");
+        std::fs::create_dir_all(&day).unwrap();
+        for chart in charts() {
+            std::fs::copy(&chart, day.join(chart.file_name().unwrap())).unwrap();
+        }
+        library.add_new_photos().unwrap();
+        let ids: Vec<i64> = library.photos().unwrap().iter().map(|p| p.id).collect();
+        library.set_rating(ids[0], 3).unwrap();
+        library.set_flag(ids[0], 1).unwrap();
+        library.set_label(ids[0], "Red".into()).unwrap();
+        library.set_flag(ids[1], -1).unwrap();
+        library.set_quick_collection(vec![ids[1]], true).unwrap();
+        drop(library);
+
+        let reopened = open(dir.path());
+        let photos = reopened.photos().unwrap();
+        let first = photos.iter().find(|p| p.id == ids[0]).unwrap();
+        assert_eq!(
+            (first.rating, first.flag, first.label.as_str()),
+            (3, 1, "Red")
+        );
+        assert_eq!(photos.iter().find(|p| p.id == ids[1]).unwrap().flag, -1);
+        let quick = reopened
+            .collections()
+            .unwrap()
+            .into_iter()
+            .find(|c| c.quick)
+            .unwrap();
+        assert_eq!(quick.photos, [ids[1]]);
     }
 
     #[test]

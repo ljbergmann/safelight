@@ -7,6 +7,29 @@ import UIKit
 final class LibraryModel {
     private(set) var library: Library?
     private(set) var photos: [LibraryPhoto] = []
+    private(set) var collections: [CollectionInfo] = []
+
+    // The grid's filters, as Lightroom's Library Filter bar has them.
+    var collection: Int64?
+    var minRating: Int32 = 0
+    /// 1 picked, -1 rejected, 0 unflagged; nil for any.
+    var flagFilter: Int32?
+    var labelFilter: String?
+    var byCaptureTime = true
+
+    /// The photos the filters let through, in the chosen order.
+    var shown: [LibraryPhoto] {
+        let members = collection.flatMap { id in collections.first { $0.id == id }.map { Set($0.photos) } }
+        let kept = photos.filter { p in
+            (members?.contains(p.id) ?? true)
+                && p.rating >= minRating
+                && (flagFilter.map { p.flag == $0 } ?? true)
+                && (labelFilter.map { p.label == $0 } ?? true)
+        }
+        return byCaptureTime
+            ? kept.sorted { ($0.captured, $0.filename) < ($1.captured, $1.filename) }
+            : kept.sorted { $0.filename < $1.filename }
+    }
     /// What an import in progress has done, for the toolbar.
     private(set) var importing: String?
     private(set) var error: String?
@@ -23,6 +46,11 @@ final class LibraryModel {
             let opened = try await Task.detached { try Library.open(data: data.path, caches: caches.path) }.value
             library = opened
             await reload()
+            // Dates for photos imported before they were read.
+            Task {
+                let found = (try? await Task.detached { try opened.fillCaptureTimes() }.value) ?? 0
+                if found > 0 { await reload() }
+            }
             let rated = photos.filter { $0.rating > 0 }.map { "\($0.filename)=\($0.rating)" }
             print("LIBRARY \(photos.count) photos; rated: \(rated)")
         } catch {
@@ -34,6 +62,7 @@ final class LibraryModel {
         guard let library else { return }
         do {
             photos = try await Task.detached { try library.photos() }.value
+            collections = try await Task.detached { try library.collections() }.value
         } catch {
             self.error = "\(error)"
         }
@@ -93,6 +122,34 @@ final class LibraryModel {
               let photo = photos.first(where: { $0.filename == args[i + 1] }) else { return }
         setRating(photo, to: stars)
         print("RATED \(photo.filename) \(stars)")
+    }
+
+    func setFlag(_ photo: LibraryPhoto, to flag: Int32) {
+        guard let library else { return }
+        do {
+            try library.setFlag(id: photo.id, flag: flag)
+            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].flag = flag }
+        } catch { self.error = "\(error)" }
+    }
+
+    func setLabel(_ photo: LibraryPhoto, to label: String) {
+        guard let library else { return }
+        do {
+            try library.setLabel(id: photo.id, label: label)
+            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].label = label }
+        } catch { self.error = "\(error)" }
+    }
+
+    func inQuickCollection(_ photo: LibraryPhoto) -> Bool {
+        collections.first { $0.quick }?.photos.contains(photo.id) ?? false
+    }
+
+    func setQuickCollection(_ ids: [Int64], _ on: Bool) {
+        guard let library else { return }
+        do {
+            try library.setQuickCollection(ids: ids, on: on)
+            Task { await reload() }
+        } catch { self.error = "\(error)" }
     }
 
     func setRating(_ photo: LibraryPhoto, to rating: Int32) {
