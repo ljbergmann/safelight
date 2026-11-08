@@ -72,9 +72,6 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
   Look, per-slider Auto, panel reset
 - **Tone Curve:** saved curves, the parametric graph with split points,
   Levels Black and White point (its targeted adjustment is done)
-- **Color:** the mixer's All view, the grading's 3-Way view (the Color
-  Mixer by band, Point Color, targeted adjustment and a wheel per region are
-  done)
 - **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
   Upright and Guided Upright, Constrain Crop, Calibration's process version
 - **Masks:** brush Density and Auto Mask, refining a Subject with taps

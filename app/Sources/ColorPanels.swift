@@ -18,6 +18,8 @@ struct ColorMixView: View {
     let sections: [Section]
     let model: LiveModel
     @State private var band = 0
+    /// Every band at once rather than one at a time.
+    @State private var all = false
     @State private var pointColor = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-point-color") }
 
     private static let channels = ["Hue", "Saturation", "Luminance"]
@@ -66,6 +68,28 @@ struct ColorMixView: View {
     }
 
     @ViewBuilder private var mixer: some View {
+            Picker("Bands", selection: $all) {
+                Text("By Color").tag(false)
+                Text("All").tag(true)
+            }
+            .pickerStyle(.segmented)
+            if all {
+                // Every band's Hue, Saturation and Luminance at once, as the
+                // desktop's All view.
+                ForEach(Array(Self.channels.enumerated()), id: \.offset) { channel, name in
+                    Text(name).font(.subheadline.weight(.semibold)).padding(.top, 6)
+                    ForEach(MixerBand.names.indices, id: \.self) { b in
+                        if let slider = slider(channel, band: b) {
+                            SliderRow(slider: slider, model: model, track: track(channel, band: b), label: MixerBand.names[b])
+                        }
+                    }
+                }
+            } else {
+                byColor
+            }
+    }
+
+    @ViewBuilder private var byColor: some View {
             HStack(spacing: 0) {
                 ForEach(MixerBand.colors.indices, id: \.self) { index in
                     swatch(index)
@@ -80,7 +104,8 @@ struct ColorMixView: View {
             }
     }
 
-    private func slider(_ channel: Int) -> SliderState? {
+    private func slider(_ channel: Int, band: Int? = nil) -> SliderState? {
+        let band = band ?? self.band
         let title = "Color Mixer · \(Self.channels[channel])"
         guard let sliders = sections.first(where: { $0.title == title })?.sliders, band < sliders.count else { return nil }
         return sliders[band]
@@ -114,7 +139,8 @@ struct ColorMixView: View {
 
     /// Hue between the band's neighbours; saturation from grey to the band;
     /// luminance from dark to light.
-    private func track(_ channel: Int) -> [Color] {
+    private func track(_ channel: Int, band: Int? = nil) -> [Color] {
+        let band = band ?? self.band
         let colors = MixerBand.colors
         let color = colors[band]
         switch channel {
@@ -131,13 +157,16 @@ struct ColorMixView: View {
 struct ColorGradingPane: View {
     let model: LiveModel
     let close: () -> Void
+    /// The region shown large, or the 3-Way view of all three tonal
+    /// ranges (`threeWay`), the desktop's default.
     @State private var region = 0
+    @State private var threeWay = true
 
     private static let regions = ["Shadows", "Midtones", "Highlights", "Global"]
 
     var body: some View {
         let sections = (model.edit?.sections ?? []).filter { $0.title.hasPrefix("Color Grading") }
-        let grade = sections.first { $0.title == "Color Grading · \(Self.regions[region])" }
+        let grade = threeWay ? nil : sections.first { $0.title == "Color Grading · \(Self.regions[region])" }
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Color Grading").font(.title3.weight(.semibold))
@@ -151,7 +180,18 @@ struct ColorGradingPane: View {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(sections.first?.switches ?? [], id: \.label) { SwitchRow(item: $0, model: model) }
                 regionPicker
-                if let grade, grade.sliders.count == 3 {
+                if threeWay {
+                    // Midtones above, Shadows and Highlights below, each with its
+                    // Luminance, as the desktop's 3-Way view.
+                    VStack(spacing: 10) {
+                        smallWheel(1, sections)
+                        HStack(alignment: .top, spacing: 12) {
+                            smallWheel(0, sections)
+                            smallWheel(2, sections)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                } else if let grade, grade.sliders.count == 3 {
                     GradingWheel(
                         hue: grade.sliders[0].value, saturation: grade.sliders[1].value,
                         set: { x, y, done in
@@ -180,9 +220,45 @@ struct ColorGradingPane: View {
         }
     }
 
-    /// Shadows, Midtones and Highlights as dark to light dots, then Global.
+    /// One region's wheel, small, its name and its Luminance, for the 3-Way view.
+    @ViewBuilder private func smallWheel(_ index: Int, _ sections: [Section]) -> some View {
+        if let grade = sections.first(where: { $0.title == "Color Grading · \(Self.regions[index])" }), grade.sliders.count == 3 {
+            VStack(spacing: 4) {
+                GradingWheel(
+                    hue: grade.sliders[0].value, saturation: grade.sliders[1].value,
+                    set: { x, y, done in
+                        model.live?.setGradeWheel(region: UInt32(index), x: x, y: y, done: done)
+                        model.refresh()
+                    },
+                    reset: {
+                        model.live?.resetGradeWheel(region: UInt32(index))
+                        model.refresh()
+                    },
+                    size: 120)
+                Text(Self.regions[index]).font(.caption).foregroundStyle(Theme.secondaryText)
+                SliderRow(slider: grade.sliders[2], model: model, track: [Color(white: 0.1), Color(white: 0.95)], label: "Luminance")
+            }
+            .frame(maxWidth: 200)
+        }
+    }
+
+    /// 3-Way, then Shadows, Midtones and Highlights as dark to light dots,
+    /// then Global.
     private var regionPicker: some View {
         HStack(spacing: 22) {
+            Button { threeWay = true } label: {
+                VStack(spacing: 5) {
+                    Image(systemName: "circle.grid.3x3.circle").resizable()
+                        .foregroundStyle(Color(white: 0.85))
+                        .frame(width: 24, height: 24).padding(3)
+                        .overlay(Circle().strokeBorder(threeWay ? Theme.accent : .clear, lineWidth: 2))
+                    Circle().fill(threeWay ? Theme.accent : .clear).frame(width: 4, height: 4)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("3-Way")
+            .accessibilityAddTraits(threeWay ? .isSelected : [])
+            Rectangle().fill(Theme.line).frame(width: 1, height: 18)
             ForEach(0..<3) { index in
                 regionButton(index) {
                     Circle().fill(Color(white: [0.15, 0.5, 0.9][index]))
@@ -198,18 +274,19 @@ struct ColorGradingPane: View {
     }
 
     private func regionButton<Icon: View>(_ index: Int, @ViewBuilder icon: () -> Icon) -> some View {
-        Button { region = index } label: {
+        let chosen = !threeWay && index == region
+        return Button { region = index; threeWay = false } label: {
             VStack(spacing: 5) {
                 icon()
                     .frame(width: 24, height: 24)
                     .padding(3)
-                    .overlay(Circle().strokeBorder(index == region ? Theme.accent : .clear, lineWidth: 2))
-                Circle().fill(index == region ? Theme.accent : .clear).frame(width: 4, height: 4)
+                    .overlay(Circle().strokeBorder(chosen ? Theme.accent : .clear, lineWidth: 2))
+                Circle().fill(chosen ? Theme.accent : .clear).frame(width: 4, height: 4)
             }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Self.regions[index])
-        .accessibilityAddTraits(index == region ? .isSelected : [])
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
 
@@ -224,10 +301,11 @@ struct GradingWheel: View {
     /// A double tap: no color.
     let reset: () -> Void
 
-    private static let size: CGFloat = 220
+    /// Across, in points: large on its own, smaller in the 3-Way view.
+    var size: CGFloat = 220
 
     var body: some View {
-        let radius = Self.size / 2
+        let radius = size / 2
         let angle = Double(hue) * 2 * .pi
         let puck = CGPoint(x: radius + CGFloat(cos(angle)) * CGFloat(saturation) * radius,
                            y: radius - CGFloat(sin(angle)) * CGFloat(saturation) * radius)
@@ -244,7 +322,7 @@ struct GradingWheel: View {
                 .position(puck)
             Circle().fill(.white).frame(width: 4, height: 4).position(puck)
         }
-        .frame(width: Self.size, height: Self.size)
+        .frame(width: size, height: size)
         .contentShape(Circle())
         // A few points of travel before a drag starts, so a double tap
         // doesn't move the puck first.
