@@ -107,22 +107,24 @@ struct PresetsPanel: View {
         }
         .fileImporter(
             isPresented: $importing,
-            allowedContentTypes: [UTType(filenameExtension: "xmp") ?? .data],
+            allowedContentTypes: [UTType(filenameExtension: "xmp") ?? .data, .folder],
             allowsMultipleSelection: true
         ) { result in
-            guard case .success(let files) = result else { return }
-            let paths = files.compactMap { file -> String? in
-                // Copied while the security scope is open.
-                guard file.startAccessingSecurityScopedResource() else { return file.path }
-                defer { file.stopAccessingSecurityScopedResource() }
-                let copy = URL.temporaryDirectory.appending(path: file.lastPathComponent)
-                try? FileManager.default.removeItem(at: copy)
-                try? FileManager.default.copyItem(at: file, to: copy)
-                return copy.path
+            guard case .success(let picks) = result, !picks.isEmpty else { return }
+            let live = model.live
+            Task {
+                // Imported while the files' security scope is open; a pack's
+                // looks join the profiles, so the photo lists them again.
+                let summary = await Task.detached { () -> ImportSummary in
+                    let opened = picks.filter { $0.startAccessingSecurityScopedResource() }
+                    defer { opened.forEach { $0.stopAccessingSecurityScopedResource() } }
+                    let summary = importPresets(paths: picks.map(\.path))
+                    if summary.done > 0 { live?.reloadProfiles() }
+                    return summary
+                }.value
+                note = ([summary.message] + summary.details.prefix(3)).joined(separator: "\n")
+                await load()
             }
-            let count = (try? importPresets(paths: paths)) ?? 0
-            note = "\(count) preset\(count == 1 ? "" : "s") imported"
-            Task { await load() }
         }
     }
 

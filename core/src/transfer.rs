@@ -191,30 +191,19 @@ pub(crate) fn update_preset(
     Ok(())
 }
 
-/// Copies Lightroom XMP presets into the preset library; returns how many.
+/// Imports Lightroom XMP presets from `paths`, files or folders, as the
+/// desktop's Import Presets does: into the preset library's Imported folder,
+/// keeping their folders, skipping presets already there, and taking the
+/// look profiles packs ship beside their presets into the profile library.
 #[uniffi::export]
-pub fn import_presets(paths: Vec<String>) -> Result<u32, RenderError> {
-    let dir = rawmakase_interop::presets::library_dirs()
-        .into_iter()
-        .next()
-        .ok_or_else(|| RenderError::Failed {
-            message: "No folder for presets".into(),
-        })?
-        .join("Imported");
-    std::fs::create_dir_all(&dir).map_err(anyhow::Error::from)?;
-    let mut copied = 0;
-    for path in paths {
-        let path = Path::new(&path);
-        if path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("xmp"))
-            && let Some(name) = path.file_name()
-        {
-            std::fs::copy(path, dir.join(name)).map_err(anyhow::Error::from)?;
-            copied += 1;
-        }
-    }
-    Ok(copied)
+pub fn import_presets(paths: Vec<String>) -> crate::profile::ImportSummary {
+    let picks: Vec<std::path::PathBuf> = paths.iter().map(Into::into).collect();
+    let summary = rawmakase_interop::bulk_import::run(
+        rawmakase_interop::bulk_import::ImportKind::Presets,
+        &picks,
+        &rawmakase_interop::bulk_import::ImportProgress::default(),
+    );
+    (&summary).into()
 }
 
 /// The groups Copy Settings offers, by section, in Lightroom's order.

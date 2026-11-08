@@ -98,10 +98,10 @@ pub(crate) fn choose(
     Some(title)
 }
 
-/// What importing profiles did, for the app to say.
+/// What importing profiles or presets did, for the app to say.
 #[derive(uniffi::Record, Debug)]
-pub struct ProfileImport {
-    /// Profiles, looks and LUTs added, or found added already.
+pub struct ImportSummary {
+    /// Profiles, looks, LUTs or presets added, or found added already.
     pub done: u32,
     /// Files that couldn't be imported.
     pub failed: u32,
@@ -118,25 +118,31 @@ pub struct ProfileImport {
 /// default. A photo open in the editor lists them after
 /// [`crate::LiveView::reload_profiles`].
 #[uniffi::export]
-pub fn import_profiles(paths: Vec<String>) -> ProfileImport {
+pub fn import_profiles(paths: Vec<String>) -> ImportSummary {
     import_into(
         &paths,
         &rawmakase_model::storage::data_dir().join("camera-profiles"),
     )
 }
 
-pub(crate) fn import_into(paths: &[String], destination: &std::path::Path) -> ProfileImport {
+pub(crate) fn import_into(paths: &[String], destination: &std::path::Path) -> ImportSummary {
     let picks: Vec<std::path::PathBuf> = paths.iter().map(Into::into).collect();
     let summary = rawmakase_interop::bulk_import::import_profiles_into(
         &picks,
         rawmakase_model::camera_profiles::LutSpace::default(),
         destination,
     );
-    ProfileImport {
-        done: summary.done() as u32,
-        failed: summary.failures() as u32,
-        message: summary.message(),
-        details: summary.lines(),
+    ImportSummary::from(&summary)
+}
+
+impl From<&rawmakase_interop::bulk_import::Summary> for ImportSummary {
+    fn from(summary: &rawmakase_interop::bulk_import::Summary) -> Self {
+        Self {
+            done: summary.done() as u32,
+            failed: summary.failures() as u32,
+            message: summary.message(),
+            details: summary.lines(),
+        }
     }
 }
 
@@ -175,5 +181,34 @@ mod tests {
         let again = import_into(&paths[..1], &library);
         assert_eq!((again.done, again.failed), (1, 0), "{again:?}");
         assert_eq!(std::fs::read_dir(&library).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn presets_are_imported_with_their_folder_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let pack = dir.path().join("Pack");
+        std::fs::create_dir_all(pack.join("Warm")).unwrap();
+        std::fs::write(pack.join("Warm/Glow.xmp"), PRESET).unwrap();
+        let (presets, profiles) = (dir.path().join("presets"), dir.path().join("profiles"));
+        let import = || {
+            ImportSummary::from(&rawmakase_interop::bulk_import::import_presets_into(
+                &[pack.clone()],
+                &presets,
+                &profiles,
+            ))
+        };
+        let first = import();
+        assert_eq!((first.done, first.failed), (1, 0), "{first:?}");
+        assert!(
+            presets.join("Imported/Pack/Warm/Glow.xmp").exists(),
+            "kept in its folder"
+        );
+        let again = import();
+        assert_eq!(
+            (again.done, again.failed),
+            (1, 0),
+            "found imported already: {again:?}"
+        );
+        assert!(again.message.contains("already"), "{again:?}");
     }
 }

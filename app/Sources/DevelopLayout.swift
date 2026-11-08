@@ -197,7 +197,7 @@ struct ProfileRow: View {
     let model: LiveModel
     let amount: Section?
     @State private var importing = false
-    @State private var imported: ProfileImport?
+    @State private var imported: ImportSummary?
     @State private var working = false
 
     var body: some View {
@@ -258,7 +258,7 @@ struct ProfileRow: View {
     /// Imports the profiles, looks and LUTs in `picks` (files or folders)
     /// while their security scope is open, then lists the photo's profiles
     /// again.
-    nonisolated private static func runImport(_ picks: [URL], live: LiveView?) -> ProfileImport {
+    nonisolated private static func runImport(_ picks: [URL], live: LiveView?) -> ImportSummary {
         let opened = picks.filter { $0.startAccessingSecurityScopedResource() }
         defer { opened.forEach { $0.stopAccessingSecurityScopedResource() } }
         let result = importProfiles(paths: picks.map(\.path))

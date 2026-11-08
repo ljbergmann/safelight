@@ -360,7 +360,7 @@ struct LiveEditor: View {
         if let i = args.firstIndex(of: "-import-profiles"), i + 1 < args.count, let live = model.live {
             let folder = URL.documentsDirectory.appending(path: args[i + 1])
             let before = live.profiles().count
-            let result = await Task.detached { () -> ProfileImport in
+            let result = await Task.detached { () -> ImportSummary in
                 let r = importProfiles(paths: [folder.path])
                 live.reloadProfiles()
                 return r

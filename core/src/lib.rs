@@ -35,7 +35,7 @@ pub use metadata::{KeywordInfo, MetadataField, PhotoMetadata};
 mod point_color;
 mod profile;
 pub use point_color::{RangeInfo, SwatchInfo};
-pub use profile::{ProfileImport, ProfileInfo, import_profiles};
+pub use profile::{ImportSummary, ProfileInfo, import_profiles};
 mod render;
 mod snapshots;
 pub use snapshots::SnapshotInfo;
