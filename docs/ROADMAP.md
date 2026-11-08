@@ -58,7 +58,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [x] Swipe between photos in the editor, in the grid's order
 - [ ] Compare and Survey views (M)
 - [x] Lightroom's sort orders, either way
-- [ ] Stacks (M)
+- [x] Stacks: group, unstack, move to top, expand and collapse, Auto-Stack by
+      capture time
 - [x] Metadata (title, caption, creator, copyright), keywords and camera
       info, for one photo or several
 - [x] Virtual copies: create, rename, set as master, remove

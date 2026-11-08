@@ -222,6 +222,7 @@ struct MosaicCell: View {
             }
             .clipped()
             .overlay(alignment: .bottomLeading) { marks }
+            .overlay(alignment: .topLeading) { StackBadge(photo: photo, model: model) }
             .contentShape(Rectangle())
             .task(id: photo.id) { image = await model.thumbnail(photo, edge: 512) }
     }

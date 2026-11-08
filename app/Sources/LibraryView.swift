@@ -66,6 +66,10 @@ struct LibraryView: View {
                             .disabled(selected.isEmpty)
                     }
                     ToolbarItem(placement: .primaryAction) {
+                        Menu("Stack", systemImage: "square.stack") { SelectionStackMenu(ids: Array(selected), model: model) }
+                            .disabled(selected.isEmpty)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button("Export", systemImage: "square.and.arrow.up") { exporting = true }
                             .disabled(selected.isEmpty)
                     }
@@ -138,6 +142,7 @@ struct LibraryView: View {
             if args.contains("-metadata-test") { model.metadataTest() }
             if args.contains("-virtual-copy-test") { await model.virtualCopyTest() }
             if args.contains("-file-ops-test") { await model.fileOpsTest() }
+            if args.contains("-stack-test") { await model.stackTest() }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,
@@ -291,6 +296,7 @@ struct PhotoMenu: View {
         }
         Button("Info…", systemImage: "info.circle") { model.info = InfoRequest(ids: [photo.id]) }
         CopyMenu(photo: photo, model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy)
+        StackMenu(photo: photo, model: model)
         Divider()
         FileMenu(ids: [photo.id], photo: photo, model: model)
         if model.inQuickCollection(photo) {

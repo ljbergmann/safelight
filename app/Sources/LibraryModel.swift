@@ -28,7 +28,8 @@ final class LibraryModel {
             collections.first { $0.id == id }.map { Set($0.photos) } ?? []
         } else { nil }
         let kept = photos.filter { p in
-            source.admits(p, members: members)
+            !p.hiddenInStack
+                && source.admits(p, members: members)
                 && p.rating >= minRating
                 && (flagFilter.map { p.flag == $0 } ?? true)
                 && (labelFilter.map { p.label == $0 } ?? true)

@@ -38,6 +38,12 @@ pub struct LibraryPhoto {
     /// Width over height as shown; 0 until its file's info is read
     /// ([`Library::fill_photo_info`]).
     pub aspect: f32,
+    /// Its folder stack (0 when in none), its place in it (0 the top), how
+    /// many photos it has and whether it is collapsed to its top.
+    pub stack: i64,
+    pub stack_index: u32,
+    pub stack_count: u32,
+    pub stack_collapsed: bool,
 }
 
 /// A collection and its photos.
@@ -141,6 +147,7 @@ impl Library {
         let catalog = self.catalog();
         let edited = catalog.edit_times()?;
         let aspects = catalog.aspect_ratios()?;
+        let stacks = catalog.stack_places()?;
         let listed = catalog.photos()?;
         drop(catalog);
         let mut photos: Vec<LibraryPhoto> = listed
@@ -156,6 +163,10 @@ impl Library {
                 is_copy: p.master.is_some(),
                 edited: edited.contains_key(&p.id),
                 aspect: aspects.get(&p.id).copied().unwrap_or(0.),
+                stack: stacks.get(&p.id).map_or(0, |s| s.id.0),
+                stack_index: stacks.get(&p.id).map_or(0, |s| s.index as u32),
+                stack_count: stacks.get(&p.id).map_or(0, |s| s.count as u32),
+                stack_collapsed: stacks.get(&p.id).is_some_and(|s| s.collapsed),
                 id: p.id.0,
             })
             .collect();
@@ -494,6 +505,39 @@ mod tests {
     }
 
     #[test]
+    fn photos_stack_under_their_top_and_come_apart() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = open(dir.path());
+        let day = Path::new(&library.photos_folder()).join("d");
+        std::fs::create_dir_all(&day).unwrap();
+        for (i, chart) in charts().iter().enumerate() {
+            std::fs::copy(chart, day.join(format!("{i}.dng"))).unwrap();
+        }
+        std::fs::copy(&charts()[0], day.join("2.dng")).unwrap();
+        library.add_new_photos().unwrap();
+        let ids: Vec<i64> = library.photos().unwrap().iter().map(|p| p.id).collect();
+        library.stack_photos(vec![ids[2], ids[0], ids[1]]).unwrap();
+        let photos = library.photos().unwrap();
+        let place = |id: i64| photos.iter().find(|p| p.id == id).unwrap();
+        assert_eq!(
+            (place(ids[2]).stack_index, place(ids[2]).stack_count),
+            (0, 3),
+            "the first is the top"
+        );
+        assert!(place(ids[0]).stack_collapsed && place(ids[0]).stack == place(ids[2]).stack);
+        library
+            .set_stack_collapsed(place(ids[0]).stack, false)
+            .unwrap();
+        library.move_to_top_of_stack(ids[1]).unwrap();
+        let photos = library.photos().unwrap();
+        let place = |id: i64| photos.iter().find(|p| p.id == id).unwrap();
+        assert_eq!(place(ids[1]).stack_index, 0);
+        assert!(!place(ids[1]).stack_collapsed);
+        library.unstack(vec![ids[0]]).unwrap();
+        assert!(library.photos().unwrap().iter().all(|p| p.stack == 0));
+    }
+
+    #[test]
     fn imported_photos_and_ratings_survive_reopening() {
         let dir = tempfile::tempdir().unwrap();
         let library = open(dir.path());
@@ -728,5 +772,65 @@ impl Library {
     pub fn remove_virtual_copy(&self, id: i64) -> Result<(), RenderError> {
         self.catalog().remove_virtual_copy(PhotoId(id))?;
         Ok(())
+    }
+}
+
+/// Lightroom's folder stacks, as the desktop's catalog keeps them: photos of
+/// one folder under the first, the top, shown alone while the stack is
+/// collapsed. Organization only: nothing of a stack is in an edit.
+#[uniffi::export]
+impl Library {
+    /// Group into Stack: `ids` become one collapsed stack in this order,
+    /// the first its top; photos of other folders than the first's stay
+    /// out, as Lightroom's stacks are a folder's.
+    pub fn stack_photos(&self, ids: Vec<i64>) -> Result<(), RenderError> {
+        use rawmakase_catalog::catalog::StackChange;
+        self.catalog()
+            .change_stacks(&StackChange::Group(ids.into_iter().map(PhotoId).collect()))?;
+        Ok(())
+    }
+
+    /// Unstack: every stack one of `ids` is in comes apart.
+    pub fn unstack(&self, ids: Vec<i64>) -> Result<(), RenderError> {
+        use rawmakase_catalog::catalog::StackChange;
+        self.catalog().change_stacks(&StackChange::Unstack(
+            ids.into_iter().map(PhotoId).collect(),
+        ))?;
+        Ok(())
+    }
+
+    /// Move to Top of Stack.
+    pub fn move_to_top_of_stack(&self, id: i64) -> Result<(), RenderError> {
+        use rawmakase_catalog::catalog::StackChange;
+        self.catalog()
+            .change_stacks(&StackChange::MoveToTop(PhotoId(id)))?;
+        Ok(())
+    }
+
+    /// Collapses stack `stack` to its top, or expands it.
+    pub fn set_stack_collapsed(&self, stack: i64, collapsed: bool) -> Result<(), RenderError> {
+        self.catalog()
+            .set_stacks_collapsed(&[rawmakase_catalog::catalog::StackId(stack)], collapsed)?;
+        Ok(())
+    }
+
+    /// Auto-Stack by Capture Time: runs of a folder's photos, of `ids`,
+    /// each taken less than `seconds` after the one before, become stacks.
+    /// Returns how many.
+    pub fn auto_stack(&self, ids: Vec<i64>, seconds: f64) -> Result<u32, RenderError> {
+        use rawmakase_catalog::catalog::{StackChange, auto_stacks};
+        let mut catalog = self.catalog();
+        let photos = catalog.photos()?;
+        let chosen: Vec<(PhotoId, rawmakase_catalog::catalog::FolderId, &str)> = photos
+            .iter()
+            .filter(|p| ids.contains(&p.id.0) && p.master.is_none())
+            .map(|p| (p.id, p.folder, p.captured.as_str()))
+            .collect();
+        let stacks = auto_stacks(&chosen, seconds);
+        let made = stacks.len() as u32;
+        if made > 0 {
+            catalog.change_stacks(&StackChange::Groups(stacks))?;
+        }
+        Ok(made)
     }
 }
