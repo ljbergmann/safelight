@@ -4,8 +4,9 @@
 //! the app's data folder. Imported originals are copied by the app into
 //! `Photos/<day>/` beside it, and the whole `Photos` folder is one root of
 //! the catalog, so adding it again adds only the photos that are new.
-//! Thumbnails are made from each RAW's embedded preview and cached in the
-//! app's Caches folder, which iPadOS may empty.
+//! Thumbnails are made from each RAW's smallest embedded preview that is
+//! large enough, and cached in the app's Caches folder, which iPadOS may
+//! empty.
 
 use crate::render::{RenderError, on_core_thread};
 use rawmakase_catalog::catalog::{Catalog, NewPhotoDefaults, PhotoId};
@@ -125,8 +126,14 @@ impl Library {
             return Ok(bytes);
         }
         on_core_thread(move || {
-            let mut raw = rawmakase_decode::photo::open(Path::new(&path))?;
-            let preview = rawmakase_decode::raw::thumbnail(&mut raw)?;
+            // As the desktop's Library: the smallest embedded preview that
+            // reaches `edge`, so a camera's full-size JPEG is decoded only
+            // when nothing smaller is there; else the largest.
+            let mut raw = rawmakase_decode::raw::Raw::open_file(Path::new(&path))?;
+            let preview = match rawmakase_decode::raw::thumbnail_reaching(&mut raw, edge) {
+                Ok(preview) => preview,
+                Err(_) => rawmakase_decode::raw::thumbnail(&mut raw)?,
+            };
             let small = image::imageops::thumbnail(
                 &preview,
                 fit(preview.width(), preview.height(), edge).0,

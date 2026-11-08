@@ -4,7 +4,7 @@ import SwiftUI
 struct RawmakaseApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            LibraryView()
         }
     }
 }

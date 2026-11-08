@@ -50,6 +50,30 @@ enum Memory {
     static func available() -> UInt64 { UInt64(os_proc_available_memory()) }
 
     static func mb(_ bytes: UInt64) -> String { "\(bytes / 1_048_576) MB" }
+
+    /// Whether freed memory leaves the app's footprint: allocates, fills and
+    /// frees one 540 MB block (a decoded 45 MP photo's size) and 2000 blocks
+    /// of 256 KB (the engine's tiles), printing the footprint after each.
+    /// The `-allocprobe` launch option.
+    static func probeAllocator() {
+        func line(_ what: String) { print("ALLOC \(what): \(mb(footprint().current))") }
+        line("start")
+        let big = UnsafeMutableRawPointer.allocate(byteCount: 540 << 20, alignment: 16)
+        big.initializeMemory(as: UInt8.self, repeating: 1, count: 540 << 20)
+        line("540 MB block")
+        big.deallocate()
+        line("freed")
+        var tiles: [UnsafeMutableRawPointer] = []
+        for _ in 0..<2000 {
+            let tile = UnsafeMutableRawPointer.allocate(byteCount: 256 << 10, alignment: 16)
+            tile.initializeMemory(as: UInt8.self, repeating: 1, count: 256 << 10)
+            tiles.append(tile)
+        }
+        line("2000 tiles of 256 KB")
+        tiles.forEach { $0.deallocate() }
+        line("freed")
+        print("ALLOC DONE")
+    }
 }
 
 private func mach_task_self() -> mach_port_t { mach_task_self_ }

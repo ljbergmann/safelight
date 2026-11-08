@@ -1,47 +1,12 @@
-import SwiftUI
+import Foundation
 
-/// The RAWs in the app's Documents folder, and the live editor for the one
-/// chosen.
-struct ContentView: View {
-    @State private var photos: [URL] = []
-    @State private var selected: URL?
-
-    var body: some View {
-        NavigationSplitView {
-            List(photos, id: \.self, selection: $selected) { url in
-                Text(url.lastPathComponent)
-            }
-            .navigationTitle("Documents")
-            .overlay {
-                if photos.isEmpty {
-                    ContentUnavailableView(
-                        "No photos",
-                        systemImage: "photo",
-                        description: Text("Copy RAW files into the app's Documents folder (Finder, or the Files app).")
-                    )
-                }
-            }
-            .refreshable { photos = Documents.photos() }
-        } detail: {
-            LiveEditor(photo: selected)
-                .navigationTitle(selected?.lastPathComponent ?? "RAWmakase")
-        }
-        .onAppear {
-            photos = Documents.photos()
-            if ProcessInfo.processInfo.arguments.contains("-benchmark") { benchmark() }
-            // -open <name>: start with that photo, for -sweep.
-            let args = ProcessInfo.processInfo.arguments
-            if let i = args.firstIndex(of: "-open"), i + 1 < args.count {
-                selected = photos.first { $0.lastPathComponent == args[i + 1] }
-            }
-        }
-    }
-
+/// Measurements started by launch options.
+enum Diagnostics {
     /// Renders every photo in each mode, one after another, printing a line
     /// per render and writing them to Documents/benchmark.txt: the launch
     /// option `-benchmark` runs it, for measuring without tapping.
-    private func benchmark() {
-        let photos = photos
+    static func benchmark() {
+        let photos = Documents.photos()
         Task.detached(priority: .userInitiated) {
             var lines: [String] = []
             let modes: [(Backend, DecodeSize, String)] = [

@@ -1,0 +1,173 @@
+import Foundation
+import Observation
+import UIKit
+
+/// The catalog in the app's storage, and what the grid shows of it.
+@MainActor @Observable
+final class LibraryModel {
+    private(set) var library: Library?
+    private(set) var photos: [LibraryPhoto] = []
+    /// What an import in progress has done, for the toolbar.
+    private(set) var importing: String?
+    private(set) var error: String?
+    /// The last import's timings, for measuring.
+    private(set) var lastImport: String?
+
+    /// Opens (or creates) the catalog in Application Support.
+    func open() async {
+        guard library == nil else { return }
+        let fm = FileManager.default
+        let data = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "RAWmakase")
+        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "RAWmakase")
+        do {
+            let opened = try await Task.detached { try Library.open(data: data.path, caches: caches.path) }.value
+            library = opened
+            await reload()
+            let rated = photos.filter { $0.rating > 0 }.map { "\($0.filename)=\($0.rating)" }
+            print("LIBRARY \(photos.count) photos; rated: \(rated)")
+        } catch {
+            self.error = "\(error)"
+        }
+    }
+
+    func reload() async {
+        guard let library else { return }
+        do {
+            photos = try await Task.detached { try library.photos() }.value
+        } catch {
+            self.error = "\(error)"
+        }
+    }
+
+    /// Copies `files` (from the Files picker) into today's folder of the
+    /// catalog's photo folder, then adds what is new to the catalog.
+    func importFiles(_ files: [URL]) async {
+        await importCopying(files, move: false)
+    }
+
+    /// Moves the RAWs in the app's Documents folder into the catalog: for
+    /// filling an iPad from a Mac (Finder, or devicectl) without the picker.
+    func importDocuments() async {
+        await importCopying(Documents.photos(), move: true)
+    }
+
+    private func importCopying(_ files: [URL], move: Bool) async {
+        guard let library, !files.isEmpty else { return }
+        importing = "Copying \(files.count) photos…"
+        let folder = URL(fileURLWithPath: library.photosFolder()).appending(path: Self.today())
+        let started = ContinuousClock.now
+        let outcome: Result<(Int, Added), Error> = await Task.detached {
+            Result {
+                let fm = FileManager.default
+                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                var copied = 0
+                for file in files {
+                    let scoped = file.startAccessingSecurityScopedResource()
+                    defer { if scoped { file.stopAccessingSecurityScopedResource() } }
+                    let target = Self.unused(folder.appending(path: file.lastPathComponent))
+                    if move { try fm.moveItem(at: file, to: target) } else { try fm.copyItem(at: file, to: target) }
+                    copied += 1
+                }
+                return (copied, try library.addNewPhotos())
+            }
+        }.value
+        importing = nil
+        switch outcome {
+        case .success(let (copied, added)):
+            let seconds = Double((ContinuousClock.now - started).components.attoseconds) / 1e18
+                + Double((ContinuousClock.now - started).components.seconds)
+            lastImport = "\(copied) files copied, \(added.added) added to the catalog in \(Int(added.ms)) ms, \(String(format: "%.1f", seconds)) s in all"
+            print("IMPORT \(lastImport!)")
+            await reload()
+        case .failure(let error):
+            self.error = "\(error)"
+        }
+    }
+
+    /// `-rate <file name> <stars>`: rates a photo without touching the
+    /// screen, for checking that ratings survive a relaunch.
+    func rateFromArguments() {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-rate"), i + 2 < args.count,
+              let stars = Int32(args[i + 2]),
+              let photo = photos.first(where: { $0.filename == args[i + 1] }) else { return }
+        setRating(photo, to: stars)
+        print("RATED \(photo.filename) \(stars)")
+    }
+
+    func setRating(_ photo: LibraryPhoto, to rating: Int32) {
+        guard let library else { return }
+        do {
+            try library.setRating(id: photo.id, rating: rating)
+            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].rating = rating }
+        } catch {
+            self.error = "\(error)"
+        }
+    }
+
+    // MARK: Thumbnails
+
+    private let thumbnails = NSCache<NSString, UIImage>()
+    private let decoding = ThumbnailGate(limit: 4)
+
+    /// The photo's thumbnail, `edge` pixels on its long side.
+    func thumbnail(_ photo: LibraryPhoto, edge: UInt32) async -> UIImage? {
+        let key = "\(photo.id)-\(edge)" as NSString
+        if let image = thumbnails.object(forKey: key) { return image }
+        guard let library else { return nil }
+        let path = photo.path
+        let gate = decoding
+        let image: UIImage? = await Task.detached(priority: .utility) {
+            await gate.wait()
+            defer { Task { await gate.signal() } }
+            return (try? library.thumbnail(path: path, edge: edge)).flatMap { UIImage(data: $0) }
+        }.value
+        if let image { thumbnails.setObject(image, forKey: key) }
+        return image
+    }
+
+    nonisolated private static func today() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: Date())
+    }
+
+    /// `url`, or `name-2.ext`, `name-3.ext`… when it is taken.
+    nonisolated private static func unused(_ url: URL) -> URL {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return url }
+        let base = url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension
+        for n in 2... {
+            let candidate = url.deletingLastPathComponent().appending(path: "\(base)-\(n).\(ext)")
+            if !fm.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return url
+    }
+}
+
+/// At most `limit` thumbnails decode at once: each decodes an embedded JPEG.
+actor ThumbnailGate {
+    private let limit: Int
+    private var running = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) { self.limit = limit }
+
+    func wait() async {
+        if running < limit {
+            running += 1
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func signal() {
+        if waiting.isEmpty {
+            running -= 1
+        } else {
+            waiting.removeFirst().resume()
+        }
+    }
+}

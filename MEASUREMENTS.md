@@ -134,3 +134,24 @@ when freed (`core/src/alloc.rs`). The same runs on the iPad:
   (540 MB at full size), its highlight-recovered copy, the pyramid the
   preview renders from and the copy on the GPU. Making that smaller means
   changing the engine (half-precision pixels) or editing a smart preview.
+
+## Stage 4: a catalog in the app's storage (2026-11-08)
+
+Same iPad. 50 Canon EOS R5 CR3s (1.9 GB) copied into the app's Documents
+folder from the Mac (`devicectl`, 44 s), plus the three earlier test files.
+
+| Step | Result |
+| --- | --- |
+| `-import-documents`: move 53 files into `Photos/2026-11-08/`, add them to the catalog | 53 added, 10 ms in the catalog |
+| `-thumbnails`: all 53 thumbnails (340 px, from the smallest embedded preview that reaches it, 4 at a time) | 4.5 s, peak 1.27 GB |
+| Same after quitting and relaunching (from the cache) | 0.09 s, peak 47 MB |
+| `-rate 407A5994.CR3 3`, quit, relaunch | 53 photos, 407A5994.CR3 still 3 stars |
+| Open a catalog photo in the editor (`-open 407A5994.CR3 -sweep`) | 46 fps, 20 ms renders at 1780×2668 (the editor now fills the screen) |
+
+- The catalog is the desktop's own `.rawmakase` format in
+  `Library/Application Support/RAWmakase/Catalog/`.
+- In the simulator the grid, opening a photo, rating it in the editor and a
+  relaunch were tried by hand (injected taps). The Files picker import was
+  not tried by hand anywhere yet.
+- Capture times aren't read at import (the desktop fills them in the
+  background, in `catalog_session`), so the grid is in file-name order.

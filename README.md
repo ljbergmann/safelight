@@ -66,6 +66,14 @@ neither side reads installed profiles).
 - Stage 3: the Rust core draws the preview straight into a `CAMetalLayer` in
   SwiftUI; an Exposure slider re-renders it live at 60 fps on an M1 iPad Pro.
   Pinch or double tap for 100%, drag to pan (45–50 fps at 100%).
+- Stage 4: a RAWmakase catalog (the desktop's format) in the app's storage:
+  import from the Files app, a thumbnail grid, star ratings, and the live
+  editor from the grid; it all survives a relaunch.
+
+Launch options for measuring without touching the screen: `-import-documents`
+(move the RAWs in Documents into the catalog), `-thumbnails`, `-rate <file>
+<stars>`, `-open <file>` with `-sweep` or `-pan` (and `-full`), `-benchmark`,
+`-allocprobe`.
   `-open <photo> -sweep [-full]` and `-open <photo> -pan [-full]` measure it (with `devicectl`, put the app's
   arguments after `--`).
 
