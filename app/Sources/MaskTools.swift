@@ -64,7 +64,7 @@ extension LiveModel {
 /// sliders, and the retouch tool.
 struct MasksPanel: View {
     @Bindable var model: LiveModel
-    @State private var expanded = false
+    @State private var expanded = true
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {

@@ -11,7 +11,7 @@ struct PresetsPanel: View {
     @State private var library: [PresetInfo] = []
     @State private var importing = false
     @State private var creating = false
-    @State private var expanded = false
+    @State private var expanded = true
     @State private var note: String?
     @State private var renaming: PresetInfo?
     @State private var newName = ""

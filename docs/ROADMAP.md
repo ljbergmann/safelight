@@ -103,8 +103,8 @@ and no soft proofing, so they aren't gaps.
 
 - [ ] iPhone layout (M–L)
 - [ ] The interface modelled on Lightroom for iPad throughout (M–L): the
-      Library is (sidebar of sources, photos at their shape by month, a
-      floating bar); Develop next
+      Library and Develop's frame are (photo edge to edge, a panel per tool
+      chosen on a rail); Develop's panels next
 - [ ] AI Denoise on CoreML (GPU / Neural Engine); measure against the CPU (S–M)
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views

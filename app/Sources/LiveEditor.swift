@@ -22,6 +22,16 @@ final class LiveModel {
             if cropping && compare != .off { compare = .off }
         }
     }
+    /// The right-hand panel's tool. Crop shows the crop's handles; leaving
+    /// Masks or Edit lets go of a mask or the eyedropper.
+    var pane: DevelopPane = .edit {
+        didSet {
+            guard pane != oldValue else { return }
+            cropping = pane == .crop
+            if pane != .masks { selectedMask = nil; if tool != .whiteBalance { tool = .none } }
+            if pane != .edit, tool == .whiteBalance { tool = .none }
+        }
+    }
     /// Before/After: Before alone, beside the edit, or split across it.
     var compare: Compare = .off { didSet { live?.setCompare(compare: compare) } }
     var cropAspect: CropAspect = .free
@@ -66,6 +76,7 @@ final class LiveModel {
         // What belonged to the last photo.
         edit = nil
         dragging = nil
+        if pane == .crop { pane = .edit }
         cropping = false
         tool = .none
         selectedMask = nil
@@ -190,19 +201,21 @@ final class LiveModel {
 
 /// Stage 3: the photo drawn live by the core, with an Exposure slider.
 struct LiveEditor: View {
+    /// The launch options' tests have run (see `scripted`).
+    @MainActor private static var scriptedRan = false
     let photo: LibraryPhoto
     let library: Library
     let model: LiveModel
+    var rating: Int32 = 0
+    var flag: Int32 = 0
+    var setRating: (Int32) -> Void = { _ in }
+    var setFlag: (Int32) -> Void = { _ in }
+    var showInfo: () -> Void = {}
     @Environment(\.displayScale) private var displayScale
 
-    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        let layout = sizeClass == .regular
-            ? AnyLayout(HStackLayout(alignment: .top, spacing: 12))
-            : AnyLayout(VStackLayout(spacing: 12))
-        layout {
-            VStack(spacing: 12) {
+        HStack(spacing: 0) {
             GeometryReader { geometry in
                 LiveViewRepresentable { [model] made in
                     model.live = made
@@ -241,60 +254,12 @@ struct LiveEditor: View {
                     }
                 }
             }
-            .background(Color(white: 0.11))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-            if model.cropping { CropBar(model: model) }
-
-            HStack(spacing: 18) {
-                Button("Crop", systemImage: "crop") { model.cropping.toggle() }
-                    .foregroundStyle(model.cropping ? Color.accentColor : .primary)
-                BeforeAfterMenu(model: model)
-                Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
-                    .disabled(!(model.edit?.canUndo ?? false))
-                Button("Redo", systemImage: "arrow.uturn.forward") { model.redo() }
-                    .disabled(!(model.edit?.canRedo ?? false))
-                Button("Reset Settings", systemImage: "arrow.counterclockwise") { model.live?.reset(); model.refresh() }
-                    .disabled(model.edit == nil)
-                Button("Copy Settings", systemImage: "doc.on.doc") { model.copying = true }
-                Button("Paste Settings", systemImage: "doc.on.clipboard") { model.paste() }
-                    .disabled(!(model.copied || (library.hasCopiedSettings())))
-                Button("Export", systemImage: "square.and.arrow.up") {
-                    // The export reads the edit from the catalog.
-                    if model.save() { model.exporting = true }
-                }
-                Spacer()
-                saveStatus
-                Picker("Decode", selection: Bindable(model).size) {
-                    Text("Half size").tag(DecodeSize.half)
-                    Text("Full size").tag(DecodeSize.full)
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
-            }
-            .labelStyle(.iconOnly)
-            .font(.title3)
-            Text(historyText).font(.caption).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let note = model.pasteNote {
-                Text(note).font(.caption).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-                // Picks up the edit once it has loaded.
-                // AI Denoise's progress arrives from the core on its own.
-                let _ = (model.edit == nil || model.edit?.aiDenoise != nil) ? model.refresh() : ()
-                Text(summary(model.live?.stats() ?? .empty))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            }
-            DevelopPanels(model: model)
-                .frame(width: sizeClass == .regular ? 360 : nil)
-                .frame(maxHeight: sizeClass == .regular ? .infinity : 360)
+            .background(Theme.canvas)
+            .overlay(alignment: .bottomLeading) { status.padding(12) }
+            DevelopPanel(model: model)
+            ToolRail(model: model, rating: rating, flag: flag, setRating: setRating, setFlag: setFlag, showInfo: showInfo)
         }
-        .padding()
+        .background(Theme.canvas)
         .sheet(isPresented: Bindable(model).copying) { CopySettingsSheet(model: model) }
         .sheet(isPresented: Bindable(model).exporting) { ExportSheet(library: library, ids: [photo.id]) }
         .sheet(item: Bindable(model).offeredModel) { offered in
@@ -314,6 +279,10 @@ struct LiveEditor: View {
     /// the edit has loaded, prints it (`EDIT …`); `-set-exposure <stops>`
     /// moves Exposure as one drag, and `-save` then saves as leaving does.
     private func scripted() async {
+        // Once per launch: the editor stays as photos change under it, and a
+        // test must never run again on the next photo.
+        guard !Self.scriptedRan else { return }
+        Self.scriptedRan = true
         for _ in 0..<300 where model.edit == nil {
             model.refresh()
             try? await Task.sleep(for: .milliseconds(100))
@@ -538,9 +507,21 @@ struct LiveEditor: View {
         print("AI masks \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); steps \(model.edit?.steps ?? [])")
     }
 
-    private var historyText: String {
-        guard let edit = model.edit, edit.applied > 0 else { return "No changes" }
-        return "\(edit.steps[Int(edit.applied) - 1]) · \(edit.applied) of \(edit.steps.count) steps"
+    /// Over the photo's corner: whether the edit is saved, and with
+    /// `-stats`, what rendering costs. Also picks up the edit once it has
+    /// loaded, and AI Denoise's progress, which arrive from the core on
+    /// their own.
+    private var status: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            let _ = (model.edit == nil || model.edit?.aiDenoise != nil) ? model.refresh() : ()
+            VStack(alignment: .leading, spacing: 4) {
+                if ProcessInfo.processInfo.arguments.contains("-stats") {
+                    Text(summary(model.live?.stats() ?? .empty)).font(.caption2.monospaced())
+                }
+                saveStatus
+            }
+            .foregroundStyle(Theme.secondaryText)
+        }
     }
 
     @ViewBuilder private var saveStatus: some View {
@@ -642,69 +623,45 @@ extension FrameStats {
         fullWidth: 0, fullHeight: 0, frameWidth: 0, frameHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
 }
 
-/// Every Develop panel the core describes, in the desktop's order: each a
-/// section that folds, with its switches and sliders.
-struct DevelopPanels: View {
-    let model: LiveModel
-    @State private var open: Set<String> = ["Basic"]
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                HistogramPanel(model: model)
-                SnapshotsPanel(model: model)
-                HistoryPanel(model: model)
-                Divider()
-                PresetsPanel(model: model)
-                Divider()
-                MasksPanel(model: model)
-                Divider()
-                ForEach(model.edit?.sections ?? [], id: \.title) { section in
-                    PanelSection(section: section, model: model, isOpen: isOpen(section.title))
-                    if section.title == "AI Denoise" {
-                        AiDenoiseStatus(model: model)
-                    }
-                    Divider()
-                }
-            }
-            .padding(.horizontal, 4)
-        }
-    }
-
-    private func isOpen(_ title: String) -> Binding<Bool> {
-        Binding(
-            get: { open.contains(title) },
-            set: { shown in
-                if shown { open.insert(title) } else { open.remove(title) }
-            }
-        )
-    }
-}
-
 struct PanelSection: View {
     let section: Section
     let model: LiveModel
     @Binding var isOpen: Bool
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isOpen) {
-            VStack(alignment: .leading, spacing: 6) {
-                if section.title == "Basic" {
-                    BasicExtras(model: model)
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { isOpen.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    Text(section.title).font(.headline)
+                    Spacer()
                 }
-                if section.title == "Tone Curve" {
-                    PointCurveEditor(model: model)
-                }
-                ForEach(section.switches, id: \.label) { item in
-                    SwitchRow(item: item, model: model)
-                }
-                ForEach(section.sliders, id: \.label) { slider in
-                    SliderRow(slider: slider, model: model)
-                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .contentShape(Rectangle())
             }
-            .padding(.top, 4)
-        } label: {
-            Text(section.title).font(.headline)
+            .buttonStyle(.plain)
+            if isOpen {
+                VStack(alignment: .leading, spacing: 6) {
+                    if section.title == "Basic" {
+                        BasicExtras(model: model)
+                    }
+                    if section.title == "Tone Curve" {
+                        PointCurveEditor(model: model)
+                    }
+                    ForEach(section.switches, id: \.label) { item in
+                        SwitchRow(item: item, model: model)
+                    }
+                    ForEach(section.sliders, id: \.label) { slider in
+                        SliderRow(slider: slider, model: model)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 14)
+            }
+            Rectangle().fill(Theme.line).frame(height: 0.5)
         }
     }
 }
@@ -730,18 +687,12 @@ struct SliderRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(slider.label).font(.callout)
+                Text(slider.label).font(.callout).foregroundStyle(Theme.secondaryText)
                 Spacer()
-                Text(slider.text).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                Text(slider.text).font(.callout.monospacedDigit())
             }
-            Slider(
-                value: Binding(
-                    get: { shown },
-                    set: { model.set(slider.control, to: snapped($0), done: false) }
-                ),
-                in: slider.min...slider.max
-            ) { editing in
-                if !editing { model.set(slider.control, to: shown, done: true) }
+            ThinSlider(value: shown, range: slider.min...slider.max) { value, done in
+                model.set(slider.control, to: snapped(value), done: done)
             }
         }
     }

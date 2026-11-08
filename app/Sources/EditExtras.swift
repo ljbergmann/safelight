@@ -20,7 +20,7 @@ extension LiveModel {
 /// later steps stay until a new change replaces them, as in Lightroom.
 struct HistoryPanel: View {
     let model: LiveModel
-    @State private var expanded = false
+    @State private var expanded = true
     @State private var clearing = false
 
     var body: some View {
@@ -83,7 +83,7 @@ struct HistoryPanel: View {
 /// applies one as a History step; its menu updates, renames or deletes it.
 struct SnapshotsPanel: View {
     let model: LiveModel
-    @State private var expanded = false
+    @State private var expanded = true
     @State private var list: [SnapshotInfo] = []
     @State private var renaming: SnapshotInfo?
     @State private var name = ""

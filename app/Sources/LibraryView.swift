@@ -342,7 +342,10 @@ struct EditorView: View {
     var body: some View {
         Group {
             if let library = model.library {
-                LiveEditor(photo: shown, library: library, model: live)
+                LiveEditor(
+                    photo: shown, library: library, model: live, rating: rating, flag: flag,
+                    setRating: { model.setRating(shown, to: $0) }, setFlag: { model.setFlag(shown, to: $0) },
+                    showInfo: { model.info = InfoRequest(ids: [shown.id]) })
             }
         }
         .navigationTitle(shown.title)
@@ -366,32 +369,34 @@ struct EditorView: View {
                 }
                 .labelStyle(.iconOnly)
             }
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 2) {
-                    Button("Info", systemImage: "info.circle") { model.info = InfoRequest(ids: [shown.id]) }
-                        .labelStyle(.iconOnly)
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button("Undo", systemImage: "arrow.uturn.backward") { live.undo() }
+                    .disabled(!(live.edit?.canUndo ?? false))
+                Button("Redo", systemImage: "arrow.uturn.forward") { live.redo() }
+                    .disabled(!(live.edit?.canRedo ?? false))
+                BeforeAfterMenu(model: live)
+                Button("Export", systemImage: "square.and.arrow.up") {
+                    // The export reads the edit from the catalog.
+                    if live.save() { live.exporting = true }
+                }
+                Menu("More", systemImage: "ellipsis") {
+                    Button("Copy Settings…", systemImage: "doc.on.doc") { live.copying = true }
+                    Button("Paste Settings", systemImage: "doc.on.clipboard") { live.paste() }
+                        .disabled(!(live.copied || (model.library?.hasCopiedSettings() ?? false)))
+                    Button("Reset Settings", systemImage: "arrow.counterclockwise") { live.live?.reset(); live.refresh() }
+                    Divider()
                     Button("Create Virtual Copy", systemImage: "plus.square.on.square") { copyAndOpen() }
-                        .labelStyle(.iconOnly)
-                    Divider().frame(height: 20)
-                    Button { model.setFlag(shown, to: flag == 1 ? 0 : 1) } label: {
-                        Image(systemName: flag == 1 ? "flag.fill" : "flag")
-                    }
-                    Button { model.setFlag(shown, to: flag == -1 ? 0 : -1) } label: {
-                        Image(systemName: flag == -1 ? "xmark.circle.fill" : "xmark.circle")
-                            .foregroundStyle(flag == -1 ? .red : .secondary)
-                    }
-                    Divider().frame(height: 20)
-                    ForEach(1...5, id: \.self) { n in
-                        Button {
-                            model.setRating(shown, to: rating == n ? 0 : Int32(n))
-                        } label: {
-                            Image(systemName: n <= rating ? "star.fill" : "star")
-                                .foregroundStyle(n <= rating ? .yellow : .secondary)
-                        }
+                    Button("Info…", systemImage: "info.circle") { model.info = InfoRequest(ids: [shown.id]) }
+                    Divider()
+                    Picker("Decode", selection: Bindable(live).size) {
+                        Text("Half Size").tag(DecodeSize.half)
+                        Text("Full Size").tag(DecodeSize.full)
                     }
                 }
             }
         }
+        .toolbarBackground(Theme.canvas, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             live.save()
         }
