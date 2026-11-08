@@ -27,6 +27,8 @@ rawmakase-interop = { path = "../vendor/rawmakase/crates/rawmakase-interop" }
 rawmakase-model = { path = "../vendor/rawmakase/crates/rawmakase-model" }
 rawmakase-protocol = { path = "../vendor/rawmakase/crates/rawmakase-protocol" }
 anyhow = "1"
+# mmap and munmap for image-sized blocks (src/alloc.rs).
+libc = "0.2"
 bytemuck = "1"
 pollster = "1"
 # The GPU renderer's backend: the desktop app turns Metal on through eframe;

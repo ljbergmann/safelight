@@ -5,6 +5,10 @@
 
 uniffi::setup_scaffolding!();
 
+mod alloc;
+#[global_allocator]
+static ALLOCATOR: alloc::Allocator = alloc::Allocator;
+
 mod live;
 mod render;
 pub use live::{FrameStats, LiveView, Zoom};
