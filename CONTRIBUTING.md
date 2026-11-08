@@ -5,7 +5,7 @@ crates, so most of what makes a good change here is what makes one in
 RAWmakase: read its [contribution guide](vendor/rawmakase/CONTRIBUTING.md)
 too. This page says what's different on the iPad. What's left to build, and
 in which order, is in [docs/ROADMAP.md](docs/ROADMAP.md): a good place to
-pick something.
+pick something. Why it's built this way is in [docs/VISION.md](docs/VISION.md).
 
 ## Build and run
 

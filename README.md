@@ -2,11 +2,13 @@
 
 *Lightroom's way of working on the iPad, without Lightroom.*
 
-Safelight is a native iPad app for developing RAW photos, built on
-[RAWmakase](https://github.com/pch/rawmakase)'s engine: the same RAW
-decoders, colour pipeline, catalog and edits as the desktop app, under a
+Safelight is [RAWmakase](https://github.com/pch/rawmakase) on the iPad: a
+native app for developing RAW photos, with RAWmakase's own engine (the same
+RAW decoders, colour pipeline, catalog and edits as the desktop app) under a
 touch interface written in SwiftUI. A catalog you edit on the iPad opens in
 RAWmakase on a Mac, Linux or Windows computer, and renders the same there.
+It stays as close to RAWmakase as it can: what isn't about the iPad's screens
+belongs in RAWmakase's crates.
 
 It is an independent, personal project, MIT licensed like RAWmakase and not
 affiliated with its maintainer.
@@ -56,8 +58,9 @@ goal is that workflow on your own terms:
   never synced. Then smart previews, to edit without the original on the
   device.
 
-The step-by-step plan is [docs/PLAN.md](docs/PLAN.md); what's left, in
-order, is the [roadmap](docs/ROADMAP.md).
+Where this is going, and why, is the [vision](docs/VISION.md); what's left,
+in order, is the [roadmap](docs/ROADMAP.md); how the port was first laid
+out is [docs/PLAN.md](docs/PLAN.md).
 
 ## What works today
 
@@ -119,7 +122,7 @@ xcodebuild -project Safelight.xcodeproj -scheme Safelight -configuration Release
 | `vendor/rawmakase/` | RAWmakase, as a submodule on the fork's `ios/build-crates` branch |
 | `scripts/` | Building the core and ONNX Runtime |
 | `project.yml` | The Xcode project, for XcodeGen |
-| `docs/` | The plan and the roadmap |
+| `docs/` | The vision, the roadmap and the original plan |
 
 ## Development
 
