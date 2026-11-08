@@ -161,6 +161,7 @@ struct LibraryView: View {
             if args.contains("-import-documents") { await model.importDocuments() }
             if args.contains("-photos-import-test") { await model.photosImportTest() }
             if args.contains("-import-screen-test") { await model.importScreenTest() }
+            if args.contains("-sort-test") { model.sortTest() }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,
@@ -354,10 +355,12 @@ struct FilterBar: View {
                 ForEach(labels, id: \.self) { Text($0).tag(String?.some($0)) }
             }
             Spacer()
-            Picker("Order", selection: $model.byCaptureTime) {
-                Text("Capture time").tag(true)
-                Text("File name").tag(false)
+            Picker("Sort", selection: $model.sort) {
+                ForEach(sortOrders(), id: \.index) { Text($0.name).tag($0.index) }
             }
+            Button(model.reverse ? "Descending" : "Ascending",
+                   systemImage: model.reverse ? "arrow.down" : "arrow.up") { model.reverse.toggle() }
+                .labelStyle(.iconOnly)
         }
         .pickerStyle(.menu)
     }

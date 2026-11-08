@@ -68,7 +68,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
   (its photos by day, those already in the catalog marked), from files in
   the Files app, and RAW originals from the Photos library;
   thumbnails; ratings, flags, colour labels,
-  filters, collections and the Quick Collection.
+  filters, Lightroom's sort orders, collections and the Quick Collection.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount; swiping to the next or previous photo; white balance presets and
   eyedropper; Auto; the point curve; Crop,
@@ -143,6 +143,7 @@ them after `--`):
 | --- | --- |
 | `-import-documents` | Moves the photos in the app's Documents folder into the catalog |
 | `-import-screen-test` | Lists the catalog's own photo folder as the import screen lists a card: every photo must show as already in the catalog |
+| `-sort-test` | Prints the grid's first photos in each sort order |
 | `-photos-import-test` | Imports a copy of a catalog photo the way the Photos picker's originals come in; it must be found already there |
 | `-open <file>` | Opens a photo of the catalog in the editor |
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |

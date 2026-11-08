@@ -392,6 +392,45 @@ mod tests {
     }
 
     #[test]
+    fn the_grid_sorts_as_the_desktop_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = open(dir.path());
+        let day = Path::new(&library.photos_folder()).join("2026-11-08");
+        std::fs::create_dir_all(&day).unwrap();
+        let [first, second] = charts();
+        for (chart, name) in [
+            (&first, "IMG_10.dng"),
+            (&second, "IMG_9.dng"),
+            (&first, "a.dng"),
+        ] {
+            std::fs::copy(chart, day.join(name)).unwrap();
+        }
+        library.add_new_photos().unwrap();
+        let photos = library.photos().unwrap();
+        let id = |name: &str| photos.iter().find(|p| p.filename == name).unwrap().id;
+        library.set_rating(id("IMG_10.dng"), 5).unwrap();
+        let orders = sort_orders();
+        let index = |name: &str| orders.iter().find(|o| o.name == name).unwrap().index;
+        assert_eq!(orders[0].name, "Capture Time");
+        assert_eq!(
+            library.photo_order(index("File Name"), false).unwrap(),
+            [id("a.dng"), id("IMG_9.dng"), id("IMG_10.dng")],
+            "digits by value"
+        );
+        assert_eq!(
+            library.photo_order(index("Rating"), true).unwrap()[0],
+            id("IMG_10.dng")
+        );
+        assert_eq!(
+            library
+                .photo_order(index("Capture Time"), false)
+                .unwrap()
+                .len(),
+            3
+        );
+    }
+
+    #[test]
     fn a_later_import_adds_only_its_own_photos() {
         let dir = tempfile::tempdir().unwrap();
         let library = open(dir.path());
@@ -488,5 +527,47 @@ mod tests {
         assert_eq!(fit(100, 50, 512), (100, 50));
         assert_eq!(fit(4000, 3000, 400), (400, 300));
         assert_eq!(fit(3000, 4000, 400), (300, 400));
+    }
+}
+
+/// A sort order the grid offers, as Lightroom names it.
+#[derive(uniffi::Record)]
+pub struct SortChoice {
+    /// What [`Library::photo_order`] takes.
+    pub index: u32,
+    pub name: String,
+}
+
+/// Lightroom's sort orders, in its menu's order (RAWmakase's
+/// [`Sort`](rawmakase_catalog::catalog::sort::Sort)).
+#[uniffi::export]
+pub fn sort_orders() -> Vec<SortChoice> {
+    rawmakase_catalog::catalog::sort::Sort::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, s)| SortChoice {
+            index: i as u32,
+            name: s.name().to_string(),
+        })
+        .collect()
+}
+
+#[uniffi::export]
+impl Library {
+    /// Every photo's id in sort order `sort` (from [`sort_orders`]), or the
+    /// other way round when `reverse`, as the desktop's grid sorts: photos
+    /// alike in it stay in capture order.
+    pub fn photo_order(&self, sort: u32, reverse: bool) -> Result<Vec<i64>, RenderError> {
+        use rawmakase_catalog::catalog::sort::Sort;
+        let sort = Sort::ALL.get(sort as usize).copied().unwrap_or_default();
+        let catalog = self.catalog();
+        let mut photos = catalog.photos()?;
+        // Capture order first, as the desktop's catalog lists them.
+        photos.sort_by(|a, b| (&a.captured, &a.filename).cmp(&(&b.captured, &b.filename)));
+        let keys = sort.keys(&catalog);
+        drop(catalog);
+        let mut indices: Vec<usize> = (0..photos.len()).collect();
+        sort.sort(&photos, &mut indices, &keys, reverse);
+        Ok(indices.into_iter().map(|i| photos[i].id.0).collect())
     }
 }

@@ -57,7 +57,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
       library, with edits (the desktop has both; M–L)
 - [x] Swipe between photos in the editor, in the grid's order
 - [ ] Compare and Survey views (M)
-- [ ] Sort orders, stacks, smart collections (M)
+- [x] Lightroom's sort orders, either way
+- [ ] Stacks (M)
 - [ ] Metadata (title, caption, creator, copyright) and keywords (M)
 - [ ] Virtual copies (M)
 - [ ] Delete photos, move and rename files and folders (M)
@@ -82,7 +83,7 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - **View:** zoom levels between Fit and 100%, photo info overlay, Reference
   View, camera thumbnail
 
-The desktop has no depth, object or people masks, no content-aware remove
+The desktop doesn't evaluate smart collections yet, and has no depth, object or people masks, no content-aware remove
 and no soft proofing, so they aren't gaps.
 
 ## Export, fuller

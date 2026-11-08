@@ -15,7 +15,11 @@ final class LibraryModel {
     /// 1 picked, -1 rejected, 0 unflagged; nil for any.
     var flagFilter: Int32?
     var labelFilter: String?
-    var byCaptureTime = true
+    /// The sort order (an index of [`sortOrders()`]) and its direction.
+    var sort: UInt32 = 0 { didSet { resort() } }
+    var reverse = false { didSet { resort() } }
+    /// Each photo's place in that order, from the core.
+    private var order: [Int64: Int] = [:]
 
     /// The photos the filters let through, in the chosen order.
     var shown: [LibraryPhoto] {
@@ -26,9 +30,7 @@ final class LibraryModel {
                 && (flagFilter.map { p.flag == $0 } ?? true)
                 && (labelFilter.map { p.label == $0 } ?? true)
         }
-        return byCaptureTime
-            ? kept.sorted { ($0.captured, $0.filename) < ($1.captured, $1.filename) }
-            : kept.sorted { $0.filename < $1.filename }
+        return kept.sorted { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }
     }
     /// What an import in progress has done, for the toolbar.
     private(set) var importing: String?
@@ -67,6 +69,7 @@ final class LibraryModel {
         do {
             photos = try await Task.detached { try library.photos() }.value
             collections = try await Task.detached { try library.collections() }.value
+            resort()
         } catch {
             self.error = "\(error)"
         }
@@ -161,11 +164,34 @@ final class LibraryModel {
         print("RATED \(photo.filename) \(stars)")
     }
 
+    /// `-sort-test`: the grid's first three photos in each order, then
+    /// back to Capture Time. Prints `SORT …`.
+    func sortTest() {
+        var lines: [String] = []
+        for choice in sortOrders() {
+            sort = choice.index
+            lines.append("\(choice.name): \(shown.prefix(3).map(\.filename).joined(separator: ", "))")
+        }
+        sort = 0
+        reverse = true
+        lines.append("Capture Time reversed: \(shown.prefix(1).map(\.filename).joined())")
+        reverse = false
+        print("SORT \(lines.joined(separator: " | "))")
+    }
+
+    /// Reads the order again from the core: after the order changes, and
+    /// after a rating, flag or label, which some orders sort by.
+    func resort() {
+        guard let library else { return }
+        let ids = (try? library.photoOrder(sort: sort, reverse: reverse)) ?? []
+        order = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
     func setFlag(_ photo: LibraryPhoto, to flag: Int32) {
         guard let library else { return }
         do {
             try library.setFlag(id: photo.id, flag: flag)
-            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].flag = flag }
+            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].flag = flag ; resort() }
         } catch { self.error = "\(error)" }
     }
 
@@ -173,7 +199,7 @@ final class LibraryModel {
         guard let library else { return }
         do {
             try library.setLabel(id: photo.id, label: label)
-            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].label = label }
+            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].label = label ; resort() }
         } catch { self.error = "\(error)" }
     }
 
@@ -193,7 +219,7 @@ final class LibraryModel {
         guard let library else { return }
         do {
             try library.setRating(id: photo.id, rating: rating)
-            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].rating = rating }
+            if let i = photos.firstIndex(where: { $0.id == photo.id }) { photos[i].rating = rating ; resort() }
         } catch {
             self.error = "\(error)"
         }

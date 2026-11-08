@@ -329,3 +329,13 @@ cleared.
 | --- | --- | --- |
 | Reset, then Clear History, saved and reopened | Mac, core test | the edit kept, no steps |
 | `-open 407A5994.CR3 -reset -clear-history -set-exposure 0.75 -save`, then relaunched | M1 iPad Pro | `EDIT exposure +0.75; steps ["Exposure +0.75"]; applied 1; unsaved false` both times: the photo the earlier test runs had edited, put back |
+
+## Sort orders (2026-11-08)
+
+The grid sorts by RAWmakase's own orders, moved into `rawmakase-catalog`
+on the fork for it, either way.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| File Name by digits' value, Rating reversed | Mac, core test | `a`, `IMG_9`, `IMG_10`; the five-star photo first |
+| `-sort-test` | M1 iPad Pro | each of the ten orders lists, Capture Time reversed starts with the newest |
