@@ -72,7 +72,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
   thumbnails; ratings, flags, colour labels,
   filters, Lightroom's sort orders, collections and the Quick Collection;
   title, caption, creator, copyright and keywords, and the camera info;
-  virtual copies.
+  virtual copies; deleting (to Recently Deleted), renaming and moving photos
+  and folders.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount; swiping to the next or previous photo; white balance presets and
   eyedropper; Auto; the point curve; Crop,
@@ -150,6 +151,7 @@ them after `--`):
 | `-sort-test` | Prints the grid's first photos in each sort order |
 | `-metadata-test` | Sets and reads back a title and a keyword on a test copy, with its camera info, then takes them off |
 | `-virtual-copy-test` | Makes a virtual copy of the test copy, renames it and removes it |
+| `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
 | `-photos-import-test` | Imports a copy of a catalog photo the way the Photos picker's originals come in; it must be found already there |
 | `-open <file>` | Opens a photo of the catalog in the editor |
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |

@@ -101,6 +101,10 @@ struct LibraryView: View {
                             .disabled(selected.isEmpty)
                     }
                     ToolbarItem(placement: .primaryAction) {
+                        Menu("Files", systemImage: "folder") { FileMenu(ids: Array(selected), photo: nil, model: model) }
+                            .disabled(selected.isEmpty)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button("Export", systemImage: "square.and.arrow.up") { exporting = true }
                             .disabled(selected.isEmpty)
                     }
@@ -159,6 +163,7 @@ struct LibraryView: View {
         }
         }
         .sheet(item: Bindable(model).info) { request in InfoSheet(model: model, ids: request.ids) }
+        .modifier(FileAlerts(model: model))
         .modifier(CopyAlerts(model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy))
         .onChange(of: path) { _, open in columns = open.isEmpty ? .automatic : .detailOnly }
         .task {
@@ -170,6 +175,7 @@ struct LibraryView: View {
             if args.contains("-sort-test") { model.sortTest() }
             if args.contains("-metadata-test") { model.metadataTest() }
             if args.contains("-virtual-copy-test") { await model.virtualCopyTest() }
+            if args.contains("-file-ops-test") { await model.fileOpsTest() }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,
@@ -290,6 +296,8 @@ struct PhotoMenu: View {
         }
         Button("Info…", systemImage: "info.circle") { model.info = InfoRequest(ids: [photo.id]) }
         CopyMenu(photo: photo, model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy)
+        Divider()
+        FileMenu(ids: [photo.id], photo: photo, model: model)
         if model.inQuickCollection(photo) {
             Button("Remove from Quick Collection", systemImage: "circle.slash") { model.setQuickCollection([photo.id], false) }
         } else {
@@ -329,6 +337,15 @@ struct LibrarySidebar: View {
             SwiftUI.Section("Collections") {
                 ForEach(model.collections, id: \.id) { c in
                     CollectionRow(collection: c).tag(Int64?.some(c.id))
+                }
+            }
+            if model.deletedFiles > 0 {
+                SwiftUI.Section {
+                    HStack {
+                        Label("Recently Deleted (\(model.deletedFiles))", systemImage: "trash")
+                        Spacer()
+                        Button("Empty") { model.fileRequest = .emptyDeleted }
+                    }
                 }
             }
         }

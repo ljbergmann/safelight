@@ -62,7 +62,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [x] Metadata (title, caption, creator, copyright), keywords and camera
       info, for one photo or several
 - [x] Virtual copies: create, rename, set as master, remove
-- [ ] Delete photos, move and rename files and folders (M)
+- [x] Delete photos (to Recently Deleted), remove from the library, rename
+      and move photos, new and renamed folders
 
 ## Then: the rest of Develop
 

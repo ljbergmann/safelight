@@ -40,6 +40,11 @@ final class LibraryModel {
     /// The virtual copy being renamed or removed, from its menu.
     var renamingCopy: LibraryPhoto?
     var removingCopy: LibraryPhoto?
+    /// A file operation waiting for a name or a yes.
+    var fileRequest: FileRequest?
+    /// The library's folders, for Move to Folder, and what Recently Deleted holds.
+    var folders: [FolderInfo] = []
+    var deletedFiles: UInt64 = 0
     /// The photos the Info sheet is open for.
     var info: InfoRequest?
     /// What the last import brought in and left out, for the toolbar.
@@ -74,6 +79,8 @@ final class LibraryModel {
         do {
             photos = try await Task.detached { try library.photos() }.value
             collections = try await Task.detached { try library.collections() }.value
+            folders = (try? library.folders()) ?? []
+            deletedFiles = library.recentlyDeletedSize().first ?? 0
             resort()
         } catch {
             self.error = "\(error)"

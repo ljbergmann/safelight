@@ -369,3 +369,27 @@ its file stays). The editor saves first and goes on with the copy.
 | --- | --- | --- |
 | A copy starts with the master's edit, keeps its own, survives Set Copy as Master; a master isn't removed; the file stays | Mac, core test | passes |
 | `-virtual-copy-test` on the test copy | M1 iPad Pro | `AITEST-407A5994.CR3 · Copy 1` of the same file, renamed `· Safelight test`; photos 54 → 55 → 54 |
+
+## Deleting, renaming and moving (2026-11-08)
+
+Through RAWmakase's file operations, which plan, journal every disk step
+and let the catalog follow only files proven where they went. iPadOS gives
+an app no system Trash, so deleted files go to Recently Deleted in the
+app's storage until it is emptied.
+
+The engine leaves RAWmakase's own data folder alone, and on the iPad the
+photo folder was inside it (`Application Support/RAWmakase/Photos`). It now
+lives beside it (`Application Support/Photos`): an existing library's
+folder is moved there once, by one rename, and the catalog follows it.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| Delete takes a master's virtual copies and fills Recently Deleted until emptied; Remove leaves the file; rename, new folder, move and folder rename keep the photo and its rating; the old layout moves out with its photos | Mac, core tests | pass |
+| First launch after the move | M1 iPad Pro | `LIBRARY 54 photos`; `407A5994.CR3` opens with `Exposure +0.75` |
+| `-file-ops-test` | M1 iPad Pro | new folder 2, back 2, rename 2, rename back 2 (the test copy with its virtual copy), remove copy 1; 54 photos |
+
+- **Found on the iPad:** every move and rename was refused as
+  `Protected`, the photo folder being inside RAWmakase's data folder; the
+  Mac's tests use a data folder elsewhere and didn't see it.
+- The test leaves an empty "Safelight Test" folder: file operations never
+  delete a folder.

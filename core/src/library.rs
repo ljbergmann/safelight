@@ -71,17 +71,20 @@ impl Library {
     pub fn open(data: String, caches: String) -> Result<std::sync::Arc<Self>, RenderError> {
         let data = PathBuf::from(data);
         let file = data.join("Catalog").join("Photos.rawmakase");
-        let photos = data.join("Photos");
+        // Beside the data folder, not in it: the photos are the user's
+        // files, and RAWmakase's file operations leave its own folders alone.
+        let photos = photo_folder(&data);
         let caches = PathBuf::from(caches);
         let thumbnails = caches.join("Thumbnails");
         let catalog = on_core_thread(move || {
+            move_out_of_data(&data, &photos)?;
             std::fs::create_dir_all(&photos).map_err(anyhow::Error::from)?;
             let mut catalog = if file.exists() {
                 Catalog::open(file.as_path())?
             } else {
                 Catalog::create(&file)?
             };
-            follow_container(&mut catalog, &photos)?;
+            follow_container(&mut catalog, &photos, &data)?;
             // A catalog made before raster masks existed can't keep a selection.
             catalog.upgrade_for_raster_masks()?;
             Ok((catalog, photos))
@@ -97,13 +100,17 @@ impl Library {
         let decoded = caches.join("Decoded");
         std::fs::create_dir_all(&decoded).map_err(|e| RenderError::from(anyhow::Error::from(e)))?;
         let ai = crate::ai::Ai::new(&decoded);
-        Ok(std::sync::Arc::new(Self {
+        let library = std::sync::Arc::new(Self {
             catalog: Mutex::new(catalog),
             photos,
             thumbnails,
             copied: Default::default(),
             ai,
-        }))
+        });
+        // What a crash cut short of a file operation, as the desktop decides
+        // it when it opens a catalog; what can't be decided waits.
+        library.recover_file_operations()?;
+        Ok(library)
     }
 
     /// The folder the app copies imported originals into, a folder per day.
@@ -290,6 +297,13 @@ impl Library {
         Ok(())
     }
 
+    /// The folder the catalog and the photo folder are in.
+    pub(crate) fn data_dir(&self) -> PathBuf {
+        self.photos
+            .parent()
+            .map_or_else(|| self.photos.clone(), Path::to_path_buf)
+    }
+
     /// The catalog, for the open photo's edit to load and save through the
     /// same connection.
     pub(crate) fn catalog(&self) -> std::sync::MutexGuard<'_, Catalog> {
@@ -319,15 +333,36 @@ impl Library {
 /// reinstalled, with the files moved along; the catalog still names the old
 /// one. A root whose folder is gone and was an earlier container's photo
 /// folder is relinked here, as the desktop's Find Missing Folder does.
-fn follow_container(catalog: &mut Catalog, photos: &Path) -> anyhow::Result<()> {
+fn follow_container(catalog: &mut Catalog, photos: &Path, data: &Path) -> anyhow::Result<()> {
     for (id, original, location) in catalog.roots()? {
         let at = PathBuf::from(location.unwrap_or(original));
-        if at != photos
-            && !at.exists()
-            && at.ends_with("Library/Application Support/RAWmakase/Photos")
-        {
+        // In the data folder, as before the photo folder moved out of it, or
+        // beside it, either in an earlier container.
+        // The data folder as the catalog stored it, resolved (/private/var).
+        let inside = |d: &Path| at == d.join("Photos");
+        let ours = inside(data)
+            || data.canonicalize().is_ok_and(|d| inside(&d))
+            || at.ends_with("Library/Application Support/RAWmakase/Photos")
+            || at.ends_with("Library/Application Support/Photos");
+        if at != photos && !at.exists() && ours {
             catalog.relink_root(id, photos)?;
         }
+    }
+    Ok(())
+}
+
+/// The library's photo folder for data folder `data`: "Photos" beside it.
+fn photo_folder(data: &Path) -> PathBuf {
+    data.parent().unwrap_or(data).join("Photos")
+}
+
+/// Moves a photo folder kept in the data folder, as before, out beside it:
+/// one rename on the same volume, which the catalog then follows
+/// ([`follow_container`]). Left where it is when `photos` is taken.
+fn move_out_of_data(data: &Path, photos: &Path) -> anyhow::Result<()> {
+    let old = data.join("Photos");
+    if old.is_dir() && !photos.exists() {
+        std::fs::rename(&old, photos)?;
     }
     Ok(())
 }
@@ -372,6 +407,34 @@ mod tests {
             dir.join("caches").display().to_string(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn the_photo_folder_moves_out_of_the_data_folder_with_its_photos() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        // The layout before: the photo folder inside the data folder.
+        let old = data.join("Photos").join("d");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::copy(&charts()[0], old.join("a.dng")).unwrap();
+        {
+            let mut catalog = Catalog::create(&data.join("Catalog/Photos.rawmakase")).unwrap();
+            catalog
+                .add_folder_with(&data.join("Photos"), &NewPhotoDefaults::default())
+                .unwrap();
+            let id = catalog.photos().unwrap()[0].id;
+            catalog
+                .set_metadata_of(&[(id, 3, 0, String::new())])
+                .unwrap();
+        }
+        let library = open(dir.path());
+        let folder = PathBuf::from(library.photos_folder());
+        assert!(!folder.starts_with(&data), "{}", folder.display());
+        assert!(!data.join("Photos").exists());
+        let photos = library.photos().unwrap();
+        assert_eq!(photos.len(), 1);
+        assert_eq!(photos[0].rating, 3);
+        assert!(Path::new(&photos[0].path).exists(), "{}", photos[0].path);
     }
 
     #[test]
@@ -480,8 +543,8 @@ mod tests {
         library.add_new_photos().unwrap();
         drop(library);
 
-        std::fs::create_dir_all(new.parent().unwrap()).unwrap();
-        std::fs::rename(&old, &new).unwrap();
+        // The whole container moves.
+        std::fs::rename(dir.path().join("A"), dir.path().join("B")).unwrap();
         let moved = Library::open(
             new.display().to_string(),
             dir.path().join("caches").display().to_string(),
@@ -490,7 +553,11 @@ mod tests {
         let photos = moved.photos().unwrap();
         assert_eq!(photos.len(), 1);
         assert!(Path::new(&photos[0].path).exists(), "{}", photos[0].path);
-        assert!(photos[0].path.starts_with(new.to_str().unwrap()));
+        assert!(
+            photos[0]
+                .path
+                .starts_with(new.parent().unwrap().to_str().unwrap())
+        );
     }
 
     #[test]
