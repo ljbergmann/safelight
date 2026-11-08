@@ -40,6 +40,8 @@ struct Requests {
     cropping: bool,
     /// Clipped shadows and highlights shown in blue and red.
     clipping: ClipOverlay,
+    /// Before/After: Before alone or beside the edit.
+    compare: crate::compare::Compare,
     /// A preset to apply, by id, once the photo is decoded.
     preset: Option<String>,
     /// The drawable's size in pixels.
@@ -392,6 +394,55 @@ impl LiveView {
             edit.as_mut()
                 .ok_or_else(no_photo)?
                 .apply_snapshot(id, image.as_deref())?
+        };
+        self.shared.request(|_| {});
+        Ok(skipped)
+    }
+
+    /// Shows Before alone or beside the edit, or the edit alone.
+    pub fn set_compare(&self, compare: crate::compare::Compare) {
+        self.shared.request(|r| r.compare = compare);
+    }
+
+    /// Copies or swaps settings between Before and the edit (copying to
+    /// the edit is one History step).
+    pub fn copy_before_after(&self, copy: crate::compare::BeforeAfterCopy) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.transfer(copy));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// History's Copy History Step Settings to Before.
+    pub fn before_from_step(&self, applied: u32) {
+        let copied = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.before_from_history(applied as usize));
+        if copied {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Copy Snapshot Settings to Before; returns what a snapshot from
+    /// Lightroom set that doesn't render here.
+    pub fn before_from_snapshot(&self, id: i64) -> Result<Vec<String>, RenderError> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let skipped = {
+            let mut edit = self.shared.edit();
+            edit.as_mut()
+                .ok_or_else(no_photo)?
+                .before_from_snapshot(id, image.as_deref())?
         };
         self.shared.request(|_| {});
         Ok(skipped)
@@ -1093,7 +1144,7 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
     loop {
-        let (open, zoom, cropping, preset, size, clipping) = {
+        let (open, zoom, cropping, preset, size, clipping, compare) = {
             let mut r = shared
                 .requests
                 .lock()
@@ -1112,6 +1163,12 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
                 r.preset.take(),
                 r.size,
                 r.clipping,
+                // The Crop tool shows the edit alone, as tools do on the desktop.
+                if r.cropping {
+                    crate::compare::Compare::Off
+                } else {
+                    r.compare
+                },
             )
         };
         screen.resize(size);
@@ -1172,9 +1229,19 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             screen.clear();
             continue;
         };
+        let before = (compare != crate::compare::Compare::Off)
+            .then(|| shared.edit().as_ref().map(OpenEdit::before_settings))
+            .flatten();
         let ai = ai_denoise(shared, p, &recipe);
+        let has_ai = ai.is_some();
         p.renderer.set_ai(ai);
-        match screen.show(p, &recipe, zoom, clipping) {
+        let shown = match (compare, &before) {
+            (crate::compare::Compare::BeforeOnly, Some(before)) => {
+                screen.show(p, before, None, compare, zoom, clipping, has_ai)
+            }
+            _ => screen.show(p, &recipe, before.as_ref(), compare, zoom, clipping, has_ai),
+        };
+        match shown {
             Ok(frame) => {
                 *shared
                     .histogram
@@ -1308,9 +1375,39 @@ struct Screen {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    fit: wgpu::Buffer,
-    /// A CPU render's pixels, uploaded for drawing.
-    upload: Option<wgpu::Texture>,
+    /// Where each side's texture goes in its pane: the edit's, then Before's.
+    fit: [wgpu::Buffer; 2],
+    /// A CPU render's pixels, uploaded for drawing: the edit's, then Before's.
+    upload: [Option<wgpu::Texture>; 2],
+    /// Before as last rendered beside the edit, kept while what it renders
+    /// stays the same, so editing the edit doesn't render it again.
+    before: Option<(BeforeKey, Side)>,
+}
+
+/// What a Before render depends on.
+#[derive(PartialEq)]
+struct BeforeKey {
+    image: *const CameraImage,
+    recipe: Recipe,
+    zoom: Zoom,
+    size: [u32; 2],
+    clipping: ClipOverlay,
+    ai: bool,
+}
+
+/// A side rendered for drawing: shown one texel per pixel when `actual`,
+/// else fitted to its pane.
+#[derive(Clone)]
+struct Side {
+    texture: wgpu::Texture,
+    actual: bool,
+}
+
+/// A side to draw: its texture, where it is laid out and the part of the
+/// view it shows in, in pixels.
+struct Paint<'a> {
+    side: &'a Side,
+    pane: crate::compare::Pane,
 }
 
 impl Screen {
@@ -1435,11 +1532,13 @@ impl Screen {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let fit = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Live view fit"),
-            size: 16,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
+        let fit = [(); 2].map(|()| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Live view fit"),
+                size: 16,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
         });
         Ok(Self {
             surface,
@@ -1451,7 +1550,8 @@ impl Screen {
             layout,
             sampler,
             fit,
-            upload: None,
+            upload: [None, None],
+            before: None,
         })
     }
 
@@ -1522,14 +1622,26 @@ impl Screen {
     /// Renders the photo for the drawable's size and draws it: the whole
     /// photo from the pyramid, or at 100% the region the view covers, as the
     /// desktop's Develop does.
+    /// Renders the edit with `recipe` and, beside it in a two-up `compare`
+    /// view, Before with `before` (rendered again only when what it shows
+    /// changed), then draws them.
+    #[allow(clippy::too_many_arguments)]
     fn show(
         &mut self,
         p: &mut Photo,
         recipe: &Recipe,
+        before: Option<&Recipe>,
+        compare: crate::compare::Compare,
         zoom: Zoom,
         clipping: ClipOverlay,
+        ai: bool,
     ) -> anyhow::Result<Shown> {
         let t = Instant::now();
+        let layout =
+            crate::compare::panes(compare, self.config.width as f32, self.config.height as f32);
+        let size = |pane: &crate::compare::Pane| {
+            [pane.area[2].max(1.) as u32, pane.area[3].max(1.) as u32]
+        };
         let g = Geometry::new(&p.image, recipe, 0);
         let uncropped = Geometry::new(
             &p.image,
@@ -1540,11 +1652,74 @@ impl Screen {
             },
             0,
         );
+        let (after, zoom, histogram, backend) =
+            self.render(p, recipe, zoom, clipping, size(&layout.after), false)?;
+        let before = match (before, layout.before) {
+            (Some(recipe), Some(pane)) => {
+                let key = BeforeKey {
+                    image: Arc::as_ptr(&p.image),
+                    recipe: recipe.clone(),
+                    zoom,
+                    size: size(&pane),
+                    clipping,
+                    ai,
+                };
+                let side = match self.before.take() {
+                    Some((kept, side)) if kept == key => side,
+                    _ => self.render(p, recipe, zoom, clipping, key.size, true)?.0,
+                };
+                self.before = Some((key, side.clone()));
+                Some((side, pane))
+            }
+            _ => {
+                self.before = None;
+                None
+            }
+        };
+        let render_ms = t.elapsed().as_secs_f64() * 1000.;
+
+        let t = Instant::now();
+        let (width, height) = (after.texture.width(), after.texture.height());
+        let mut paints = vec![Paint {
+            side: &after,
+            pane: layout.after,
+        }];
+        if let Some((side, pane)) = &before {
+            paints.push(Paint { side, pane: *pane });
+        }
+        self.draw(&paints);
+        Ok(Shown {
+            render_ms,
+            present_ms: t.elapsed().as_secs_f64() * 1000.,
+            backend,
+            width,
+            height,
+            full: [g.width, g.height],
+            zoom,
+            frame: [uncropped.oriented_width, uncropped.oriented_height],
+            histogram,
+        })
+    }
+
+    /// Renders one side `size` pixels large: the whole photo fitted, or at
+    /// 100% the region around `zoom`'s centre, which comes back kept inside
+    /// the photo. Before renders into slots of its own, so neither side is
+    /// drawn into a texture the other still shows.
+    fn render(
+        &mut self,
+        p: &mut Photo,
+        recipe: &Recipe,
+        zoom: Zoom,
+        clipping: ClipOverlay,
+        [width, height]: [u32; 2],
+        before: bool,
+    ) -> anyhow::Result<(Side, Zoom, Histogram, &'static str)> {
+        let g = Geometry::new(&p.image, recipe, 0);
         let (region, zoom) = match zoom {
             Zoom::Fit => (None, Zoom::Fit),
             Zoom::Actual { center_x, center_y } => {
-                let w = self.config.width.min(g.width);
-                let h = self.config.height.min(g.height);
+                let w = width.min(g.width);
+                let h = height.min(g.height);
                 let x = (center_x * g.width as f32 - w as f32 / 2.)
                     .round()
                     .clamp(0., (g.width - w) as f32) as u32;
@@ -1559,10 +1734,11 @@ impl Screen {
             }
         };
         let display = Display {
-            slot: if region.is_some() {
-                Slot::Region
-            } else {
-                Slot::Whole
+            slot: match (region.is_some(), before) {
+                (false, false) => Slot::Whole,
+                (true, false) => Slot::Region,
+                (false, true) => Slot::BeforeWhole,
+                (true, true) => Slot::BeforeRegion,
             },
             clipping,
             monitor: None,
@@ -1574,7 +1750,7 @@ impl Screen {
         let max_edge = if region.is_some() {
             0
         } else {
-            self.config.width.max(self.config.height)
+            width.max(height)
         };
         let out = p.renderer.render_to(
             &p.image,
@@ -1584,47 +1760,46 @@ impl Screen {
             Cancel::NEVER,
             Some(&display),
         )?;
-        let render_ms = t.elapsed().as_secs_f64() * 1000.;
-
-        let t = Instant::now();
         let (texture, backend, histogram) = match out {
             Output::Frame(frame) => (frame.texture, "GPU", *frame.histogram),
             Output::Pixels(pixels) => {
                 let histogram = pixels.histogram();
-                (self.upload_pixels(&pixels), "CPU", histogram)
+                (
+                    self.upload_pixels(&pixels, before as usize),
+                    "CPU",
+                    histogram,
+                )
             }
         };
-        let (width, height) = (texture.width(), texture.height());
-        self.draw(Some((&texture, region.is_some())));
-        Ok(Shown {
-            render_ms,
-            present_ms: t.elapsed().as_secs_f64() * 1000.,
-            backend,
-            width,
-            height,
-            full: [g.width, g.height],
-            zoom,
-            frame: [uncropped.oriented_width, uncropped.oriented_height],
-            histogram,
-        })
+        let side = Side {
+            texture,
+            actual: region.is_some(),
+        };
+        Ok((side, zoom, histogram, backend))
     }
 
     fn clear(&mut self) {
-        self.draw(None);
+        self.before = None;
+        self.draw(&[]);
     }
 
-    fn upload_pixels(&mut self, pixels: &rawmakase_model::rendered::Rendered) -> wgpu::Texture {
+    /// Uploads a CPU render into upload texture `index` (0 the edit's, 1
+    /// Before's).
+    fn upload_pixels(
+        &mut self,
+        pixels: &rawmakase_model::rendered::Rendered,
+        index: usize,
+    ) -> wgpu::Texture {
         let size = wgpu::Extent3d {
             width: pixels.width,
             height: pixels.height,
             depth_or_array_layers: 1,
         };
-        let reuse = self
-            .upload
+        let reuse = self.upload[index]
             .as_ref()
             .is_some_and(|t| t.width() == size.width && t.height() == size.height);
         if !reuse {
-            self.upload = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+            self.upload[index] = Some(self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Live view CPU render"),
                 size,
                 mip_level_count: 1,
@@ -1635,7 +1810,7 @@ impl Screen {
                 view_formats: &[],
             }));
         }
-        let texture = self.upload.clone().expect("made above");
+        let texture = self.upload[index].clone().expect("made above");
         let rgba: Vec<u8> = pixels
             .rgb8()
             .as_chunks::<3>()
@@ -1656,9 +1831,10 @@ impl Screen {
         texture
     }
 
-    /// Draws `texture` centred on a dark background, fitted to the surface,
-    /// or with one texel per pixel when `actual`; or only the background.
-    fn draw(&mut self, texture: Option<(&wgpu::Texture, bool)>) {
+    /// Draws each side's texture centred in its pane, fitted to it or with
+    /// one texel per pixel, and only within its clip, over a dark
+    /// background; with no sides, only the background.
+    fn draw(&mut self, paints: &[Paint<'_>]) {
         let target = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -1673,34 +1849,43 @@ impl Screen {
         };
         let view = target.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        let bind = texture.map(|(texture, actual)| {
-            let (w, h) = (self.config.width as f32, self.config.height as f32);
-            let (tw, th) = (texture.width() as f32, texture.height() as f32);
-            let fit = if actual { 1. } else { (w / tw).min(h / th) };
-            let scale = [tw * fit / w, th * fit / h, 0., 0.];
-            self.queue
-                .write_buffer(&self.fit, 0, bytemuck::cast_slice(&scale));
-            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Live view blit"),
-                layout: &self.layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &texture.create_view(&Default::default()),
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.fit.as_entire_binding(),
-                    },
-                ],
+        let (sw, sh) = (self.config.width as f32, self.config.height as f32);
+        let binds: Vec<_> = paints
+            .iter()
+            .zip(&self.fit)
+            .map(|(paint, fit)| {
+                let [_, _, w, h] = paint.pane.area;
+                let texture = &paint.side.texture;
+                let (tw, th) = (texture.width() as f32, texture.height() as f32);
+                let scale = if paint.side.actual {
+                    1.
+                } else {
+                    (w / tw).min(h / th)
+                };
+                let size = [tw * scale / w, th * scale / h, 0., 0.];
+                self.queue.write_buffer(fit, 0, bytemuck::cast_slice(&size));
+                self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Live view blit"),
+                    layout: &self.layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(
+                                &texture.create_view(&Default::default()),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: fit.as_entire_binding(),
+                        },
+                    ],
+                })
             })
-        });
+            .collect();
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Live view blit"),
@@ -1723,8 +1908,19 @@ impl Screen {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if let Some(bind) = &bind {
-                pass.set_pipeline(&self.pipeline);
+            pass.set_pipeline(&self.pipeline);
+            for (paint, bind) in paints.iter().zip(&binds) {
+                let [x, y, w, h] = paint.pane.area;
+                pass.set_viewport(x, y, w, h, 0., 1.);
+                // Within the surface, in whole pixels; an empty clip draws nothing.
+                let [cx, cy, cw, ch] = paint.pane.clip;
+                let (left, top) = (cx.clamp(0., sw) as u32, cy.clamp(0., sh) as u32);
+                let right = (cx + cw).clamp(0., sw) as u32;
+                let bottom = (cy + ch).clamp(0., sh) as u32;
+                if right <= left || bottom <= top {
+                    continue;
+                }
+                pass.set_scissor_rect(left, top, right - left, bottom - top);
                 pass.set_bind_group(0, bind, &[]);
                 pass.draw(0..4, 0..1);
             }

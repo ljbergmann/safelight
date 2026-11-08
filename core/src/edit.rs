@@ -84,6 +84,9 @@ pub(crate) struct OpenEdit {
     pub(crate) session: EditSession,
     /// The Amount of the preset applied last, while it shows.
     pub(crate) amount: Option<crate::transfer::AmountShown>,
+    /// The settings copied to Before ([`crate::compare`]); `None`, the
+    /// photo's starting settings. Not saved, as in Lightroom.
+    pub(crate) before: Option<Recipe>,
 }
 
 impl OpenEdit {
@@ -126,6 +129,7 @@ impl OpenEdit {
             metadata,
             session,
             amount: None,
+            before: None,
         })
     }
 

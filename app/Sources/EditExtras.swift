@@ -56,6 +56,11 @@ struct HistoryPanel: View {
         .buttonStyle(.plain)
         .font(.callout)
         .padding(.vertical, 3)
+        .contextMenu {
+            Button("Copy History Step Settings to Before", systemImage: "rectangle.lefthalf.inset.filled") {
+                model.live?.beforeFromStep(applied: UInt32(position))
+            }
+        }
     }
 }
 
@@ -89,6 +94,9 @@ struct SnapshotsPanel: View {
                     .contextMenu {
                         Button("Update with Current Settings", systemImage: "arrow.triangle.2.circlepath") {
                             act { try live().updateSnapshot(id: snapshot.id) }
+                        }
+                        Button("Copy Snapshot Settings to Before", systemImage: "rectangle.lefthalf.inset.filled") {
+                            act { note = try live().beforeFromSnapshot(id: snapshot.id).map { "Not rendered: \($0)" }.first }
                         }
                         Button("Rename…", systemImage: "pencil") { name = snapshot.name; renaming = snapshot }
                         Button("Delete", systemImage: "trash", role: .destructive) {

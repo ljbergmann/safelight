@@ -70,7 +70,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount; white balance presets and eyedropper; Auto; the point curve; Crop,
   Straighten, Rotate and Flip; Undo, Redo and a History you can step back
-  through; Snapshots.
+  through; Snapshots; Before/After, side by side or split.
 - **Masks and retouching**: brush (with the Pencil's pressure), linear and
   radial masks with their own sliders; Select Subject, Sky and Background;
   Heal and Clone.
@@ -82,7 +82,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
 - **Export** to JPEG, TIFF or PNG, and the share sheet.
 
 What's missing compared with the desktop, and what comes next (an import
-screen, the Photos library, Before/After, mask math, sync…), is in the
+screen, the Photos library, a loupe, sync…), is in the
 [roadmap](docs/ROADMAP.md). Measurements are in
 [MEASUREMENTS.md](MEASUREMENTS.md).
 
@@ -142,7 +142,7 @@ them after `--`):
 | `-open <file>` | Opens a photo of the catalog in the editor |
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |
 | `-set-exposure <stops>`, `-save` | Edits and saves, to check edits survive a relaunch |
-| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets and snapshots; masks and Heal; the AI models |
+| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets, snapshots and Before/After; masks and Heal; the AI models |
 | `-export <file>` | Exports a photo at full size, timed |
 | `-benchmark`, `-allocprobe`, `-thumbnails`, `-rate <file> <stars>` | Rendering and memory measurements, thumbnails, ratings |
 

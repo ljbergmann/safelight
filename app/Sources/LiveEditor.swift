@@ -15,7 +15,15 @@ final class LiveModel {
     /// until the drag ends.
     var dragging: (Control, Float)?
     /// The Crop tool is open; zoom and pan wait while it is.
-    var cropping = false { didSet { live?.setCropping(on: cropping); zoom = .fit } }
+    var cropping = false {
+        didSet {
+            live?.setCropping(on: cropping); zoom = .fit
+            // Tools work on the edit alone, as on the desktop.
+            if cropping && compare != .off { compare = .off }
+        }
+    }
+    /// Before/After: Before alone, beside the edit, or split across it.
+    var compare: Compare = .off { didSet { live?.setCompare(compare: compare) } }
     var cropAspect: CropAspect = .free
     /// The chosen ratio turned to portrait (the crop bar's Swap).
     var cropPortrait = false
@@ -25,7 +33,7 @@ final class LiveModel {
     var exporting = false
     /// What a touch on the photo does (masks, Heal); zoom and pan wait while
     /// a tool is open.
-    var tool: PhotoTool = .none
+    var tool: PhotoTool = .none { didSet { if tool != .none && compare != .off { compare = .off } } }
     var selectedMask: UInt32?
     var brushSize: Float = 0.04
     var brushFeather: Float = 0.5
@@ -56,6 +64,7 @@ final class LiveModel {
     private func open() {
         guard let live, let photo, let library else { return }
         zoom = .fit
+        live.setCompare(compare: compare)
         live.openPhoto(library: library, id: photo.id, path: photo.path, decode: size)
     }
 
@@ -99,8 +108,10 @@ final class LiveModel {
     func photoPoint(at location: CGPoint, in size: CGSize, scale: CGFloat) -> (Float, Float)? {
         guard let stats = live?.stats(), stats.fullWidth > 0 else { return nil }
         let (fw, fh) = (CGFloat(stats.fullWidth), CGFloat(stats.fullHeight))
-        let (w, h) = (size.width * scale, size.height * scale)
-        let (x, y) = (location.x * scale, location.y * scale)
+        // Within the edit's side of a Before/After view, as the core lays it out.
+        let area = afterArea(compare: compare, width: Float(size.width * scale), height: Float(size.height * scale)).map { CGFloat($0) }
+        let (w, h) = (area[2], area[3])
+        let (x, y) = (location.x * scale - area[0], location.y * scale - area[1])
         switch zoom {
         case .fit:
             let s = min(w / fw, h / fh)
@@ -199,6 +210,8 @@ struct LiveEditor: View {
                         CropOverlay(model: model, size: geometry.size)
                     } else if model.tool != .none {
                         PhotoToolOverlay(model: model, size: geometry.size)
+                    } else if model.compare != .off {
+                        CompareOverlay(model: model, size: geometry.size)
                     } else if model.selectedMask != nil, case .fit = model.zoom {
                         MaskOnPhoto(model: model, size: geometry.size)
                     }
@@ -212,6 +225,7 @@ struct LiveEditor: View {
             HStack(spacing: 18) {
                 Button("Crop", systemImage: "crop") { model.cropping.toggle() }
                     .foregroundStyle(model.cropping ? Color.accentColor : .primary)
+                BeforeAfterMenu(model: model)
                 Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
                     .disabled(!(model.edit?.canUndo ?? false))
                 Button("Redo", systemImage: "arrow.uturn.forward") { model.redo() }
@@ -341,6 +355,7 @@ struct LiveEditor: View {
         }
         if args.contains("-develop-test"), let live = model.live {
             await presetsAndSnapshotsTest(live)
+            await beforeAfterTest(live)
         }
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)
@@ -395,6 +410,39 @@ struct LiveEditor: View {
         } catch {
             print("SNAPSHOTS failed: \(error)")
         }
+    }
+
+    /// `-develop-test`, continued: each Before/After view, timed over a few
+    /// frames, and Copy and Swap, printing `COMPARE …`. Ends on the edit
+    /// alone, with what it copied taken back.
+    private func beforeAfterTest(_ live: LiveView) async {
+        var views: [String] = []
+        let all: [(String, Compare)] = [
+            ("before", .beforeOnly), ("left/right", .sideBySide(topBottom: false)),
+            ("top/bottom", .sideBySide(topBottom: true)), ("split", .split(topBottom: false, position: 0.3)),
+        ]
+        for (i, (name, view)) in all.enumerated() {
+            live.setCompare(compare: view)
+            let first = live.stats().frames
+            for _ in 0..<50 where live.stats().frames == first { try? await Task.sleep(for: .milliseconds(50)) }
+            let opened = live.stats()
+            // An edit beside Before: only the edit should render again.
+            let exposure = 0.2 + 0.1 * Float(i)
+            live.setControl(control: .param(index: 2), value: exposure, done: false)
+            for _ in 0..<50 where live.stats().frames == opened.frames { try? await Task.sleep(for: .milliseconds(50)) }
+            live.setControl(control: .param(index: 2), value: exposure, done: true)
+            let edited = live.stats()
+            views.append("\(name) \(Int(opened.renderMs)) ms, edited \(Int(edited.renderMs)) ms (frame \(edited.frames - opened.frames), \(edited.width)×\(edited.height))")
+        }
+        live.setCompare(compare: .off)
+        let steps = live.editState()?.steps.count ?? 0
+        live.copyBeforeAfter(copy: .afterToBefore)
+        live.setControl(control: .param(index: 2), value: -1, done: true)
+        live.copyBeforeAfter(copy: .swap)
+        let swapped = live.editState()
+        let exposure = swapped?.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
+        print("COMPARE \(views.joined(separator: "; ")); after Swap exposure \(exposure), last step \(swapped?.steps.last ?? ""), \((swapped?.steps.count ?? 0) - steps) new steps")
+        live.goToStep(applied: UInt32(steps))
     }
 
     /// `-ai-test`: installs any missing model, selects the subject and the

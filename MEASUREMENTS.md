@@ -243,3 +243,26 @@ preset of the same name and built-in presets are refused; Amount 0 is the
 photo as before, 100% is the preset again with no drift, and any other edit
 ends it; snapshots are this photo's, survive reopening, and an emptied name
 keeps the old one.
+
+## Before/After (2026-11-08)
+
+Same iPad and photo, `-develop-test`: each view opened, then Exposure moved
+beside it. Before renders in its own slots of the same renderer, as on the
+desktop, and is kept while what it shows is the same, so an edit renders
+only the edit's side.
+
+| View | Opening it (both sides) | An edit beside Before | The edit's render |
+| --- | --- | --- | --- |
+| Before Only | 10 ms | 10 ms | 1283×1924 |
+| Left / Right | 25 ms | 12 ms | 1028×1541 |
+| Top / Bottom | 43 ms | 18 ms | 1283×1924 |
+| Split (line at 30%) | 32 ms | 18 ms | 1283×1924 |
+
+Copy After Settings to Before, an edit, then Swap: the edit takes Before's
+Exposure back, as one step, "Swap Before and After Settings". The views
+themselves were not looked at on this run; the layout's arithmetic is a
+core test.
+
+- A fitted side renders at its pane's long edge, so Top / Bottom renders a
+  portrait photo larger than its half shows, as the single view does for a
+  photo narrower than the screen.

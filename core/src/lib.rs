@@ -10,6 +10,8 @@ mod alloc;
 #[global_allocator]
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 
+mod compare;
+pub use compare::{BeforeAfterCopy, Compare, after_area};
 mod controls;
 mod curve;
 pub use curve::CurveState;
