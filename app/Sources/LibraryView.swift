@@ -414,6 +414,11 @@ struct EditorView: View {
                     Button("Copy Settings…", systemImage: "doc.on.doc") { live.copying = true }
                     Button("Paste Settings", systemImage: "doc.on.clipboard") { live.paste() }
                         .disabled(!(live.copied || (model.library?.hasCopiedSettings() ?? false)))
+                    Button("Paste from Previous", systemImage: "arrow.uturn.backward.square") {
+                        _ = live.live?.pastePrevious()
+                        live.refresh()
+                    }
+                    .disabled(!(live.live?.hasPrevious() ?? false))
                     Button("Reset Settings", systemImage: "arrow.counterclockwise") { live.live?.reset(); live.refresh() }
                     Divider()
                     Button("Create Virtual Copy", systemImage: "plus.square.on.square") { copyAndOpen() }

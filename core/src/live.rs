@@ -733,6 +733,26 @@ impl LiveView {
         });
     }
 
+    /// Pastes the settings of the photo left last over this one's, as one
+    /// History step; returns what couldn't transfer as it was, or `None`
+    /// when there was nothing to paste.
+    pub fn paste_previous(&self) -> Option<Vec<String>> {
+        let notes = self.shared.edit().as_mut()?.paste_previous()?;
+        self.shared.request(|_| {});
+        Some(notes)
+    }
+
+    /// Whether Paste from Previous has a photo to take settings from.
+    pub fn has_previous(&self) -> bool {
+        self.shared.edit().as_ref().is_some_and(|e| {
+            e.library
+                .previous
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_some()
+        })
+    }
+
     /// Starts a Targeted Adjustment drag at `at` (fractions across the
     /// photo as shown): samples the photo there as each control sees it,
     /// then decides which sliders the drag moves. Takes a moment (it renders
@@ -1414,6 +1434,10 @@ impl Drop for LiveView {
     /// Only asks the worker to stop: it holds the surface and its own
     /// reference to the layer, so it may finish on its own time.
     fn drop(&mut self) {
+        // The photo left when the editor closes, for Paste from Previous.
+        if let Some(edit) = self.shared.edit().as_ref() {
+            edit.leave();
+        }
         self.shared.request(|r| r.quit = true);
     }
 }
@@ -1777,6 +1801,10 @@ fn open_photo(shared: &Shared, screen: &Screen, photo: &mut Option<Photo>, reque
             shared
                 .stats(|s| s.error = Some(format!("Not opened: the edit couldn't be saved: {e}")));
             return;
+        }
+        // The photo left, for the next one's Paste from Previous.
+        if let Some(edit) = shared.edit().as_ref() {
+            edit.leave();
         }
     }
     // Let go of the previous photo, its pyramid and its GPU copies before

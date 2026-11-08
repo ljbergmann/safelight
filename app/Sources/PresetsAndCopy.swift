@@ -17,11 +17,25 @@ struct PresetsPanel: View {
     @State private var deleting: PresetInfo?
     /// The Amount being dragged, shown instead of the core's until it ends.
     @State private var dragging: Float?
+    /// What the search field holds: the presets whose name or group has it.
+    @State private var search = ""
+
+    /// The starred presets' group, listed first, as the desktop's Favorites.
+    private static let favorites = "\u{2605} Favorites"
 
     private var groups: [(String, [PresetInfo])] {
-        Dictionary(grouping: library, by: \.group)
+        let starred = library.filter(\.favorite)
+        let byGroup = Dictionary(grouping: library, by: \.group)
             .map { ($0.key, $0.value) }
             .sorted { $0.0 < $1.0 }
+        return (starred.isEmpty ? [] : [(Self.favorites, starred)]) + byGroup
+    }
+
+    private var found: [PresetInfo] {
+        let words = search.trimmingCharacters(in: .whitespaces)
+        return library.filter {
+            $0.name.localizedCaseInsensitiveContains(words) || $0.group.localizedCaseInsensitiveContains(words)
+        }
     }
 
     /// The group open, by name; `nil`, the list of groups.
@@ -43,7 +57,31 @@ struct PresetsPanel: View {
             .padding(.bottom, 12)
             if let amount = model.edit?.presetAmount { amountSlider(amount).padding(.bottom, 12) }
             if let note { Text(note).font(.caption).foregroundStyle(Theme.secondaryText).padding(.bottom, 8) }
-            if let group, let items = groups.first(where: { $0.0 == group })?.1 {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(Theme.secondaryText)
+                TextField("Search presets", text: $search).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if !search.isEmpty {
+                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.secondaryText) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .padding(8)
+            .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.bottom, 10)
+            if !search.trimmingCharacters(in: .whitespaces).isEmpty {
+                let items = found
+                if items.isEmpty {
+                    Text("No preset or group is named so.").font(.callout).foregroundStyle(Theme.secondaryText)
+                }
+                TimelineView(.periodic(from: .now, by: 0.3)) { _ in
+                    VStack(spacing: 2) {
+                        ForEach(items.prefix(60), id: \.id) { preset in row(preset) }
+                    }
+                }
+                .task(id: search) {
+                    model.live?.requestPresetPreviews(ids: items.prefix(60).map(\.id), edge: 128)
+                }
+            } else if let group, let items = groups.first(where: { $0.0 == group })?.1 {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { self.group = nil }
                 } label: {
@@ -130,6 +168,12 @@ struct PresetsPanel: View {
 
     private static func name(of group: String) -> String { group.isEmpty ? "User Presets" : group }
 
+    private func star(_ preset: PresetInfo) {
+        act(preset.favorite ? "Removed from Favorites" : "Added to Favorites") {
+            try setPresetFavorite(id: preset.id, favorite: !preset.favorite)
+        }
+    }
+
     /// A preset: its preview on this photo, its name, and for one made here
     /// or imported, a menu; a tap applies it.
     private func row(_ preset: PresetInfo) -> some View {
@@ -154,6 +198,13 @@ struct PresetsPanel: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            Button { star(preset) } label: {
+                Image(systemName: preset.favorite ? "star.fill" : "star")
+                    .foregroundStyle(preset.favorite ? .yellow : Theme.secondaryText)
+                    .frame(width: 28, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(preset.favorite ? "Remove from Favorites" : "Add to Favorites")
             if preset.managed {
                 Menu {
                     Button("Update with Current Settings", systemImage: "arrow.triangle.2.circlepath") {

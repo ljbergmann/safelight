@@ -49,7 +49,7 @@ pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
 pub use targeted::TargetKind;
 pub use transfer::{
     CopyGroup, PresetAmountState, PresetInfo, copy_groups, delete_preset, import_presets,
-    preset_groups, presets, rename_preset,
+    preset_groups, presets, rename_preset, set_preset_favorite,
 };
 pub use wb::AutoKind;
 

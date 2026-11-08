@@ -40,6 +40,8 @@ pub struct PresetInfo {
     pub name: String,
     /// Made here or imported, so it may be updated, renamed and deleted.
     pub managed: bool,
+    /// Starred, for the Favorites list, as on the desktop.
+    pub favorite: bool,
 }
 
 /// The Amount slider of the preset just applied, while nothing else has
@@ -106,6 +108,45 @@ pub(crate) struct Clipboard {
 /// The library's copied settings.
 pub(crate) type Copied = Mutex<Option<Clipboard>>;
 
+/// The settings of the photo left last in the editor, for Paste from
+/// Previous: every group, as the desktop's.
+pub(crate) fn remember_previous(library: &Library, recipe: &Recipe, metadata: &Metadata) {
+    *library
+        .previous
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(Clipboard {
+        recipe: recipe.clone(),
+        metadata: metadata.clone(),
+        groups: GroupSelection::default(),
+    });
+}
+
+/// The previous photo's settings over `to`, as the desktop's Paste from
+/// Previous: the default groups. `None` with no previous photo, or when it
+/// is this one.
+pub(crate) fn paste_previous(
+    library: &Library,
+    to: &Recipe,
+    metadata: &Metadata,
+    profiles: &[Arc<rawmakase_model::camera_profiles::CameraProfile>],
+) -> Option<(Recipe, Vec<String>)> {
+    let previous = library
+        .previous
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let previous = previous.as_ref()?;
+    let out = settings_groups::transfer(
+        Source {
+            recipe: &previous.recipe,
+            metadata: &previous.metadata,
+        },
+        to,
+        &previous.groups,
+        Target { metadata, profiles },
+    );
+    Some((out.recipe, out.notes))
+}
+
 fn clipboard(library: &Library) -> std::sync::MutexGuard<'_, Option<Clipboard>> {
     library
         .copied
@@ -117,6 +158,7 @@ fn clipboard(library: &Library) -> std::sync::MutexGuard<'_, Option<Clipboard>> 
 #[uniffi::export]
 pub fn presets() -> Vec<PresetInfo> {
     let user = UserPresets::default();
+    let favorites = rawmakase_interop::presets::load_favorites();
     rawmakase_interop::presets::load_library()
         .presets
         .into_iter()
@@ -124,9 +166,24 @@ pub fn presets() -> Vec<PresetInfo> {
             name: rawmakase_interop::presets::display_name(&p.name),
             managed: user.manages(&p),
             group: p.group.clone(),
+            favorite: favorites.contains(&p.id),
             id: p.id.clone(),
         })
         .collect()
+}
+
+/// Stars preset `id` as a favorite, or takes its star away, in the
+/// favorites the desktop keeps too.
+#[uniffi::export]
+pub fn set_preset_favorite(id: String, favorite: bool) -> Result<(), RenderError> {
+    let mut favorites = rawmakase_interop::presets::load_favorites();
+    if favorite {
+        favorites.insert(id);
+    } else {
+        favorites.remove(&id);
+    }
+    rawmakase_interop::presets::save_favorites(&favorites)?;
+    Ok(())
 }
 
 /// The groups a new preset can go in: "User Presets" and the groups of

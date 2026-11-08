@@ -81,7 +81,6 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
   (duplicate and reset sliders are done)
 - **Retouch:** brushed spots, feather and opacity, moving or deleting a spot,
   Visualize Spots, Red Eye and Pet Eye
-- **Presets:** favorites and search, Paste from Previous
 - **View:** photo info overlay, Reference View, camera thumbnail (zooming
   to any scale between Fit and 100% is done)
 

@@ -70,6 +70,8 @@ pub struct Library {
     thumbnails: PathBuf,
     /// The settings Copy Settings copied last, for Paste.
     pub(crate) copied: crate::transfer::Copied,
+    /// The photo left last in the editor, for Paste from Previous.
+    pub(crate) previous: crate::transfer::Copied,
     /// AI Denoise and the selection models.
     pub(crate) ai: crate::ai::Ai,
 }
@@ -116,6 +118,7 @@ impl Library {
             photos,
             thumbnails,
             copied: Default::default(),
+            previous: Default::default(),
             ai,
         });
         // What a crash cut short of a file operation, as the desktop decides

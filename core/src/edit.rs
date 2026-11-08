@@ -484,6 +484,31 @@ impl OpenEdit {
         Some(notes)
     }
 
+    /// The settings of the photo left last pasted over this one's, as the
+    /// desktop's Paste from Previous: one History step. `None` with no
+    /// previous photo, or nothing to change.
+    pub(crate) fn paste_previous(&mut self) -> Option<Vec<String>> {
+        self.session.finish_gesture();
+        let (recipe, notes) = crate::transfer::paste_previous(
+            &self.library,
+            self.session.recipe(),
+            &self.metadata,
+            &self.profiles,
+        )?;
+        recipe.validate().ok()?;
+        if recipe == *self.session.recipe() {
+            return None;
+        }
+        self.session
+            .change(Some(Step::new("Paste from Previous", "")), |r| *r = recipe);
+        Some(notes)
+    }
+
+    /// Keeps this photo's settings for the next photo's Paste from Previous.
+    pub(crate) fn leave(&self) {
+        crate::transfer::remember_previous(&self.library, self.session.recipe(), &self.metadata);
+    }
+
     /// A change made outside a drag (a new mask, a stroke, a spot), as one
     /// History step named `name` `value`, kept only if the result is valid.
     pub(crate) fn change(&mut self, name: &str, value: &str, change: impl FnOnce(&mut Recipe)) {
@@ -1334,6 +1359,35 @@ pub(crate) mod tests {
             !edit.start_targeted(TargetKind::Hue, &skin, &sampled),
             "stale sample"
         );
+    }
+
+    #[test]
+    fn paste_from_previous_takes_the_photo_left_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        // A second photo beside the first.
+        let other = path.with_file_name("other.dng");
+        std::fs::copy(&path, &other).unwrap();
+        library.add_new_photos().unwrap();
+        let other_id = library
+            .photos()
+            .unwrap()
+            .iter()
+            .find(|p| p.id != id)
+            .unwrap()
+            .id;
+
+        let mut first = open(&library, id, &path);
+        let exposure = Control::Param { index: 2 };
+        first.set(exposure, 0.8, true);
+        let mut second = open(&library, other_id, &other);
+        assert_eq!(second.paste_previous(), None, "no photo left yet");
+        first.leave();
+        let wanted = first.recipe().exposure;
+        assert!(second.paste_previous().is_some());
+        assert_eq!(second.recipe().exposure, wanted);
+        assert_eq!(second.state().steps.last().unwrap(), "Paste from Previous");
+        assert_eq!(second.paste_previous(), None, "nothing more to change");
     }
 
     #[test]
