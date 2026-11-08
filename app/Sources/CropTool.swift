@@ -26,6 +26,21 @@ struct CropRect: Equatable {
 }
 
 /// Where a crop drag started: which handle, or inside to move it.
+extension CropOverlay {
+    /// Keeps `frame` to the drawn frame's size while the tool is open: the
+    /// photo may still be loading, or showing its cropped frame, when it
+    /// opens.
+    fileprivate func follow() async {
+        while !Task.isCancelled {
+            if let s = model.live?.stats() {
+                let now = CGSize(width: CGFloat(s.frameWidth), height: CGFloat(s.frameHeight))
+                if now != frame { frame = now }
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+}
+
 private enum Handle {
     case corner(left: Bool, top: Bool)
     case side(Edge)
@@ -41,10 +56,12 @@ struct CropOverlay: View {
 
     @State private var start: (Handle, CropRect)?
     @State private var shown: CropRect?
+    /// The size of the frame on screen, in pixels: the whole straightened
+    /// photo once the Crop tool's first frame is drawn. Followed by `follow`,
+    /// as the core's frame stats aren't something SwiftUI watches.
+    @State private var frame = CGSize.zero
 
     var body: some View {
-        let stats = model.live?.stats()
-        let frame = CGSize(width: CGFloat(stats?.frameWidth ?? 0), height: CGFloat(stats?.frameHeight ?? 0))
         let photo = fitted(frame)
         let crop = shown ?? CropRect(model.edit?.crop ?? [0, 0, 1, 1])
         let rect = CGRect(
@@ -83,6 +100,8 @@ struct CropOverlay: View {
             }
         }
         .contentShape(Rectangle())
+        .opacity(frame.width > 0 ? 1 : 0)
+        .task { await follow() }
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in drag(value, photo: photo, rect: rect, crop: crop) }
