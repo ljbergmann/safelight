@@ -33,8 +33,8 @@ func curve(_ x0: CGFloat, _ y0: CGFloat, _ cx: CGFloat, _ cy: CGFloat, _ x1: CGF
 fill(CGPath(rect: CGRect(x: 0, y: 0, width: 1024, height: 1024), transform: nil), 0x1d1b1b)
 // The lamp, centred: it spans y 140 to 652 before the move.
 ctx.translateBy(x: 0, y: 116)
-// The cord.
-fill(rounded(500, 140, 24, 160, 12), 0x4a4340)
+// The cord, up to the top edge.
+fill(rounded(500, -200, 24, 500, 12), 0x4a4340)
 // The shade: the upper half of a circle about (512, 540).
 let shade = CGMutablePath()
 shade.addArc(center: CGPoint(x: 512, y: 540), radius: 250, startAngle: .pi, endAngle: 2 * .pi, clockwise: false)
