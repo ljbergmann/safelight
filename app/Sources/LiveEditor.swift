@@ -370,6 +370,7 @@ struct LiveEditor: View {
                 }
             }
             .background(Theme.canvas)
+            .overlay { openError }
             .overlay(alignment: .bottomLeading) { status.padding(12) }
             .overlay(alignment: .bottomTrailing) {
                 if model.pane == .masks && model.compare == .off {
@@ -704,6 +705,24 @@ struct LiveEditor: View {
     /// `-stats`, what rendering costs. Also picks up the edit once it has
     /// loaded, and AI Denoise's progress, which arrive from the core on
     /// their own.
+    /// Why the photo couldn't be opened, over where it would be: a file the
+    /// decoder can't read, or one that is damaged or missing.
+    private var openError: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            if let error = model.live?.stats().error {
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle").font(.largeTitle)
+                    Text("This photo can't be opened").font(.headline)
+                    Text(error).font(.callout).multilineTextAlignment(.center)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                .padding(24)
+                .frame(maxWidth: 420)
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
     private var status: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
             let _ = (model.edit == nil || model.edit?.aiDenoise != nil) ? model.refresh() : ()
