@@ -84,7 +84,7 @@ pub enum Switch {
     AiDenoise,
 }
 
-#[derive(uniffi::Record)]
+#[derive(uniffi::Record, Clone)]
 pub struct SliderState {
     pub control: Control,
     pub label: String,
@@ -639,6 +639,46 @@ pub(crate) fn mask_sliders(
         .collect()
 }
 
+/// Mask `mask`'s sliders grouped as Lightroom for iPad's Masking panel
+/// groups them: the mask itself (Amount, a range's sliders), then Light,
+/// Color, Effects and Detail. RAWmakase's masks have no Optics.
+pub(crate) fn mask_sections(
+    r: &Recipe,
+    photo: &Metadata,
+    mask: u32,
+    start: &Recipe,
+) -> Vec<Section> {
+    use rawmakase_model::model::params::LocalParameterId as L;
+    let group_of = |c: &Control| -> &'static str {
+        let Control::Mask { index, .. } = c else {
+            return "Mask";
+        };
+        match crate::masks::LOCAL.get(*index as usize) {
+            Some(
+                L::Exposure | L::Contrast | L::Highlights | L::Shadows | L::Whites | L::Blacks,
+            ) => "Light",
+            Some(L::Texture | L::Clarity | L::Dehaze) => "Effects",
+            Some(L::Sharpness | L::Noise) => "Detail",
+            _ => "Color",
+        }
+    };
+    let sliders = mask_sliders(r, photo, mask, start);
+    ["Mask", "Light", "Color", "Effects", "Detail"]
+        .into_iter()
+        .map(|g| Section {
+            group: g.to_string(),
+            title: g.to_string(),
+            switches: vec![],
+            sliders: sliders
+                .iter()
+                .filter(|s| group_of(&s.control) == g)
+                .cloned()
+                .collect(),
+        })
+        .filter(|s| !s.sliders.is_empty())
+        .collect()
+}
+
 /// What `r`'s sliders reset to: `start`, the photo's starting settings,
 /// with `r`'s masks as new masks of the same shapes, so a mask's sliders
 /// go back to a new mask's values.
@@ -995,5 +1035,31 @@ mod tests {
             .filter(|c| matches!(c.control, Control::Param { .. }))
             .count();
         assert!(params >= 50, "{params}");
+    }
+
+    #[test]
+    fn a_masks_sliders_group_as_lightrooms_masking_panel() {
+        let mut r = Recipe::default();
+        r.masks.push(Default::default());
+        let shown = mask_sections(&r, &Metadata::default(), 0, &Recipe::default());
+        let titles: Vec<&str> = shown.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, ["Mask", "Light", "Color", "Effects", "Detail"]);
+        let labels = |t: &str| -> Vec<String> {
+            shown
+                .iter()
+                .find(|s| s.title == t)
+                .unwrap()
+                .sliders
+                .iter()
+                .map(|s| s.label.clone())
+                .collect()
+        };
+        assert_eq!(labels("Light").len(), 6);
+        assert!(labels("Detail").iter().any(|l| l == "Noise"));
+        let all: usize = shown.iter().map(|s| s.sliders.len()).sum();
+        assert_eq!(
+            all,
+            mask_sliders(&r, &Metadata::default(), 0, &Recipe::default()).len()
+        );
     }
 }

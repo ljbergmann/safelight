@@ -157,7 +157,7 @@ them after `--`):
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |
 | `-set-exposure <stops>`, `-save` | Edits and saves, to check edits survive a relaunch |
 | `-reset`, `-clear-history` (with `-open`) | Resets the edit to the photo's starting settings, then clears History, before any `-set-exposure`: for putting a photo back |
-| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets, snapshots and Before/After; masks and Heal; the AI models. The first two go back to the edit as opened, but their steps stay in History; use them on a copy of a photo |
+| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets, snapshots and Before/After; masks and Heal; the AI models. The first two go back to the edit as opened (unless `-keep`, to look at what they did), but their steps stay in History; use them on a copy of a photo |
 | `-loupe-test` (with `-open`) | Swipes to the next photo and back, waiting for each one's own edit |
 | `-export <file>` | Exports a photo at full size, timed |
 | `-benchmark`, `-allocprobe`, `-thumbnails`, `-rate <file> <stars>` | Rendering and memory measurements, thumbnails, ratings |

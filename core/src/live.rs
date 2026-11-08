@@ -696,6 +696,15 @@ impl LiveView {
     }
 
     /// The sliders of mask `index`'s adjustment.
+    /// Mask `index`'s sliders, grouped as the Masking panel shows them.
+    pub fn mask_sections(&self, index: u32) -> Vec<crate::controls::Section> {
+        let edit = self.shared.edit();
+        let Some(edit) = edit.as_ref() else {
+            return vec![];
+        };
+        crate::controls::mask_sections(edit.recipe(), &edit.metadata, index, &edit.start)
+    }
+
     pub fn mask_sliders(&self, index: u32) -> Vec<crate::controls::SliderState> {
         let edit = self.shared.edit();
         let Some(edit) = edit.as_ref() else {

@@ -107,7 +107,8 @@ and no soft proofing, so they aren't gaps.
       chosen on a rail); Edit's groups (Light, Color, Effects,
       Detail, Optics) and Crop are; Presets (with previews on
       the photo) and Heal are; the mask list floats over
-      the photo; Cancel and Apply for tools; a double tap resets a slider
+      the photo; Cancel and Apply for tools; a double tap resets a slider; masks grouped as
+      Lightroom's Masking panel, with a preview each and an overlay colour
 - [ ] AI Denoise on CoreML (GPU / Neural Engine); measure against the CPU (S–M)
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views

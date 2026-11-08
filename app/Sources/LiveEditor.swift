@@ -72,8 +72,13 @@ final class LiveModel {
     var selecting: AiSelection?
     /// An Auto estimate running.
     var autoRunning: AutoKind?
-    /// Show the selected mask in red over the photo, as Lightroom's overlay.
+    /// Show the selected mask over the photo, in its colour, as
+    /// Lightroom's overlay.
     var showMaskOverlay = true
+    /// Each mask's overlay colour, by index, as chosen in the Masks panel.
+    var maskColors: [UInt32: MaskColor] = [:]
+    /// Each mask's coverage drawn small, for the list beside the photo.
+    var maskThumbs: [UInt32: UIImage] = [:]
     var selectionError: String?
     /// The model whose download the install sheet offers.
     var offeredModel: AiModel?
@@ -96,6 +101,8 @@ final class LiveModel {
         cropping = false
         tool = .none
         selectedMask = nil
+        maskColors = [:]
+        maskThumbs = [:]
         pasteNote = nil
         zoom = .fit
         live.setCompare(compare: compare)
@@ -386,7 +393,9 @@ struct LiveEditor: View {
             await presetsAndSnapshotsTest(live)
             await beforeAfterTest(live)
         }
-        if args.contains("-develop-test") || args.contains("-mask-test") {
+        // -keep leaves what the tests did, to look at; never on a photo you
+        // keep, as ending the app saves it.
+        if (args.contains("-develop-test") || args.contains("-mask-test")) && !args.contains("-keep") {
             model.live?.goToStep(applied: opened)
             model.refresh()
             print("TESTS DONE: back to the edit as opened (\(opened) steps applied)")
@@ -676,6 +685,8 @@ struct SliderRow: View {
         case "Temp": return [Color(red: 0.25, green: 0.45, blue: 0.95), Color(red: 0.95, green: 0.85, blue: 0.3)]
         case "Tint": return [Color(red: 0.3, green: 0.75, blue: 0.3), Color(red: 0.85, green: 0.3, blue: 0.8)]
         case "Vibrance", "Saturation": return [Color(white: 0.5), Color(red: 0.9, green: 0.35, blue: 0.2)]
+        // A mask's Hue shifts round the wheel.
+        case "Hue": return [.red, .yellow, .green, .cyan, .blue, .purple, .red]
         default: return []
         }
     }
