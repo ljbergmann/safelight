@@ -175,7 +175,7 @@ struct PresetsPanel: View {
                 Spacer()
                 Text("\(Int((shown * 100).rounded()))").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
             }
-            ThinSlider(value: shown, range: 0...2) { value, done in
+            ThinSlider(value: shown, range: 0...2, reset: resetAmount) { value, done in
                 if done {
                     model.live?.setPresetAmount(amount: value, done: true)
                     dragging = nil
@@ -187,11 +187,13 @@ struct PresetsPanel: View {
             }
         }
         .contentShape(Rectangle())
-        // A double tap goes back to the preset as applied, 100%.
-        .simultaneousGesture(TapGesture(count: 2).onEnded {
-            model.live?.setPresetAmount(amount: 1, done: true)
-            model.refresh()
-        })
+        .onTapGesture(count: 2) { resetAmount() }
+    }
+
+    /// A double tap: back to the preset as applied, 100%.
+    private func resetAmount() {
+        model.live?.setPresetAmount(amount: 1, done: true)
+        model.refresh()
     }
 
     /// Runs a change to the preset library, says how it went and lists the

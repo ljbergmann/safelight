@@ -698,16 +698,19 @@ struct SliderRow: View {
                 Spacer()
                 Text(slider.text).font(.callout.monospacedDigit())
             }
-            ThinSlider(value: shown, range: slider.min...slider.max, track: track) { value, done in
+            ThinSlider(value: shown, range: slider.min...slider.max, track: track, reset: reset) { value, done in
                 model.set(slider.control, to: snapped(value), done: done)
             }
         }
         .contentShape(Rectangle())
-        // A double tap goes back to where the photo started: Temp and Tint
-        // as shot, a mask's sliders as a new mask's.
-        .simultaneousGesture(TapGesture(count: 2).onEnded {
-            model.set(slider.control, to: slider.reset, done: true)
-        })
+        // On the label too, as on the track.
+        .onTapGesture(count: 2) { reset() }
+    }
+
+    /// Back to where the photo started: Temp and Tint as shot, a mask's
+    /// sliders as a new mask's.
+    private func reset() {
+        model.set(slider.control, to: slider.reset, done: true)
     }
 
     /// The value being dragged, else the edit's.

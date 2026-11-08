@@ -521,16 +521,26 @@ struct AspectShape: View {
 
 /// A slider as the panel shows it: a thin track and a small knob. A drag
 /// moves the value by how far the finger goes, wherever it starts, so a
-/// touch never jumps it; one drag is one History step.
+/// touch never jumps it; one drag is one History step. Two touches that
+/// don't move, close together, are a double tap and call `reset`: told
+/// apart here, by the one gesture that takes every touch on the track,
+/// rather than by a second recognizer that touch would have to win.
 struct ThinSlider: View {
     let value: Float
     let range: ClosedRange<Float>
     /// Colours along the track, as Temp's blue to yellow; plain without.
     var track: [Color] = []
+    var reset: (() -> Void)?
     let changed: (Float, Bool) -> Void
     @State private var start: Float?
+    /// When a touch that didn't move last ended, for the double tap.
+    @State private var lastTap: Date?
 
     private static let knob: CGFloat = 16
+    /// How far a touch may move and still be a tap, in points.
+    private static let tapSlop: CGFloat = 6
+    /// How soon the second tap must follow the first.
+    private static let doubleTap: TimeInterval = 0.45
 
     var body: some View {
         GeometryReader { geometry in
@@ -555,6 +565,15 @@ struct ThinSlider: View {
                         changed(moved(drag.translation.width, travel: travel, span: span), false)
                     }
                     .onEnded { drag in
+                        let tapped = abs(drag.translation.width) < Self.tapSlop
+                            && abs(drag.translation.height) < Self.tapSlop
+                        if tapped, let last = lastTap, Date().timeIntervalSince(last) < Self.doubleTap, let reset {
+                            lastTap = nil
+                            start = nil
+                            reset()
+                            return
+                        }
+                        lastTap = tapped ? Date() : nil
                         changed(moved(drag.translation.width, travel: travel, span: span), true)
                         start = nil
                     }
