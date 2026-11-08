@@ -155,3 +155,32 @@ folder from the Mac (`devicectl`, 44 s), plus the three earlier test files.
   not tried by hand anywhere yet.
 - Capture times aren't read at import (the desktop fills them in the
   background, in `catalog_session`), so the grid is in file-name order.
+
+## Stage 5: editing with History, saved to the catalog (2026-11-08)
+
+The editor shows six Basic sliders (Exposure, Contrast, Highlights, Shadows,
+Temp, Tint) as RAWmakase's model describes them (`ParameterId::descriptor`:
+label, range, drag step, value text), changes them through
+`model::edit::change_setting` and keeps the edit in RAWmakase's own
+`EditSession`, moved into `crates/rawmakase-edit-session` on the fork for
+this. A drag is one History step, named as the desktop names it.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| Drag Exposure, go to the home screen, kill the app, relaunch | simulator, by hand | Exposure +1.60 and its History step back, "Saved" |
+| `-open 407A5994.CR3 -set-exposure 0.75 -save`, kill, relaunch | M1 iPad Pro | `EDIT exposure +0.75; steps ["Exposure +0.75"]; applied 1; unsaved false` |
+| The iPad's catalog on the Mac (its photo folder relinked with `relink_root`), `rawmakase render --catalog` | Mac, desktop command line | byte-for-byte the same PNG as `rawmakase render --exposure 0.75`; different from the unedited render |
+| Core tests (`cargo test` in `core/`) | Mac | 14 pass: a drag is one named step and survives reopening; a drag a save finishes keeps its name; an Undo is saved with its Redo; values are clamped to the slider; Temp moves the white balance; a failed save keeps the edit unsaved and says why; photos are found after the container moves |
+| The fork's `make check`, with the edit session moved | Mac | passes (run with an empty `HOME`; with this Mac's own data two tests fail on `main` too, as they read installed lens profiles and AI Denoise's model) |
+
+- **Saving:** leaving the editor saves first, and stays with an alert if
+  the save fails. Resigning active and entering the background both save:
+  SwiftUI's scene phase doesn't reach a view inside the navigation stack, so
+  the app listens to UIKit's notifications.
+- **Found by the simulator:** reinstalling the app moved its container, and
+  the catalog's photo folder pointed at the old path ("No such file or
+  directory"). The core now relinks a root that was an earlier container's
+  photo folder, as the desktop's Find Missing Folder does.
+- **Found by the simulator:** the app went to the background before the
+  slider reported the end of the drag; the save finished the drag, unnamed
+  ("Edit"). Steps are now named on every frame of a drag.

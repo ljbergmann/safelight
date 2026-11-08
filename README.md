@@ -69,11 +69,14 @@ neither side reads installed profiles).
 - Stage 4: a RAWmakase catalog (the desktop's format) in the app's storage:
   import from the Files app, a thumbnail grid, star ratings, and the live
   editor from the grid; it all survives a relaunch.
+- Stage 5: six Basic sliders, Undo and Redo, and History, kept by
+  RAWmakase's own edit session and saved to the catalog when leaving the
+  photo or the app; the desktop renders the iPad's edit the same.
 
 Launch options for measuring without touching the screen: `-import-documents`
 (move the RAWs in Documents into the catalog), `-thumbnails`, `-rate <file>
 <stars>`, `-open <file>` with `-sweep` or `-pan` (and `-full`), `-benchmark`,
-`-allocprobe`.
+`-allocprobe`, `-set-exposure <stops>` and `-save` (with `-open`).
   `-open <photo> -sweep [-full]` and `-open <photo> -pan [-full]` measure it (with `devicectl`, put the app's
   arguments after `--`).
 

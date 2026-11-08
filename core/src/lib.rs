@@ -9,7 +9,9 @@ mod alloc;
 #[global_allocator]
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 
+mod edit;
 mod library;
+pub use edit::{EditState, Param, ParamValue};
 mod live;
 pub use library::{Added, Library, LibraryPhoto};
 mod render;

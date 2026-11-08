@@ -1,25 +1,27 @@
 //! Stage 3: a live preview drawn straight into the app's Metal layer.
 //!
 //! One worker thread owns everything GPU: the wgpu device, shared by the
-//! engine's [`PreviewRenderer`] and a surface on the view's `CAMetalLayer`, the
-//! open photo and its recipe. Swift only posts requests (open a photo, move a
-//! slider, resize) and reads [`FrameStats`]. Requests are latest-only, as the
+//! engine's [`PreviewRenderer`] and a surface on the view's `CAMetalLayer`, and
+//! the open photo's decoded image. The photo's edit ([`OpenEdit`]) is shared:
+//! Swift changes it through this view, and the worker renders whatever it
+//! holds. Swift only posts requests (open a photo, move a slider, resize) and
+//! reads [`FrameStats`]. Requests are latest-only, as the
 //! desktop's render worker: a render runs to the end, and the next one uses
 //! whatever was asked for meanwhile, so a slider dragged faster than the GPU
 //! renders skips the values in between instead of queueing them.
 
+use crate::edit::{EditState, OpenEdit, Param};
+use crate::library::Library;
 use crate::render::{DecodeSize, RenderError, STACK_BYTES};
 use rawmakase_cancel::Cancel;
 use rawmakase_engine::develop::gpu::{self, Display, Processor, Slot};
 use rawmakase_engine::develop::quality::Output;
 use rawmakase_engine::develop::{Geometry, PreviewRenderer};
-use rawmakase_interop::edits::{EditRecord, resolve};
-use rawmakase_interop::raw_defaults::DevelopDefaults;
 use rawmakase_model::camera_data::{CameraImage, Decode};
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::rendered::ClipOverlay;
 use std::collections::VecDeque;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -27,9 +29,8 @@ use std::time::Instant;
 /// What the worker has been asked for and not yet done.
 #[derive(Default)]
 struct Requests {
-    /// A photo to open, replacing the current one.
-    open: Option<(String, DecodeSize)>,
-    exposure: f32,
+    /// A photo of the catalog to open, replacing the current one.
+    open: Option<OpenRequest>,
     zoom: Zoom,
     /// The drawable's size in pixels.
     size: [u32; 2],
@@ -48,6 +49,13 @@ pub enum Zoom {
     /// photo given as fractions of its width and height. With a half-size
     /// decode, a pixel of the half-size image.
     Actual { center_x: f32, center_y: f32 },
+}
+
+struct OpenRequest {
+    library: Arc<Library>,
+    id: i64,
+    path: PathBuf,
+    decode: DecodeSize,
 }
 
 /// What the last frames cost, for the app to show.
@@ -84,9 +92,15 @@ struct Shared {
     requests: Mutex<Requests>,
     wake: Condvar,
     stats: Mutex<FrameStats>,
+    /// The open photo's edit, once it has loaded.
+    edit: Mutex<Option<OpenEdit>>,
 }
 
 impl Shared {
+    fn edit(&self) -> std::sync::MutexGuard<'_, Option<OpenEdit>> {
+        self.edit.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     fn request(&self, change: impl FnOnce(&mut Requests)) {
         let mut r = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
         change(&mut r);
@@ -121,6 +135,7 @@ impl LiveView {
             }),
             wake: Condvar::new(),
             stats: Mutex::new(FrameStats::default()),
+            edit: Mutex::new(None),
         });
         let worker_shared = shared.clone();
         let worker = std::thread::Builder::new()
@@ -149,20 +164,57 @@ impl LiveView {
         }))
     }
 
-    /// Opens and decodes the photo at `path` and shows it with the edit a new
-    /// photo starts with; [`Self::stats`] says when it is ready.
-    pub fn open(&self, path: String, size: DecodeSize) {
+    /// Opens photo `id` of `library`, at `path`, decoded at `decode` size,
+    /// with its saved edit and History; [`Self::stats`] says when it is
+    /// ready. Opening the photo already open decodes it again and keeps its
+    /// edit; opening another saves this one's first, and stays on it if that
+    /// save fails.
+    pub fn open_photo(&self, library: Arc<Library>, id: i64, path: String, decode: DecodeSize) {
         self.shared.stats(|s| s.loading = true);
         self.shared.request(|r| {
-            r.open = Some((path, size));
-            r.exposure = 0.;
+            r.open = Some(OpenRequest {
+                library,
+                id,
+                path: PathBuf::from(path),
+                decode,
+            });
             r.zoom = Zoom::Fit;
         });
     }
 
-    /// Exposure in stops, as the Basic panel's slider.
-    pub fn set_exposure(&self, stops: f32) {
-        self.shared.request(|r| r.exposure = stops);
+    /// Sets a Basic slider; `done` ends the drag, which becomes one History
+    /// step. Does nothing until the photo's edit has loaded.
+    pub fn set_parameter(&self, param: Param, value: f32, done: bool) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set(param, value, done));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    pub fn undo(&self) {
+        self.step(-1);
+    }
+
+    pub fn redo(&self) {
+        self.step(1);
+    }
+
+    /// The sliders, History and save state; `None` until the edit has loaded.
+    pub fn edit_state(&self) -> Option<EditState> {
+        self.shared.edit().as_ref().map(OpenEdit::state)
+    }
+
+    /// Saves the edit and its History to the catalog, if anything changed:
+    /// before leaving the photo, and when the app goes to the background.
+    pub fn save(&self) -> Result<(), RenderError> {
+        match self.shared.edit().as_mut() {
+            Some(edit) => edit.save(),
+            None => Ok(()),
+        }
     }
 
     /// Fit, or 100% around a point.
@@ -182,6 +234,13 @@ impl LiveView {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    fn step(&self, by: i32) {
+        let moved = self.shared.edit().as_mut().is_some_and(|e| e.step(by));
+        if moved {
+            self.shared.request(|_| {});
+        }
     }
 
     /// Stops the worker and waits for it: at most the render or decode it is
@@ -207,10 +266,10 @@ impl Drop for LiveView {
     }
 }
 
-/// The open photo and what renders it.
+/// The open photo's decoded image and what renders it.
 struct Photo {
+    id: i64,
     image: CameraImage,
-    recipe: Recipe,
     renderer: PreviewRenderer,
 }
 
@@ -219,7 +278,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
     loop {
-        let (open, exposure, zoom, size) = {
+        let (open, zoom, size) = {
             let mut r = shared
                 .requests
                 .lock()
@@ -231,35 +290,24 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
                 return Ok(());
             }
             r.dirty = false;
-            (r.open.take(), r.exposure, r.zoom, r.size)
+            (r.open.take(), r.zoom, r.size)
         };
         screen.resize(size);
 
-        if let Some((path, decode)) = open {
-            // Let go of the previous photo, its pyramid and its GPU copies
-            // before decoding the next one.
-            photo = None;
+        if let Some(request) = open {
+            open_photo(shared, &screen, &mut photo, request);
             times.clear();
-            match screen.open(Path::new(&path), decode) {
-                Ok((p, camera, decode_ms)) => {
-                    photo = Some(p);
-                    shared.stats(|s| {
-                        s.camera = camera;
-                        s.decode_ms = decode_ms;
-                        s.error = None;
-                    });
-                }
-                Err(e) => shared.stats(|s| s.error = Some(format!("{e:#}"))),
-            }
             shared.stats(|s| s.loading = false);
         }
 
-        let Some(p) = photo.as_mut() else {
+        // The edit as it is now; changes made while this renders ask for the
+        // next frame.
+        let recipe = shared.edit().as_ref().map(|e| e.recipe().clone());
+        let (Some(p), Some(recipe)) = (photo.as_mut(), recipe) else {
             screen.clear();
             continue;
         };
-        p.recipe.exposure = exposure;
-        match screen.show(p, zoom) {
+        match screen.show(p, &recipe, zoom) {
             Ok(frame) => {
                 times.push_back(frame.render_ms);
                 if times.len() > 30 {
@@ -281,6 +329,51 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
             }
             Err(e) => shared.stats(|s| s.error = Some(format!("{e:#}"))),
         }
+    }
+}
+
+/// Opens `request`'s photo: saves the open edit first when it is another
+/// photo's (and stays on it if that fails), lets go of the previous decode
+/// before making the next, and loads the photo's edit when it isn't open yet.
+fn open_photo(shared: &Shared, screen: &Screen, photo: &mut Option<Photo>, request: OpenRequest) {
+    let same = shared.edit().as_ref().is_some_and(|e| e.id == request.id);
+    if !same {
+        let saved = shared.edit().as_mut().map_or(Ok(()), OpenEdit::save);
+        if let Err(e) = saved {
+            shared
+                .stats(|s| s.error = Some(format!("Not opened: the edit couldn't be saved: {e}")));
+            return;
+        }
+    }
+    // Let go of the previous photo, its pyramid and its GPU copies before
+    // decoding the next one.
+    *photo = None;
+    let opened = screen.open(&request.path, request.decode).and_then(
+        |(p, metadata, profiles, decode_ms)| {
+            if !same {
+                let edit = OpenEdit::load(
+                    request.library,
+                    request.id,
+                    request.path,
+                    metadata.clone(),
+                    &profiles,
+                )?;
+                *shared.edit() = Some(edit);
+            }
+            Ok((p, metadata, decode_ms))
+        },
+    );
+    match opened {
+        Ok((mut p, metadata, decode_ms)) => {
+            p.id = request.id;
+            *photo = Some(p);
+            shared.stats(|s| {
+                s.camera = format!("{} {}", metadata.make, metadata.model);
+                s.decode_ms = decode_ms;
+                s.error = None;
+            });
+        }
+        Err(e) => shared.stats(|s| s.error = Some(format!("{e:#}"))),
     }
 }
 
@@ -474,7 +567,20 @@ impl Screen {
 
     /// Opens and decodes a photo, with a renderer of its own on the shared
     /// device: a new renderer drops the previous photo's pyramid and copies.
-    fn open(&self, path: &Path, decode: DecodeSize) -> anyhow::Result<(Photo, String, f64)> {
+    /// Returns its metadata and the camera profiles its edit resolves with,
+    /// as the desktop finds them (a fitted camera look for a camera without
+    /// colour data).
+    #[allow(clippy::type_complexity)]
+    fn open(
+        &self,
+        path: &Path,
+        decode: DecodeSize,
+    ) -> anyhow::Result<(
+        Photo,
+        rawmakase_model::camera_data::Metadata,
+        Vec<Arc<rawmakase_model::camera_profiles::CameraProfile>>,
+        f64,
+    )> {
         let t = Instant::now();
         let raw = rawmakase_decode::photo::open(path)?;
         let profiles = rawmakase_decode::camera_look::with_default(
@@ -483,16 +589,7 @@ impl Screen {
             rawmakase_model::camera_profiles::installed(&raw.metadata).0,
             Cancel::NEVER,
         );
-        let recipe = resolve(
-            &EditRecord::default(),
-            path,
-            &raw.metadata,
-            &profiles,
-            &DevelopDefaults::default(),
-        )?
-        .recipe;
-        recipe.validate()?;
-        let camera = format!("{} {}", raw.metadata.make, raw.metadata.model);
+        let metadata = raw.metadata.clone();
         let image = raw.develop(
             match decode {
                 DecodeSize::Full => Decode::full(Default::default()),
@@ -508,11 +605,12 @@ impl Screen {
         ));
         Ok((
             Photo {
+                id: 0,
                 image,
-                recipe,
                 renderer,
             },
-            camera,
+            metadata,
+            profiles,
             decode_ms,
         ))
     }
@@ -520,9 +618,9 @@ impl Screen {
     /// Renders the photo for the drawable's size and draws it: the whole
     /// photo from the pyramid, or at 100% the region the view covers, as the
     /// desktop's Develop does.
-    fn show(&mut self, p: &mut Photo, zoom: Zoom) -> anyhow::Result<Shown> {
+    fn show(&mut self, p: &mut Photo, recipe: &Recipe, zoom: Zoom) -> anyhow::Result<Shown> {
         let t = Instant::now();
-        let g = Geometry::new(&p.image, &p.recipe, 0);
+        let g = Geometry::new(&p.image, recipe, 0);
         let (region, zoom) = match zoom {
             Zoom::Fit => (None, Zoom::Fit),
             Zoom::Actual { center_x, center_y } => {
@@ -561,7 +659,7 @@ impl Screen {
         };
         let out = p.renderer.render_to(
             &p.image,
-            &p.recipe,
+            recipe,
             max_edge,
             region,
             Cancel::NEVER,

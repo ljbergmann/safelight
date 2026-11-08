@@ -151,30 +151,60 @@ struct RatingMenu: View {
     }
 }
 
-/// The live editor for one photo of the catalog, with its rating.
+/// The live editor for one photo of the catalog, with its rating. Leaving
+/// saves the edit first; if that fails, the editor stays and says why.
 struct EditorView: View {
     let photo: LibraryPhoto
     let model: LibraryModel
+    @State private var live = LiveModel()
+    @State private var saveFailed = false
+    @Environment(\.dismiss) private var dismiss
 
     private var rating: Int32 { model.photos.first { $0.id == photo.id }?.rating ?? photo.rating }
 
     var body: some View {
-        LiveEditor(photo: URL(fileURLWithPath: photo.path))
-            .navigationTitle(photo.filename)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 2) {
-                        ForEach(1...5, id: \.self) { n in
-                            Button {
-                                model.setRating(photo, to: rating == n ? 0 : Int32(n))
-                            } label: {
-                                Image(systemName: n <= rating ? "star.fill" : "star")
-                                    .foregroundStyle(n <= rating ? .yellow : .secondary)
-                            }
+        Group {
+            if let library = model.library {
+                LiveEditor(photo: photo, library: library, model: live)
+            }
+        }
+        .navigationTitle(photo.filename)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden()
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button("Library", systemImage: "chevron.backward") {
+                    if live.save() { dismiss() } else { saveFailed = true }
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 2) {
+                    ForEach(1...5, id: \.self) { n in
+                        Button {
+                            model.setRating(photo, to: rating == n ? 0 : Int32(n))
+                        } label: {
+                            Image(systemName: n <= rating ? "star.fill" : "star")
+                                .foregroundStyle(n <= rating ? .yellow : .secondary)
                         }
                     }
                 }
             }
+        }
+        // Leaving the app may be the last chance: iPadOS can end it in the
+        // background without asking. Resigning active comes first (the app
+        // switcher, a call), then the background; both save. The scene
+        // phase isn't passed on to this view inside the navigation stack.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            live.save()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            live.save()
+        }
+        .alert("The edit couldn't be saved", isPresented: $saveFailed) {
+            Button("Try Again") { if live.save() { dismiss() } else { saveFailed = true } }
+            Button("Stay", role: .cancel) {}
+        } message: {
+            Text(live.edit?.saveError ?? "")
+        }
     }
 }

@@ -23,6 +23,7 @@ uniffi = { version = "0.32", features = ["cli"] }
 rawmakase-cancel = { path = "../vendor/rawmakase/crates/rawmakase-cancel" }
 rawmakase-catalog = { path = "../vendor/rawmakase/crates/rawmakase-catalog" }
 rawmakase-decode = { path = "../vendor/rawmakase/crates/rawmakase-decode" }
+rawmakase-edit-session = { path = "../vendor/rawmakase/crates/rawmakase-edit-session" }
 rawmakase-engine = { path = "../vendor/rawmakase/crates/rawmakase-engine" }
 rawmakase-interop = { path = "../vendor/rawmakase/crates/rawmakase-interop" }
 rawmakase-model = { path = "../vendor/rawmakase/crates/rawmakase-model" }

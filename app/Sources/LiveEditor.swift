@@ -6,9 +6,14 @@ import SwiftUI
 @MainActor @Observable
 final class LiveModel {
     var live: LiveView? { didSet { open() } }
-    var photo: URL? { didSet { if photo != oldValue { open() } } }
+    var library: Library?
+    var photo: LibraryPhoto? { didSet { if photo?.id != oldValue?.id { open() } } }
     var size: DecodeSize = .half { didSet { if size != oldValue { open() } } }
-    var exposure: Float = 0 { didSet { live?.setExposure(stops: exposure) } }
+    /// The sliders, History and save state, as the core last reported them.
+    private(set) var edit: EditState?
+    /// A slider being dragged, and its value: shown instead of the core's
+    /// until the drag ends.
+    var dragging: (Param, Float)?
     /// Fit, or 100% around a centre in fractions of the developed photo.
     var zoom: Zoom = .fit { didSet { live?.setZoom(zoom: zoom) } }
     /// A pinch in progress, shown by scaling the last frame until it ends.
@@ -18,10 +23,39 @@ final class LiveModel {
     var dragStart: (Float, Float)?
 
     private func open() {
-        guard let live, let photo else { return }
-        exposure = 0
+        guard let live, let photo, let library else { return }
         zoom = .fit
-        live.open(path: photo.path, size: size)
+        live.openPhoto(library: library, id: photo.id, path: photo.path, decode: size)
+    }
+
+    /// Reads the edit back from the core.
+    func refresh() {
+        edit = live?.editState()
+    }
+
+    func set(_ param: Param, to value: Float, done: Bool) {
+        dragging = done ? nil : (param, value)
+        live?.setParameter(param: param, value: value, done: done)
+        refresh()
+    }
+
+    func undo() { live?.undo(); refresh() }
+    func redo() { live?.redo(); refresh() }
+
+    /// Saves the edit; the error, when it couldn't be, stays in `edit`.
+    @discardableResult
+    func save() -> Bool {
+        guard let live else { return true }
+        let saved: Bool
+        do {
+            try live.save()
+            saved = true
+        } catch {
+            saved = false
+        }
+        refresh()
+        print("SAVE \(saved ? "ok" : "failed: \(edit?.saveError ?? "?")"); unsaved: \(edit?.needsSave ?? false)")
+        return saved
     }
 
     /// The point of the developed photo under `location` (in the view's
@@ -85,8 +119,9 @@ final class LiveModel {
 
 /// Stage 3: the photo drawn live by the core, with an Exposure slider.
 struct LiveEditor: View {
-    let photo: URL?
-    @State private var model = LiveModel()
+    let photo: LibraryPhoto
+    let library: Library
+    let model: LiveModel
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
@@ -118,13 +153,17 @@ struct LiveEditor: View {
             .background(Color(white: 0.11))
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
+            BasicSliders(model: model)
+
             HStack(spacing: 16) {
-                Text("Exposure").frame(width: 80, alignment: .leading)
-                Slider(value: $model.exposure, in: -5...5)
-                Text(String(format: "%+.2f", model.exposure))
-                    .font(.body.monospacedDigit())
-                    .frame(width: 56, alignment: .trailing)
-                Picker("Decode", selection: $model.size) {
+                Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
+                    .disabled(!(model.edit?.canUndo ?? false))
+                Button("Redo", systemImage: "arrow.uturn.forward") { model.redo() }
+                    .disabled(!(model.edit?.canRedo ?? false))
+                Text(historyText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                saveStatus
+                Picker("Decode", selection: Bindable(model).size) {
                     Text("Half").tag(DecodeSize.half)
                     Text("Full").tag(DecodeSize.full)
                 }
@@ -133,6 +172,8 @@ struct LiveEditor: View {
             }
 
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+                // Picks up the edit once it has loaded.
+                let _ = model.edit == nil ? model.refresh() : ()
                 Text(summary(model.live?.stats() ?? .empty))
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
@@ -140,12 +181,47 @@ struct LiveEditor: View {
             }
         }
         .padding()
+        .task { await scripted() }
         .onAppear {
             // -full: decode at full size from the start, for -sweep.
             if ProcessInfo.processInfo.arguments.contains("-full") { model.size = .full }
+            model.library = library
             model.photo = photo
         }
-        .onChange(of: photo) { _, new in model.photo = new }
+    }
+
+    /// Launch options for checking edits without touching the screen: once
+    /// the edit has loaded, prints it (`EDIT …`); `-set-exposure <stops>`
+    /// moves Exposure as one drag, and `-save` then saves as leaving does.
+    private func scripted() async {
+        for _ in 0..<300 where model.edit == nil {
+            model.refresh()
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-set-exposure"), i + 1 < args.count, let stops = Float(args[i + 1]) {
+            model.set(.exposure, to: stops, done: true)
+        }
+        if args.contains("-save") { model.save() }
+        if let edit = model.edit {
+            print("EDIT exposure \(edit.values[0].text); steps \(edit.steps); applied \(edit.applied); unsaved \(edit.needsSave)")
+        }
+    }
+
+    private var historyText: String {
+        guard let edit = model.edit, edit.applied > 0 else { return "No changes" }
+        return "\(edit.steps[Int(edit.applied) - 1]) · \(edit.applied) of \(edit.steps.count) steps"
+    }
+
+    @ViewBuilder private var saveStatus: some View {
+        if let error = model.edit?.saveError {
+            Label("Not saved: \(error)", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red).font(.caption).lineLimit(1)
+        } else if model.edit?.needsSave ?? false {
+            Label("Unsaved", systemImage: "circle.dotted").font(.caption).foregroundStyle(.secondary)
+        } else if model.edit != nil {
+            Label("Saved", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     private func summary(_ s: FrameStats) -> String {
@@ -174,7 +250,7 @@ struct LiveEditor: View {
             for i in 0..<steps {
                 let phase = Double(i) / Double(steps)
                 let value = Float(phase < 0.5 ? -2 + 8 * phase : 6 - 8 * phase)
-                live.setExposure(stops: value)
+                live.setParameter(param: .exposure, value: value, done: i == steps - 1)
                 try? await Task.sleep(for: .milliseconds(16))
             }
             try? await Task.sleep(for: .milliseconds(500))
@@ -234,4 +310,43 @@ extension FrameStats {
     static let empty = FrameStats(
         frames: 0, renderMs: 0, presentMs: 0, meanRenderMs: 0, backend: "", width: 0, height: 0,
         fullWidth: 0, fullHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
+}
+
+/// The Basic sliders the core describes, in its order.
+struct BasicSliders: View {
+    let model: LiveModel
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+            ForEach(model.edit?.values ?? [], id: \.label) { slider in
+                GridRow {
+                    Text(slider.label).frame(width: 90, alignment: .leading)
+                    Slider(
+                        value: Binding(
+                            get: { shown(slider) },
+                            set: { model.set(slider.param, to: snapped($0, slider), done: false) }
+                        ),
+                        in: slider.min...slider.max
+                    ) { editing in
+                        if !editing { model.set(slider.param, to: shown(slider), done: true) }
+                    }
+                    Text(slider.text)
+                        .font(.body.monospacedDigit())
+                        .frame(width: 64, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    /// The value being dragged, else the edit's.
+    private func shown(_ slider: ParamValue) -> Float {
+        if let (param, value) = model.dragging, param == slider.param { return value }
+        return slider.value
+    }
+
+    /// Snapped to the model's drag step (0.05 EV for Exposure), if it has one.
+    private func snapped(_ value: Float, _ slider: ParamValue) -> Float {
+        guard slider.step > 0 else { return value }
+        return (value / slider.step).rounded() * slider.step
+    }
 }

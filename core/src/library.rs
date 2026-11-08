@@ -53,11 +53,12 @@ impl Library {
         let thumbnails = PathBuf::from(caches).join("Thumbnails");
         let catalog = on_core_thread(move || {
             std::fs::create_dir_all(&photos).map_err(anyhow::Error::from)?;
-            let catalog = if file.exists() {
+            let mut catalog = if file.exists() {
                 Catalog::open(file.as_path())?
             } else {
                 Catalog::create(&file)?
             };
+            follow_container(&mut catalog, &photos)?;
             Ok((catalog, photos))
         });
         let (catalog, photos) = catalog?;
@@ -78,7 +79,7 @@ impl Library {
     /// Adds the photos in the photo folder that the catalog doesn't have yet.
     pub fn add_new_photos(&self) -> Result<Added, RenderError> {
         let t = Instant::now();
-        let mut catalog = self.lock();
+        let mut catalog = self.catalog();
         let (added, _) = catalog.add_folder_with(&self.photos, &NewPhotoDefaults::default())?;
         Ok(Added {
             added: added as u32,
@@ -89,7 +90,7 @@ impl Library {
     /// Every photo, oldest capture first.
     pub fn photos(&self) -> Result<Vec<LibraryPhoto>, RenderError> {
         let mut photos: Vec<LibraryPhoto> = self
-            .lock()
+            .catalog()
             .photos()?
             .into_iter()
             .map(|p| LibraryPhoto {
@@ -106,7 +107,7 @@ impl Library {
 
     /// Sets a photo's star rating, 0 to 5, keeping its flag and label.
     pub fn set_rating(&self, id: i64, rating: i32) -> Result<(), RenderError> {
-        let mut catalog = self.lock();
+        let mut catalog = self.catalog();
         let photo = catalog
             .photos()?
             .into_iter()
@@ -151,7 +152,9 @@ impl Library {
 }
 
 impl Library {
-    fn lock(&self) -> std::sync::MutexGuard<'_, Catalog> {
+    /// The catalog, for the open photo's edit to load and save through the
+    /// same connection.
+    pub(crate) fn catalog(&self) -> std::sync::MutexGuard<'_, Catalog> {
         self.catalog.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -171,6 +174,24 @@ impl Library {
         );
         Ok(self.thumbnails.join(name))
     }
+}
+
+/// Points the catalog's photo folder at `photos` when the app's container has
+/// moved. iPadOS gives an app a new container path when it is updated or
+/// reinstalled, with the files moved along; the catalog still names the old
+/// one. A root whose folder is gone and was an earlier container's photo
+/// folder is relinked here, as the desktop's Find Missing Folder does.
+fn follow_container(catalog: &mut Catalog, photos: &Path) -> anyhow::Result<()> {
+    for (id, original, location) in catalog.roots()? {
+        let at = PathBuf::from(location.unwrap_or(original));
+        if at != photos
+            && !at.exists()
+            && at.ends_with("Library/Application Support/RAWmakase/Photos")
+        {
+            catalog.relink_root(id, photos)?;
+        }
+    }
+    Ok(())
 }
 
 /// `width` × `height` scaled to fit `edge` on its long side, never enlarged.
@@ -263,6 +284,36 @@ mod tests {
         let id = library.photos().unwrap()[0].id;
         library.set_rating(id, 9).unwrap();
         assert_eq!(library.photos().unwrap()[0].rating, 5);
+    }
+
+    #[test]
+    fn photos_are_found_after_the_container_moves() {
+        let dir = tempfile::tempdir().unwrap();
+        // Containers keep the app's own folder layout below them.
+        let old = dir.path().join("A/Library/Application Support/RAWmakase");
+        let new = dir.path().join("B/Library/Application Support/RAWmakase");
+        let library = Library::open(
+            old.display().to_string(),
+            dir.path().join("caches").display().to_string(),
+        )
+        .unwrap();
+        let day = Path::new(&library.photos_folder()).join("d");
+        std::fs::create_dir_all(&day).unwrap();
+        std::fs::copy(&charts()[0], day.join("a.dng")).unwrap();
+        library.add_new_photos().unwrap();
+        drop(library);
+
+        std::fs::create_dir_all(new.parent().unwrap()).unwrap();
+        std::fs::rename(&old, &new).unwrap();
+        let moved = Library::open(
+            new.display().to_string(),
+            dir.path().join("caches").display().to_string(),
+        )
+        .unwrap();
+        let photos = moved.photos().unwrap();
+        assert_eq!(photos.len(), 1);
+        assert!(Path::new(&photos[0].path).exists(), "{}", photos[0].path);
+        assert!(photos[0].path.starts_with(new.to_str().unwrap()));
     }
 
     #[test]
