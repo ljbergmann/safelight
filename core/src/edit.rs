@@ -218,7 +218,12 @@ impl OpenEdit {
 
     /// A change made by dragging (a gradient's handle, say), as one editor
     /// frame; `done` ends the drag, one History step named `name`.
-    pub(crate) fn drag(&mut self, name: &str, done: bool, change: impl FnOnce(&mut Recipe) -> bool) -> bool {
+    pub(crate) fn drag(
+        &mut self,
+        name: &str,
+        done: bool,
+        change: impl FnOnce(&mut Recipe) -> bool,
+    ) -> bool {
         let frame = self.session.begin();
         let changed = change(self.session.recipe_mut());
         self.session.name_next_step(Step::new(name, ""));
@@ -235,10 +240,14 @@ impl OpenEdit {
     /// History step.
     pub(crate) fn remove_curve_point(&mut self, channel: u32, index: u32) -> bool {
         let mut after = self.session.recipe().clone();
-        let removed = crate::curve::curve_mut(&mut after, channel)
-            .is_some_and(|c| c.remove(index as usize));
+        let removed =
+            crate::curve::curve_mut(&mut after, channel).is_some_and(|c| c.remove(index as usize));
         if removed {
-            self.change("Point Curve", crate::curve::CHANNELS[channel as usize], |r| *r = after);
+            self.change(
+                "Point Curve",
+                crate::curve::CHANNELS[channel as usize],
+                |r| *r = after,
+            );
         }
         removed
     }
@@ -567,9 +576,16 @@ mod tests {
         let (library, id, path) = library(dir.path());
         let mut edit = open(&library, id, &path);
         assert_eq!(edit.state().white_balance, "As Shot");
-        assert!(edit.state().white_balance_choices.contains(&"Tungsten".to_string()));
+        assert!(
+            edit.state()
+                .white_balance_choices
+                .contains(&"Tungsten".to_string())
+        );
         assert!(edit.set_white_balance("Daylight"));
-        assert_eq!((edit.recipe().temperature, edit.recipe().tint), (5500., 10.));
+        assert_eq!(
+            (edit.recipe().temperature, edit.recipe().tint),
+            (5500., 10.)
+        );
         assert_eq!(edit.state().white_balance, "Daylight");
         assert_eq!(edit.state().steps, ["White Balance Daylight"]);
         assert!(edit.set_white_balance("As Shot"));
@@ -596,7 +612,10 @@ mod tests {
         assert!(edit.remove_curve_point(0, i));
         assert!(!edit.remove_curve_point(0, 0), "an end point stays");
         assert!(edit.set_builtin_curve("Strong Contrast"));
-        assert_eq!(crate::curve::state(edit.recipe(), 0).unwrap().name, "Strong Contrast");
+        assert_eq!(
+            crate::curve::state(edit.recipe(), 0).unwrap().name,
+            "Strong Contrast"
+        );
     }
 
     #[test]
@@ -614,8 +633,15 @@ mod tests {
         assert!(edit.set_profile(other.index));
         assert_eq!(edit.recipe().profile_amount, 1.);
         assert_eq!(edit.state().steps, [format!("Profile {title}")]);
-        assert!(edit.profiles().iter().any(|p| p.selected && p.title == title));
-        assert!(!edit.set_profile(other.index), "choosing it again changes nothing");
+        assert!(
+            edit.profiles()
+                .iter()
+                .any(|p| p.selected && p.title == title)
+        );
+        assert!(
+            !edit.set_profile(other.index),
+            "choosing it again changes nothing"
+        );
         edit.recipe().validate().unwrap();
     }
 

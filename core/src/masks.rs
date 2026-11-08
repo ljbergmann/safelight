@@ -591,8 +591,14 @@ mod tests {
         let image = chart();
         let mut r = Recipe::default();
         let color = new_mask(&image, &mut r, NewMask::ColorRange, [0.3, 0.3], [0., 0.]).unwrap();
-        let luminance =
-            new_mask(&image, &mut r, NewMask::LuminanceRange, [0.6, 0.6], [0., 0.]).unwrap();
+        let luminance = new_mask(
+            &image,
+            &mut r,
+            NewMask::LuminanceRange,
+            [0.6, 0.6],
+            [0., 0.],
+        )
+        .unwrap();
         let part = add_component(
             &image,
             &mut r,
@@ -609,7 +615,10 @@ mod tests {
         let parts = &listed[color as usize].components;
         assert_eq!(parts.len(), 2);
         assert_eq!(
-            (parts[part as usize].kind.as_str(), parts[part as usize].operation),
+            (
+                parts[part as usize].kind.as_str(),
+                parts[part as usize].operation
+            ),
             ("Radial Gradient", MaskOperation::Intersect)
         );
         let MaskShape::ColorRange { samples, .. } = &r.masks[0].components[0].shape else {
@@ -624,16 +633,34 @@ mod tests {
         let image = chart();
         let photo = rawmakase_model::camera_data::Metadata::default();
         let mut r = Recipe::default();
-        let m = new_mask(&image, &mut r, NewMask::LuminanceRange, [0.5, 0.5], [0., 0.]).unwrap();
+        let m = new_mask(
+            &image,
+            &mut r,
+            NewMask::LuminanceRange,
+            [0.5, 0.5],
+            [0., 0.],
+        )
+        .unwrap();
         let labels: Vec<_> = mask_sliders(&r, &photo, m)
             .into_iter()
             .take(5)
             .map(|s| s.label)
             .collect();
-        assert_eq!(labels, ["Amount", "Low", "High", "Falloff Low", "Falloff High"]);
+        assert_eq!(
+            labels,
+            ["Amount", "Low", "High", "Falloff Low", "Falloff High"]
+        );
         // Low past High takes High along.
-        Control::Range { mask: m, component: 0, which: 0 }.set(&mut r, &photo, 0.9).unwrap();
-        Control::MaskAmount { mask: m }.set(&mut r, &photo, 1.5).unwrap();
+        Control::Range {
+            mask: m,
+            component: 0,
+            which: 0,
+        }
+        .set(&mut r, &photo, 0.9)
+        .unwrap();
+        Control::MaskAmount { mask: m }
+            .set(&mut r, &photo, 1.5)
+            .unwrap();
         let MaskShape::LuminanceRange { low, high, .. } = r.masks[0].components[0].shape else {
             panic!()
         };
@@ -650,12 +677,33 @@ mod tests {
         assert_eq!(before.len(), 6);
         assert!((before[0] - 0.5).abs() < 0.01 && (before[1] - 0.5).abs() < 0.01);
         // The centre moves the ellipse; its handles follow.
-        assert!(move_handle(&image, &mut r, m, 0, 0, [0.5, 0.5], [0.4, 0.45]));
+        assert!(move_handle(
+            &image,
+            &mut r,
+            m,
+            0,
+            0,
+            [0.5, 0.5],
+            [0.4, 0.45]
+        ));
         let after = handles(&image, &r, m, 0);
-        assert!((after[0] - 0.4).abs() < 0.01 && (after[1] - 0.45).abs() < 0.01, "{after:?}");
+        assert!(
+            (after[0] - 0.4).abs() < 0.01 && (after[1] - 0.45).abs() < 0.01,
+            "{after:?}"
+        );
         // A radius follows the touch.
-        assert!(move_handle(&image, &mut r, m, 0, 1, [after[2], after[3]], [0.7, 0.45]));
-        let MaskShape::Radial { radii, .. } = r.masks[m].components[0].shape else { panic!() };
+        assert!(move_handle(
+            &image,
+            &mut r,
+            m,
+            0,
+            1,
+            [after[2], after[3]],
+            [0.7, 0.45]
+        ));
+        let MaskShape::Radial { radii, .. } = r.masks[m].components[0].shape else {
+            panic!()
+        };
         assert!(radii[0] > 0.2, "{radii:?}");
         r.validate().unwrap();
     }

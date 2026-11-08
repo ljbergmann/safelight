@@ -11,9 +11,9 @@
 
 use rawmakase_model::camera_data::Metadata;
 use rawmakase_model::model::edit::change_setting;
+use rawmakase_model::model::masks::MaskShape;
 use rawmakase_model::model::panels::{Panel, PanelState};
 use rawmakase_model::model::params::ParameterId;
-use rawmakase_model::model::masks::MaskShape;
 use rawmakase_model::model::recipe::Recipe;
 
 /// One slider: which setting it moves.
@@ -38,12 +38,21 @@ pub enum Control {
     MaskAmount { mask: u32 },
     /// A range part's setting: Color Range's Refine (`which` 0); Luminance
     /// Range's low, high, and the falloff below and above (0 to 3).
-    Range { mask: u32, component: u32, which: u32 },
+    Range {
+        mask: u32,
+        component: u32,
+        which: u32,
+    },
 }
 
 /// The range part `component` of mask `mask`.
 fn range_shape(r: &Recipe, mask: u32, component: u32) -> Option<&MaskShape> {
-    let shape = &r.masks.get(mask as usize)?.components.get(component as usize)?.shape;
+    let shape = &r
+        .masks
+        .get(mask as usize)?
+        .components
+        .get(component as usize)?
+        .shape;
     shape.is_range().then_some(shape)
 }
 
@@ -588,13 +597,18 @@ pub(crate) fn mask_sliders(r: &Recipe, photo: &Metadata, mask: u32) -> Vec<Slide
             _ => {}
         }
     }
-    controls.extend((0..crate::masks::LOCAL.len() as u32).map(|index| Control::Mask { mask, index }));
+    controls
+        .extend((0..crate::masks::LOCAL.len() as u32).map(|index| Control::Mask { mask, index }));
     controls
         .into_iter()
         .filter_map(|c| c.state(r, photo))
         .map(|mut s| {
             // Luminance Range's first slider is Low.
-            if let Control::Range { which: 0, mask, component } = s.control
+            if let Control::Range {
+                which: 0,
+                mask,
+                component,
+            } = s.control
                 && matches!(
                     range_shape(r, mask, component),
                     Some(MaskShape::LuminanceRange { .. })

@@ -6,11 +6,13 @@
 //! estimate, and what an estimate depends on, follow the desktop's
 //! `app::develop::auto`.
 
-use rawmakase_engine::develop::{AutoTone, auto_tone, auto_tone_basis, auto_white_balance, neutral_pick};
+use rawmakase_cancel::Cancel;
+use rawmakase_engine::develop::{
+    AutoTone, auto_tone, auto_tone_basis, auto_white_balance, neutral_pick,
+};
 use rawmakase_model::camera_data::{CameraImage, Metadata};
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::model::white_balance::NamedWhiteBalance;
-use rawmakase_cancel::Cancel;
 
 pub(crate) const AS_SHOT: &str = "As Shot";
 pub(crate) const AUTO: &str = "Auto";
@@ -186,7 +188,10 @@ mod tests {
         assert_ne!(applied.exposure, -2., "Auto set Exposure");
         assert_eq!(applied.effects.clarity, 0.3, "Clarity isn't Auto's");
         // Exposure is Auto's own setting: it is not one of its inputs.
-        assert_eq!(inputs(AutoKind::Settings, &r), inputs(AutoKind::Settings, &applied));
+        assert_eq!(
+            inputs(AutoKind::Settings, &r),
+            inputs(AutoKind::Settings, &applied)
+        );
 
         let wb = estimate(AutoKind::WhiteBalance, &im, &r).unwrap();
         let mut balanced = r.clone();

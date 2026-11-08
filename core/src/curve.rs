@@ -63,7 +63,10 @@ fn builtin_name(r: &Recipe) -> Option<&'static str> {
 
 /// Lightroom's built-in curves' names.
 pub(crate) fn builtin_names() -> Vec<String> {
-    BuiltinCurve::ALL.iter().map(|b| b.name().to_string()).collect()
+    BuiltinCurve::ALL
+        .iter()
+        .map(|b| b.name().to_string())
+        .collect()
 }
 
 /// Sets the RGB curve to a built-in one; `false` for an unknown name.

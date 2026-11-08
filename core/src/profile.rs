@@ -4,9 +4,9 @@
 //! choosing one as the desktop does (a new profile starts at 100%, and white
 //! balance and the camera's exposure follow it).
 
+use rawmakase_engine::develop::black_white::TreatmentChoice;
 use rawmakase_model::camera_data::Metadata;
 use rawmakase_model::camera_profiles::{CameraProfile, Groups};
-use rawmakase_engine::develop::black_white::TreatmentChoice;
 use rawmakase_model::model::recipe::Recipe;
 use std::sync::Arc;
 

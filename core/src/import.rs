@@ -72,10 +72,8 @@ impl Library {
             let catalog = self.catalog();
             (catalog.photos()?, catalog.checksums()?)
         };
-        let mut known: HashSet<(u64, String)> = stored
-            .values()
-            .map(|c| (c.size, c.quick.clone()))
-            .collect();
+        let mut known: HashSet<(u64, String)> =
+            stored.values().map(|c| (c.size, c.quick.clone())).collect();
         let missing: Vec<ReadChecksum> = photos
             .into_iter()
             .filter(|p| p.master.is_none() && !stored.contains_key(&p.id))
@@ -143,7 +141,11 @@ fn dated_folder(captured: &str, file: &Path) -> PathBuf {
         .filter(|d| {
             d.len() == 10
                 && d.bytes().enumerate().all(|(i, b)| {
-                    if i == 4 || i == 7 { b == b'-' } else { b.is_ascii_digit() }
+                    if i == 4 || i == 7 {
+                        b == b'-'
+                    } else {
+                        b.is_ascii_digit()
+                    }
                 })
         })
         .map(str::to_string)
@@ -186,7 +188,9 @@ fn unused(folder: &Path, wanted: &str) -> PathBuf {
         return first;
     }
     let path = Path::new(wanted);
-    let stem = path.file_stem().map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+    let stem = path
+        .file_stem()
+        .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
     let ext = path
         .extension()
         .map(|e| format!(".{}", e.to_string_lossy()))
@@ -331,7 +335,9 @@ impl ImportJob {
         skip_duplicates: bool,
     ) -> anyhow::Result<()> {
         let mut known = if skip_duplicates {
-            library.known_contents().map_err(|e| anyhow::anyhow!("{e}"))?
+            library
+                .known_contents()
+                .map_err(|e| anyhow::anyhow!("{e}"))?
         } else {
             HashSet::new()
         };
@@ -343,7 +349,9 @@ impl ImportJob {
             if placed.is_empty() {
                 return Ok(());
             }
-            let added = library.add_files(placed).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let added = library
+                .add_files(placed)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
             self.imported.fetch_add(added, Ordering::Relaxed);
             placed.clear();
             Ok(())
@@ -398,7 +406,9 @@ impl ImportJob {
             }
         }
         add(&mut placed)?;
-        library.fill_capture_times().map_err(|e| anyhow::anyhow!("{e}"))?;
+        library
+            .fill_capture_times()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(())
     }
 }
@@ -408,7 +418,8 @@ impl ImportJob {
 fn copy(from: &Path, to: &Path) -> anyhow::Result<()> {
     let partial = to.with_extension(format!(
         "{}.importing",
-        to.extension().map_or_else(String::new, |e| e.to_string_lossy().into_owned())
+        to.extension()
+            .map_or_else(String::new, |e| e.to_string_lossy().into_owned())
     ));
     std::fs::copy(from, &partial).inspect_err(|_| {
         let _ = std::fs::remove_file(&partial);
@@ -493,10 +504,12 @@ mod tests {
         let library = library(dir.path());
         let card = card(dir.path());
 
-        let found = library
-            .scan_for_import(card.display().to_string())
-            .unwrap();
-        assert_eq!(found.len(), 2, "hidden folders and other files are left out");
+        let found = library.scan_for_import(card.display().to_string()).unwrap();
+        assert_eq!(
+            found.len(),
+            2,
+            "hidden folders and other files are left out"
+        );
         assert!(found.iter().all(|c| !c.duplicate));
 
         let paths: Vec<String> = found.iter().map(|c| c.path.clone()).collect();
@@ -514,9 +527,12 @@ mod tests {
                 year.parent().unwrap().canonicalize().unwrap(),
                 Path::new(&library.photos_folder()).canonicalize().unwrap()
             );
-            assert!(day.file_name().unwrap().to_string_lossy().starts_with(
-                &*year.file_name().unwrap().to_string_lossy()
-            ));
+            assert!(
+                day.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(&*year.file_name().unwrap().to_string_lossy())
+            );
             if !candidate.captured.is_empty() {
                 assert_eq!(
                     day.file_name().unwrap().to_string_lossy(),
@@ -528,9 +544,7 @@ mod tests {
         assert!(Path::new(&paths[0]).exists());
 
         // Listed again, both are in the catalog; imported again, nothing is.
-        let again = library
-            .scan_for_import(card.display().to_string())
-            .unwrap();
+        let again = library.scan_for_import(card.display().to_string()).unwrap();
         assert!(again.iter().all(|c| c.duplicate));
         // Their full checksums were kept, read while copying.
         let checksums = library.catalog().checksums().unwrap();
@@ -557,9 +571,7 @@ mod tests {
         .unwrap();
         library.add_new_photos().unwrap();
 
-        let found = library
-            .scan_for_import(card.display().to_string())
-            .unwrap();
+        let found = library.scan_for_import(card.display().to_string()).unwrap();
         let duplicates: Vec<_> = found
             .iter()
             .filter(|c| c.duplicate)
@@ -601,7 +613,10 @@ mod tests {
     #[test]
     fn a_capture_date_that_isnt_a_date_never_becomes_a_path() {
         let file = Path::new("/nonexistent");
-        assert_eq!(dated_folder("2023-04-22T10:00:00", file), Path::new("2023/2023-04-22"));
+        assert_eq!(
+            dated_folder("2023-04-22T10:00:00", file),
+            Path::new("2023/2023-04-22")
+        );
         for bad in ["../../etc/x", "2023/../..x", "abcd-ef-ghT", "2023-04-2/"] {
             assert_eq!(dated_folder(bad, file), Path::new("Undated"), "{bad}");
         }

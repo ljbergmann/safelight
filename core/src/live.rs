@@ -10,15 +10,15 @@
 //! whatever was asked for meanwhile, so a slider dragged faster than the GPU
 //! renders skips the values in between instead of queueing them.
 
+use crate::ai::AiSelection;
 use crate::controls::{Control, Switch};
 use crate::edit::{EditState, OpenEdit, Orientation};
 use crate::library::Library;
-use crate::ai::AiSelection;
 use crate::render::{DecodeSize, RenderError, STACK_BYTES, on_core_thread};
+use rawmakase_ai::ai_denoise::{Request as AiRequest, State as AiState};
 use rawmakase_cancel::Cancel;
 use rawmakase_engine::develop::gpu::{self, Display, Processor, Slot};
 use rawmakase_engine::develop::quality::Output;
-use rawmakase_ai::ai_denoise::{Request as AiRequest, State as AiState};
 use rawmakase_engine::develop::{AiSource, Geometry, PreviewRenderer};
 use rawmakase_model::camera_data::{CameraImage, Decode};
 use rawmakase_model::model::recipe::Recipe;
@@ -348,7 +348,8 @@ impl LiveView {
         self.with_image(|image, edit| {
             let mut index = None;
             edit.change(operation.name(), crate::masks::new_name(kind), |r| {
-                index = crate::masks::add_component(image, r, mask as usize, kind, operation, from, to)
+                index =
+                    crate::masks::add_component(image, r, mask as usize, kind, operation, from, to)
             });
             index
         })
@@ -359,7 +360,12 @@ impl LiveView {
     /// radial one's centre and radii. Empty for other parts.
     pub fn gradient_handles(&self, mask: u32, component: u32) -> Vec<f32> {
         self.with_image(|image, edit| {
-            Some(crate::masks::handles(image, edit.recipe(), mask as usize, component as usize))
+            Some(crate::masks::handles(
+                image,
+                edit.recipe(),
+                mask as usize,
+                component as usize,
+            ))
         })
         .unwrap_or_default()
     }
@@ -381,7 +387,15 @@ impl LiveView {
         };
         self.with_image(|image, edit| {
             edit.drag("Move Mask", done, |r| {
-                crate::masks::move_handle(image, r, mask as usize, component as usize, handle, from, to)
+                crate::masks::move_handle(
+                    image,
+                    r,
+                    mask as usize,
+                    component as usize,
+                    handle,
+                    from,
+                    to,
+                )
             })
             .then_some(())
         });
@@ -416,7 +430,10 @@ impl LiveView {
             Ok(weights.map(|w| MaskOverlay {
                 width: out.width,
                 height: out.height,
-                alpha: w.iter().map(|v| (v.clamp(0., 1.) * 255.).round() as u8).collect(),
+                alpha: w
+                    .iter()
+                    .map(|v| (v.clamp(0., 1.) * 255.).round() as u8)
+                    .collect(),
             }))
         })
         .ok()
@@ -701,7 +718,9 @@ impl LiveView {
     pub fn pick_white_balance(&self, at: Vec<f32>) {
         let Some([u, v]) = point(&at) else { return };
         self.with_image(|image, edit| {
-            edit.change("White Balance", "Custom", |r| crate::wb::pick(image, r, u, v));
+            edit.change("White Balance", "Custom", |r| {
+                crate::wb::pick(image, r, u, v)
+            });
             Some(())
         });
     }
@@ -985,7 +1004,14 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
                 return Ok(());
             }
             r.dirty = false;
-            (r.open.take(), r.zoom, r.cropping, r.preset.take(), r.size, r.clipping)
+            (
+                r.open.take(),
+                r.zoom,
+                r.cropping,
+                r.preset.take(),
+                r.size,
+                r.clipping,
+            )
         };
         screen.resize(size);
 
@@ -1105,7 +1131,11 @@ fn open_photo(shared: &Shared, screen: &Screen, photo: &mut Option<Photo>, reque
     }
     // Let go of the previous photo, its pyramid and its GPU copies before
     // decoding the next one.
-    shared.ai.lock().unwrap_or_else(PoisonError::into_inner).release();
+    shared
+        .ai
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .release();
     *photo = None;
     *shared.image.lock().unwrap_or_else(PoisonError::into_inner) = None;
     let opened = screen.open(&request.path, request.decode).and_then(

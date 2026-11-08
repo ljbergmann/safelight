@@ -19,7 +19,7 @@ use rawmakase_ai::ai_denoise::Service;
 use rawmakase_ai::model_install::{self, InstallError, Pack, Progress};
 use rawmakase_ai::selection::{self, ModelId};
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{Prompt, RgbImage, Session, SkySession, Sky, Subject};
+use rawmakase_inference::{Prompt, RgbImage, Session, Sky, SkySession, Subject};
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::masks::{
     BITMAP_SAMPLING, BitmapMask, BitmapSource, FEATURE_SKY, FEATURE_SUBJECT, MAX_GROUPS,
@@ -128,13 +128,18 @@ impl ModelInstall {
                 let result = match result {
                     Ok(Ok(())) => Ok(()),
                     Ok(Err(e)) => Err(e.to_string()),
-                    Err(_) => Err(InstallError::from("the install stopped unexpectedly".to_string())
-                        .to_string()),
+                    Err(_) => Err(InstallError::from(
+                        "the install stopped unexpectedly".to_string(),
+                    )
+                    .to_string()),
                 };
                 *outcome.lock().unwrap_or_else(PoisonError::into_inner) = Some(result);
             });
         if let Err(e) = spawned {
-            *install.outcome.lock().unwrap_or_else(PoisonError::into_inner) =
+            *install
+                .outcome
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) =
                 Some(Err(format!("Couldn't start the download: {e}")));
         }
         install
@@ -262,7 +267,11 @@ pub(crate) fn select(
     if !pack.is_installed() {
         return Err(failed(format!(
             "Install the {} model to select {}.",
-            if what == AiSelection::Sky { "Sky" } else { "Subject" },
+            if what == AiSelection::Sky {
+                "Sky"
+            } else {
+                "Subject"
+            },
             what.name().to_lowercase()
         )));
     }
@@ -283,7 +292,11 @@ pub(crate) fn select(
     let options = selection::load_options();
     let (coverage, prompt) = match what {
         AiSelection::Sky => {
-            let mut sky = library.ai.sky.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut sky = library
+                .ai
+                .sky
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             if sky.is_none() {
                 *sky = Some(Sky::load_with(&dir, &options).map_err(inference)?);
             }
