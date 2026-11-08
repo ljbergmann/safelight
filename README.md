@@ -87,8 +87,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
 - **AI Denoise**, on the device (about 38 s for a 45 MP photo on an M1 iPad
   Pro). The models are downloaded once, on request, and checked.
 - **Presets**: RAWmakase's, your Lightroom XMP presets and your own (Create,
-  Update, Rename, Delete), with Lightroom's Amount; Copy/Paste Settings,
-  onto one photo or many.
+  Update, Rename, Delete), with Lightroom's Amount, favorites and search;
+  Copy/Paste Settings, onto one photo or many, and Paste from Previous.
 - **Export** to JPEG, TIFF or PNG, and the share sheet.
 
 What's missing compared with the desktop, and what comes next (sync…), is
