@@ -7,6 +7,11 @@ struct LibraryView: View {
     @State private var path: [LibraryPhoto.ID] = []
     @State private var picking = false
     @State private var pickingPhotos = false
+    /// What the Files picker picks: a card or folder for the import
+    /// screen, or photo files to import straight away.
+    @State private var pickFolder = false
+    /// The card or folder the import screen shows.
+    @State private var importing: ImportChoice?
     /// Select mode: taps choose photos instead of opening them.
     @State private var selecting = false
     @State private var selected: Set<Int64> = []
@@ -54,7 +59,8 @@ struct LibraryView: View {
                     } description: {
                         Text("Import RAW files from the Files app or the Photos library. They're copied into the catalog.")
                     } actions: {
-                        Button("From Files…") { picking = true }.buttonStyle(.borderedProminent)
+                        Button("From a Card or Folder…") { pickFolder = true; picking = true }.buttonStyle(.borderedProminent)
+                        Button("From Files…") { pickFolder = false; picking = true }
                         Button("From Photos…") { pickingPhotos = true }
                     }
                 }
@@ -77,7 +83,8 @@ struct LibraryView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu("Import", systemImage: "square.and.arrow.down") {
-                        Button("From Files…", systemImage: "folder") { picking = true }
+                        Button("From a Card or Folder…", systemImage: "sdcard") { pickFolder = true; picking = true }
+                        Button("From Files…", systemImage: "doc") { pickFolder = false; picking = true }
                         Button("From Photos…", systemImage: "photo.on.rectangle") { pickingPhotos = true }
                     }
                     .disabled(model.library == nil || model.importing != nil)
@@ -112,10 +119,21 @@ struct LibraryView: View {
             }
             .fileImporter(
                 isPresented: $picking,
-                allowedContentTypes: [.rawImage, .image],
-                allowsMultipleSelection: true
+                allowedContentTypes: pickFolder ? [.folder] : [.rawImage, .image],
+                allowsMultipleSelection: !pickFolder
             ) { result in
-                if case .success(let files) = result { Task { await model.importFiles(files) } }
+                guard case .success(let files) = result else { return }
+                if pickFolder, let folder = files.first {
+                    // Kept open while the screen lists it; the import opens it again.
+                    _ = folder.startAccessingSecurityScopedResource()
+                    importing = ImportChoice(folder: folder)
+                } else {
+                    Task { await model.importFiles(files) }
+                }
+            }
+            .sheet(item: $importing, onDismiss: nil) { choice in
+                ImportScreen(model: model, choice: choice)
+                    .onDisappear { choice.folder.stopAccessingSecurityScopedResource() }
             }
             .sheet(isPresented: $pickingPhotos) {
                 PhotosRawPicker { results in
@@ -142,6 +160,7 @@ struct LibraryView: View {
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-import-documents") { await model.importDocuments() }
             if args.contains("-photos-import-test") { await model.photosImportTest() }
+            if args.contains("-import-screen-test") { await model.importScreenTest() }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,
@@ -183,6 +202,7 @@ struct LibraryView: View {
 }
 
 extension LibraryPhoto: Identifiable {}
+extension ImportChoice: Identifiable {}
 
 struct ThumbnailCell: View {
     let photo: LibraryPhoto

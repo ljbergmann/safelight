@@ -48,8 +48,9 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 
 ## Next: import and library, for daily use
 
-- [ ] Import screen modelled on Lightroom for iPad: a card's or folder's
-      grid, already-imported photos marked, select all new, progress (M)
+- [x] Import screen: a card's or folder's photos by the day they're filed
+      under, those already in the catalog marked, all new chosen to start,
+      a day at a time, progress and Cancel
 - [x] Import from the Photos library, RAW originals
 - [ ] Import a Lightroom Classic catalog (`.lrcat`) or a Lightroom cloud
       library, with edits (the desktop has both; M–L)
@@ -98,7 +99,7 @@ and no soft proofing, so they aren't gaps.
 - [ ] iPhone layout (M–L)
 - [ ] The interface modelled on Lightroom for iPad throughout (M–L)
 - [ ] AI Denoise on CoreML (GPU / Neural Engine); measure against the CPU (S–M)
-- [ ] Hand testing on the device: the Pencil, the Files and Photos pickers,
+- [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views
 
 ## Desktop features not planned for the iPad

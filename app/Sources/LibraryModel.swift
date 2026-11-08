@@ -206,10 +206,14 @@ final class LibraryModel {
 
     /// The photo's thumbnail, `edge` pixels on its long side.
     func thumbnail(_ photo: LibraryPhoto, edge: UInt32) async -> UIImage? {
-        let key = "\(photo.id)-\(edge)" as NSString
+        await thumbnail(path: photo.path, edge: edge)
+    }
+
+    /// The thumbnail of any photo file, in the catalog or not (a card's).
+    func thumbnail(path: String, edge: UInt32) async -> UIImage? {
+        let key = "\(path)-\(edge)" as NSString
         if let image = thumbnails.object(forKey: key) { return image }
         guard let library else { return nil }
-        let path = photo.path
         let gate = decoding
         let image: UIImage? = await Task.detached(priority: .utility) {
             await gate.wait()

@@ -31,6 +31,9 @@ pub struct ImportCandidate {
     pub captured: String,
     /// The catalog has a photo with the same content already.
     pub duplicate: bool,
+    /// The day it is filed under, "YYYY-MM-DD" (or "Undated"): the folder
+    /// the import puts it in, for the import screen to group by.
+    pub day: String,
 }
 
 #[uniffi::export]
@@ -49,9 +52,14 @@ impl Library {
                     Ok(Outcome::Done(c)) => c,
                     _ => return None,
                 };
+                let captured = capture_time(&path).unwrap_or_default();
                 Some(ImportCandidate {
                     filename: path.file_name()?.to_string_lossy().into_owned(),
-                    captured: capture_time(&path).unwrap_or_default(),
+                    day: dated_folder(&captured, &path)
+                        .file_name()?
+                        .to_string_lossy()
+                        .into_owned(),
+                    captured,
                     duplicate: known.contains(&(checksum.size, checksum.quick.clone())),
                     size: checksum.size,
                     path: path.display().to_string(),
@@ -534,6 +542,11 @@ mod tests {
                     .unwrap()
                     .to_string_lossy()
                     .starts_with(&*year.file_name().unwrap().to_string_lossy())
+            );
+            assert_eq!(
+                day.file_name().unwrap().to_string_lossy(),
+                candidate.day,
+                "listed under the day it is filed under"
             );
             if !candidate.captured.is_empty() {
                 assert_eq!(

@@ -284,3 +284,18 @@ and left out.
 | `-photos-import-test`: a copy of a catalog photo staged as the picker stages one | M1 iPad Pro | `0 imported · 1 already in the catalog; photos 54 -> 54; staging left false` |
 
 Not checked yet: the picker itself, which takes a finger.
+
+## The import screen (2026-11-08)
+
+Import › From a Card or Folder lists the folder and everything in it
+(`Library::scan_for_import`), grouped by the day each photo is filed under,
+which the core now reports with each photo, so the screen's days are the
+folders the import makes. Photos already in the catalog are dimmed and
+can't be chosen; the new ones start chosen.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| Each listed photo's day is the folder it lands in | Mac, core test | passes |
+| `-import-screen-test`: the catalog's own photo folder listed as a card | M1 iPad Pro | `54 photos in 5 days, 0 new, 0 chosen; listed in 114 ms; thumbnail 171×256` |
+
+Not checked yet: the screen by hand, and a real card.
