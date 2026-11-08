@@ -488,6 +488,45 @@ struct CropPane: View {
         v.rounded() == v ? String(Int(v)) : String(format: "%g", v)
     }
 
+    /// Auto, and the ruler drawn along something that should be level.
+    private var straighten: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Button {
+                    model.straightenNote = "Measuring…"
+                    let live = model.live
+                    Task {
+                        let result = await Task.detached { Result { try live?.autoStraighten() } }.value
+                        switch result {
+                        case .failure(RenderError.Failed(let message)): model.straightenNote = message
+                        case .failure(let error): model.straightenNote = "\(error)"
+                        case .success: model.straightenNote = nil
+                        }
+                        model.refresh()
+                    }
+                } label: {
+                    Label("Auto", systemImage: "wand.and.stars").padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.straightenNote == "Measuring…")
+                Button {
+                    model.cropRuler.toggle()
+                } label: {
+                    Label("Ruler", systemImage: "ruler").padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(model.cropRuler ? Theme.accent : Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+            if model.cropRuler {
+                Text("Draw along something that should be level or upright.")
+                    .font(.caption).foregroundStyle(Theme.secondaryText)
+            } else if let note = model.straightenNote {
+                Text(note).font(.caption).foregroundStyle(Theme.secondaryText)
+            }
+        }
+    }
+
     /// The guide overlay over the crop, and a turn for those that turn.
     private var guides: some View {
         let all = cropGuides()
@@ -593,6 +632,7 @@ struct CropPane: View {
                     tool("Flip V", "arrow.up.and.down.righttriangle.up.righttriangle.down") { model.orient(.flipVertical) }
                 }
                 ForEach(geometry.first?.sliders ?? [], id: \.label) { SliderRow(slider: $0, model: model) }
+                straighten
                 guides
             }
             .padding(16)

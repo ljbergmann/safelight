@@ -32,6 +32,7 @@ final class LiveModel {
             guard pane != oldValue else { return }
             toolStart = pane.isTool ? edit?.applied : nil
             cropping = pane == .crop
+            if pane != .crop { cropRuler = false; straightenNote = nil }
             if pane != .masks { selectedMask = nil; if tool != .whiteBalance && !(pane == .heal && tool == .heal) { tool = .none } }
             if pane != .edit, tool == .whiteBalance || tool == .pointColor { tool = .none }
         }
@@ -61,6 +62,11 @@ final class LiveModel {
     /// a tool is open.
     var tool: PhotoTool = .none { didSet { if tool != .none && compare != .off { compare = .off } } }
     var selectedMask: UInt32?
+    /// The Crop tool's Straighten ruler is out: a drag over the photo draws a
+    /// line to level instead of moving the crop.
+    var cropRuler = false
+    /// Auto Straighten is measuring, or why it found nothing.
+    var straightenNote: String?
     /// The Crop tool's guide overlay (an index of `cropGuides()`, Thirds to
     /// start, as Lightroom's), `nil` for none, and which way round it is.
     var cropGuide: UInt32? = 1

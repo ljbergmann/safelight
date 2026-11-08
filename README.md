@@ -78,7 +78,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount, and importing camera profiles, looks and `.cube` LUTs from Files; swiping to the next or previous photo; white balance presets and
   eyedropper (a circle to place, then ✓, as Lightroom samples); Auto; the point curve; the Color Mixer a band at a time, Point Color, and
-  Color Grading's wheels; Crop, with Lightroom's guide overlays,
+  Color Grading's wheels; Crop, with Lightroom's guide overlays, a custom ratio, Auto Straighten and the ruler,
   Straighten, Rotate and Flip; Undo, Redo, Reset and a History you can step
   back through or clear; Snapshots; Before/After, side by side or split.
 - **Masks and retouching**: brush (with the Pencil's pressure), linear and

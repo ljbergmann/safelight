@@ -60,6 +60,8 @@ struct CropOverlay: View {
     /// photo once the Crop tool's first frame is drawn. Followed by `follow`,
     /// as the core's frame stats aren't something SwiftUI watches.
     @State private var frame = CGSize.zero
+    /// The Straighten ruler being drawn, in view points.
+    @State private var ruler: (CGPoint, CGPoint)?
 
     var body: some View {
         let photo = fitted(frame)
@@ -99,13 +101,39 @@ struct CropOverlay: View {
                 .stroke(Color.white, lineWidth: 4)
             }
         }
+        .overlay {
+            // The ruler as drawn: along something that should be level or upright.
+            if let (from, to) = ruler {
+                Path { p in p.move(to: from); p.addLine(to: to) }
+                    .stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                ForEach([from, to], id: \.x) { end in
+                    Circle().fill(Theme.accent).frame(width: 8, height: 8).position(end)
+                }
+            }
+        }
         .contentShape(Rectangle())
         .opacity(frame.width > 0 ? 1 : 0)
         .task { await follow() }
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { value in drag(value, photo: photo, rect: rect, crop: crop) }
-                .onEnded { _ in
+                .onChanged { value in
+                    if model.cropRuler {
+                        ruler = (value.startLocation, value.location)
+                    } else {
+                        drag(value, photo: photo, rect: rect, crop: crop)
+                    }
+                }
+                .onEnded { value in
+                    if model.cropRuler {
+                        let points = { (p: CGPoint) in [Float(p.x), Float(p.y)] }
+                        // A line too short to go by leaves the ruler out for another.
+                        if model.live?.straightenWithRuler(from: points(value.startLocation), to: points(value.location)) == true {
+                            model.cropRuler = false
+                            model.refresh()
+                        }
+                        ruler = nil
+                        return
+                    }
                     if let shown { model.setCrop(shown, done: true) }
                     start = nil
                     shown = nil
