@@ -77,7 +77,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
   and folders.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount, and importing camera profiles, looks and `.cube` LUTs from Files; swiping to the next or previous photo; white balance presets and
-  eyedropper (a circle to place, then ✓, as Lightroom samples); Auto; the point curve; the Color Mixer a band at a time, Point Color, and
+  eyedropper (a circle to place, then ✓, as Lightroom samples); Auto; the point curve; the Color Mixer a band at a time, Point Color, the Targeted Adjustment Tool (Tone Curve, mixer, B&W mix), and
   Color Grading's wheels; Crop, with Lightroom's guide overlays, a custom ratio, Auto Straighten and the ruler,
   Straighten, Rotate and Flip; Undo, Redo, Reset and a History you can step
   back through or clear; Snapshots; Before/After, side by side or split.
@@ -165,6 +165,7 @@ them after `--`):
 | `-point-color-ranges` (with `-open -color-mix`) | Samples a swatch in the middle of the photo and shows its ranges and Visualize Range |
 | `-about` | Opens About Safelight |
 | `-crop-guide <n>` (with `-open`) | Opens Crop with guide overlay n (0 Grid … 5 Golden Spiral) |
+| `-targeted` (with `-open -color-mix`) | Turns the Targeted Adjustment Tool on for the Color Mixer's Saturation |
 | `-wb-loupe` (with `-open`) | Opens the white balance eyedropper's sampling circle |
 | `-import-profiles <folder>` (with `-open`) | Imports the profiles in that folder of the app's Documents as Import Profiles does, and lists the photo's profiles again |
 | `-mask-color-test` (with `-open`) | Adds a mask over the whole photo and checks each of its Color sliders changes the live render, then goes back |

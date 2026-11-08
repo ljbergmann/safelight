@@ -33,6 +33,7 @@ final class LiveModel {
             toolStart = pane.isTool ? edit?.applied : nil
             cropping = pane == .crop
             if pane != .crop { cropRuler = false; straightenNote = nil }
+            if pane != .edit { targeted = nil }
             if pane != .masks { selectedMask = nil; if tool != .whiteBalance && !(pane == .heal && tool == .heal) { tool = .none } }
             if pane != .edit, tool == .whiteBalance || tool == .pointColor { tool = .none }
         }
@@ -71,6 +72,10 @@ final class LiveModel {
     /// start, as Lightroom's), `nil` for none, and which way round it is.
     var cropGuide: UInt32? = 1
     var cropGuideOrientation: UInt32 = 0
+    /// The Targeted Adjustment Tool, on for these sliders, and why its last
+    /// drag moved nothing.
+    var targeted: TargetKind? { didSet { if targeted != nil, tool != .none { tool = .none } } }
+    var targetedNote: String?
     /// The Point Color swatch whose sliders show.
     var pointColorSelected: UInt32?
     /// Why the last sample made no swatch, or that it is being taken.
@@ -285,6 +290,8 @@ struct LiveEditor: View {
                 .overlay {
                     if model.cropping {
                         CropOverlay(model: model, size: geometry.size)
+                    } else if let kind = model.targeted {
+                        TargetedOverlay(model: model, kind: kind, size: geometry.size)
                     } else if model.tool.samples {
                         SampleLoupe(model: model, size: geometry.size)
                     } else if model.tool != .none {
@@ -384,6 +391,9 @@ struct LiveEditor: View {
             model.pane = .crop
             model.cropGuide = n
         }
+        // -targeted (with -color-mix): the Targeted Adjustment Tool on, for
+        // the Color Mixer's Saturation.
+        if args.contains("-targeted") { model.targeted = .saturation }
         // -wb-loupe: the white balance eyedropper open, to look at.
         if args.contains("-wb-loupe") { model.tool = .whiteBalance }
         // -point-color (with -color-mix): Point Color's eyedropper open;

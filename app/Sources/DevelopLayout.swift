@@ -395,8 +395,17 @@ struct EditGroup: View {
         if section.title == "AI Denoise", name == main?.title { AiDenoiseStatus(model: model) }
     }
 
-    /// A family's sections, each under its view's name ("Hue", "Shadows").
+    /// A family's sections, each under its view's name ("Hue", "Shadows"),
+    /// the Tone Curve and the B&W mix with their targeted adjustment.
     @ViewBuilder private func subsections(_ family: String) -> some View {
+        if family == "Tone Curve" || family == "B&W Mix" {
+            HStack {
+                TargetedHint(model: model)
+                Spacer()
+                TargetButton(model: model, kind: family == "Tone Curve" ? .toneCurve : .blackWhite)
+            }
+            .padding(.top, 6)
+        }
         ForEach(rest.filter { Self.family($0.title) == family }, id: \.title) { section in
             let view = section.title.components(separatedBy: " · ").dropFirst().first
             if let view { Text(view).font(.subheadline.weight(.semibold)).padding(.top, 8) }

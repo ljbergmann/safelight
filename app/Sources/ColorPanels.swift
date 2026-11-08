@@ -33,10 +33,36 @@ struct ColorMixView: View {
             if pointColor {
                 PointColorView(model: model)
             } else {
+                HStack {
+                    Text("Drag on the photo").font(.caption).foregroundStyle(Theme.secondaryText)
+                    Spacer()
+                    // Which of the band's sliders the drag moves.
+                    Menu {
+                        ForEach([TargetKind.hue, .saturation, .luminance], id: \.self) { kind in
+                            Button {
+                                model.targeted = model.targeted == kind ? nil : kind
+                                model.targetedNote = nil
+                            } label: {
+                                let name = kind == .hue ? "Hue" : kind == .saturation ? "Saturation" : "Luminance"
+                                if model.targeted == kind { Label(name, systemImage: "checkmark") } else { Text(name) }
+                            }
+                        }
+                        if model.targeted != nil { Button("Off") { model.targeted = nil } }
+                    } label: {
+                        Image(systemName: "scope").foregroundStyle(.white).padding(6)
+                            .background([TargetKind.hue, .saturation, .luminance].contains(model.targeted ?? .toneCurve) ? Theme.accent : Theme.chosen,
+                                        in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .accessibilityLabel("Targeted adjustment")
+                }
+                TargetedHint(model: model)
                 mixer
             }
         }
-        .onChange(of: pointColor) { if !pointColor, model.tool == .pointColor { model.tool = .none } }
+        .onChange(of: pointColor) {
+            if !pointColor, model.tool == .pointColor { model.tool = .none }
+            if pointColor, [TargetKind.hue, .saturation, .luminance].contains(model.targeted ?? .toneCurve) { model.targeted = nil }
+        }
     }
 
     @ViewBuilder private var mixer: some View {
