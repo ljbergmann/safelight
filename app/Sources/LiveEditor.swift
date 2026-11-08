@@ -94,8 +94,20 @@ final class LiveModel {
     var refineAdd = true
     var refining = false
     var refineNote: String?
+    /// The Heal pane's tool, and what new spots get.
+    var healKind: HealKind = .heal
     var spotSize: Float = 0.02
-    var cloneSpots = false
+    var spotFeather: Float = 0.5
+    var spotOpacity: Float = 1
+    /// How far from a tap a Red or Pet Eye is looked for, a fraction of the
+    /// view's long edge.
+    var eyeSize: Float = 0.04
+    var selectedSpot: UInt32?
+    var selectedEye: UInt32?
+    /// Why the last spot or eye wasn't placed.
+    var healNote: String?
+    var visualizeSpots = false
+    var visualizeThreshold: Float = 0.5
     /// A Select Subject, Sky or Background run in progress, and why the last
     /// one failed.
     var selecting: AiSelection?
@@ -334,7 +346,12 @@ struct LiveEditor: View {
                     } else if model.tool.samples {
                         SampleLoupe(model: model, size: geometry.size)
                     } else if model.tool != .none {
-                        PhotoToolOverlay(model: model, size: geometry.size)
+                        ZStack {
+                            PhotoToolOverlay(model: model, size: geometry.size)
+                            if model.tool == .heal {
+                                HealOnPhoto(model: model, size: geometry.size)
+                            }
+                        }
                     } else if model.compare != .off {
                         CompareOverlay(model: model, size: geometry.size)
                     } else if model.selectedMask != nil, case .fit = model.zoom {
@@ -407,7 +424,7 @@ struct LiveEditor: View {
             if let brush = live.addMask(kind: .brush, from: [0, 0], to: [0, 0]) {
                 live.brush(index: brush, stroke: Stroke(points: [0.2, 0.3, 0.3, 0.35, 0.4, 0.4], radius: 0.03, feather: 0.5, flow: 0.8, density: 1, erase: false, autoMask: false))
             }
-            let healed = live.addSpot(at: [0.7, 0.7], radius: 0.02, clone: false)
+            let healed = live.addSpot(points: [0.7, 0.7], radius: 0.02, clone: false, feather: 0.5, opacity: 1) != nil
             model.refresh()
             print("MASKS \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); spots \(model.edit?.spots ?? 0) (heal found a source: \(healed)); steps \(model.edit?.steps ?? [])")
         }

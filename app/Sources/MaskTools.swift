@@ -325,35 +325,6 @@ struct MaskSettings: View {
 
 /// Heal and Clone: tap the photo to place a spot, which takes its source
 /// from nearby.
-struct HealPane: View {
-    @Bindable var model: LiveModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Heal").font(.title3.weight(.semibold))
-            Picker("Mode", selection: $model.cloneSpots) {
-                Text("Heal").tag(false)
-                Text("Clone").tag(true)
-            }
-            .pickerStyle(.segmented)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Size").foregroundStyle(Theme.secondaryText)
-                    Spacer()
-                    Text("\(Int((model.spotSize * 1000).rounded()))").monospacedDigit()
-                }
-                ThinSlider(value: model.spotSize, range: 0.005...0.1) { value, _ in model.spotSize = value }
-            }
-            Text("Tap a spot on the photo to \(model.cloneSpots ? "clone over" : "heal") it.")
-                .font(.callout).foregroundStyle(Theme.secondaryText)
-            Text("\(model.edit?.spots ?? 0) spot\(model.edit?.spots == 1 ? "" : "s") on this photo")
-                .font(.caption).foregroundStyle(Theme.secondaryText)
-        }
-        .onAppear { model.tool = .heal }
-        .onDisappear { if model.tool == .heal { model.tool = .none } }
-    }
-}
-
 struct BrushSettings: View {
     @Bindable var model: LiveModel
     var body: some View {
@@ -456,11 +427,13 @@ final class PaintView: UIView {
 
     private func draw() {
         MainActor.assumeIsolated {
-            guard let model, model.tool == .brush, photo.width > 0 else { trail.path = nil; return }
+            let paints = model?.tool == .brush || (model?.tool == .heal && model?.healKind.isEye == false)
+            guard let model, paints, photo.width > 0 else { trail.path = nil; return }
             let path = UIBezierPath()
             if let first = points.first { path.move(to: first) }
             points.dropFirst().forEach { path.addLine(to: $0) }
-            trail.lineWidth = CGFloat(model.brushSize) * max(photo.width, photo.height) * 2
+            let size = model.tool == .heal ? model.spotSize : model.brushSize
+            trail.lineWidth = CGFloat(size) * max(photo.width, photo.height) * 2
             trail.path = path.cgPath
         }
     }
@@ -487,8 +460,8 @@ final class PaintView: UIView {
                 autoMask: model.brushAutoMask && !model.brushErase))
             model.refresh()
         case .heal:
-            _ = model.live?.addSpot(at: view(last), radius: model.spotSize, clone: model.cloneSpots)
-            model.refresh()
+            let moved = points.contains { hypot($0.x - first.x, $0.y - first.y) > 6 }
+            model.heal(along: points.map(view), moved: moved)
         case .refine(let mask, let component):
             model.refineTap(at: view(last), mask: mask, component: component)
         // Sampling tools take their point through `SampleLoupe`.

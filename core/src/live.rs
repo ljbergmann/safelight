@@ -203,6 +203,9 @@ impl Shared {
 pub struct LiveView {
     shared: Arc<Shared>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    /// The sources already offered for one spot (its index and their
+    /// offsets), so Next Source moves on to new ones, as the desktop's `/`.
+    tried: Mutex<(u32, Vec<[f32; 2]>)>,
 }
 
 #[uniffi::export]
@@ -250,6 +253,7 @@ impl LiveView {
         Ok(Arc::new(Self {
             shared,
             worker: Mutex::new(Some(worker)),
+            tried: Mutex::new((u32::MAX, Vec::new())),
         }))
     }
 
@@ -684,6 +688,37 @@ impl LiveView {
         .flatten()
     }
 
+    /// Lightroom's Visualize Spots for the photo as shown (Fit, cropped), at
+    /// most `max_edge` pixels: fine detail in white on black, one byte per
+    /// pixel, where dust and blemishes stand out. `threshold` (0–1) is the
+    /// slider: higher shows fainter detail. Renders on the CPU, as the
+    /// desktop does: call it off the main thread.
+    pub fn visualize_spots(&self, threshold: f32, max_edge: u32) -> Option<MaskOverlay> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()?;
+        let recipe = self.shared.edit().as_ref()?.recipe().clone();
+        on_core_thread(move || {
+            let out = rawmakase_engine::develop::render(
+                &image,
+                &recipe.checked()?,
+                max_edge,
+                Cancel::NEVER,
+            )?;
+            let rgb = rawmakase_engine::develop::retouch::visualize_spots(&out, threshold);
+            Ok(MaskOverlay {
+                width: out.width,
+                height: out.height,
+                // Grey: red, green and blue are the same.
+                alpha: rgb.iter().step_by(3).copied().collect(),
+            })
+        })
+        .ok()
+    }
+
     /// Inverts mask `mask`, or its part `component`: one History step.
     pub fn set_mask_invert(&self, mask: u32, component: Option<u32>, invert: bool) {
         self.edit_now("Invert Mask", |r| {
@@ -983,20 +1018,171 @@ impl LiveView {
         crate::controls::mask_sliders(edit.recipe(), &edit.metadata, index, &edit.start)
     }
 
-    /// A Heal (or Clone) spot at a view point, `radius` a fraction of the
-    /// view's long edge; the source is found as the desktop finds it. One
-    /// History step; false when no source fits.
-    pub fn add_spot(&self, at: Vec<f32>, radius: f32, clone: bool) -> bool {
-        let Some(at) = point(&at) else { return false };
+    /// The Heal and Clone spots, for drawing them over the photo.
+    pub fn spots(&self) -> Vec<crate::retouch::SpotInfo> {
         self.with_image(|image, edit| {
-            let aspect = view_aspect(image, edit.recipe());
-            let mut added = false;
+            Some(crate::retouch::spots(
+                image,
+                edit.recipe(),
+                view_aspect(image, edit.recipe()),
+            ))
+        })
+        .unwrap_or_default()
+    }
+
+    /// A Heal (or Clone) spot: a circle at one view point (x, y), or brushed
+    /// along several (x, y, x, y…). `radius` is a fraction of the view's long
+    /// edge; the source is found as the desktop finds it. One History step.
+    /// Returns its index.
+    pub fn add_spot(
+        &self,
+        points: Vec<f32>,
+        radius: f32,
+        clone: bool,
+        feather: f32,
+        opacity: f32,
+    ) -> Option<u32> {
+        let points: Vec<[f32; 2]> = points.as_chunks::<2>().0.to_vec();
+        self.with_image(|image, edit| {
+            let shown = view_aspect(image, edit.recipe());
+            let mut added = None;
             edit.change(if clone { "Clone" } else { "Heal" }, "", |r| {
-                added = crate::masks::add_spot(image, r, at, radius, aspect, clone)
+                added = crate::retouch::add_spot(
+                    image, r, &points, radius, shown, clone, feather, opacity,
+                )
             });
-            added.then_some(())
+            added
+        })
+    }
+
+    /// Drags spot `index` (or with `source`, where it copies from) from view
+    /// point `from` to `to`; `done` ends the drag, one History step.
+    pub fn drag_spot(&self, index: u32, from: Vec<f32>, to: Vec<f32>, source: bool, done: bool) {
+        let (Some(from), Some(to)) = (point(&from), point(&to)) else {
+            return;
+        };
+        self.with_image(|image, edit| {
+            edit.drag("Move Spot", done, |r| {
+                crate::retouch::move_spot(image, r, index as usize, from, to, source)
+            })
+            .then_some(())
+        });
+    }
+
+    /// Spot `index`'s size (a fraction of the view's long edge), Feather,
+    /// Opacity and Heal or Clone; `done` ends a slider's drag, one History
+    /// step.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_spot(
+        &self,
+        index: u32,
+        radius: f32,
+        feather: f32,
+        opacity: f32,
+        clone: bool,
+        done: bool,
+    ) {
+        self.with_image(|image, edit| {
+            let shown = view_aspect(image, edit.recipe());
+            edit.drag("Spot Settings", done, |r| {
+                crate::retouch::set_spot(
+                    image,
+                    r,
+                    index as usize,
+                    shown,
+                    radius,
+                    feather,
+                    opacity,
+                    clone,
+                )
+            })
+            .then_some(())
+        });
+    }
+
+    /// The next best source for spot `index`, past those offered before.
+    /// One History step; false when there is none.
+    pub fn next_spot_source(&self, index: u32) -> bool {
+        let mut tried = self.tried.lock().unwrap_or_else(PoisonError::into_inner);
+        if tried.0 != index {
+            *tried = (index, Vec::new());
+        }
+        self.with_image(|image, edit| {
+            let mut moved = false;
+            edit.change("Next Source", "", |r| {
+                moved = crate::retouch::next_source(image, r, index as usize, &mut tried.1)
+            });
+            moved.then_some(())
         })
         .is_some()
+    }
+
+    pub fn delete_spot(&self, index: u32) {
+        self.edit_now("Delete Spot", |r| {
+            (index < r.retouch.len() as u32).then(|| {
+                r.retouch.remove(index as usize);
+            })
+        });
+        self.tried.lock().unwrap_or_else(PoisonError::into_inner).0 = u32::MAX;
+    }
+
+    /// The Red Eye and Pet Eye corrections.
+    pub fn red_eyes(&self) -> Vec<crate::retouch::RedEyeInfo> {
+        self.with_image(|image, edit| Some(crate::retouch::red_eyes(image, edit.recipe())))
+            .unwrap_or_default()
+    }
+
+    /// Corrects the red (or, for `pet`, glowing) pupil within `size` (a
+    /// fraction of the view's long edge) of view point `at`: one History
+    /// step. Returns its index, or Lightroom's warning when no pupil is there.
+    pub fn add_red_eye(&self, at: Vec<f32>, size: f32, pet: bool) -> Result<u32, RenderError> {
+        let failed = |message: String| RenderError::Failed { message };
+        let at = point(&at).ok_or_else(|| failed("No point".into()))?;
+        let mut outcome = Err(failed("No photo is open".into()));
+        self.with_image(|image, edit| {
+            let shown = view_aspect(image, edit.recipe());
+            let step = if pet { "Pet Eye" } else { "Red Eye" };
+            let mut after = edit.recipe().clone();
+            outcome = crate::retouch::add_red_eye(image, &mut after, at, size, shown, pet)
+                .map_err(failed);
+            outcome
+                .is_ok()
+                .then(|| edit.change(step, "", |r| *r = after))
+        });
+        outcome
+    }
+
+    /// Correction `index`'s Pupil Size and Darken; `done` ends a slider's
+    /// drag, one History step.
+    pub fn set_red_eye(&self, index: u32, pupil_size: f32, darken: f32, done: bool) {
+        self.with_image(|_, edit| {
+            edit.drag("Red Eye Settings", done, |r| {
+                crate::retouch::set_red_eye(r, index as usize, pupil_size, darken)
+            })
+            .then_some(())
+        });
+    }
+
+    /// Drags correction `index` from view point `from` to `to`; `done` ends
+    /// the drag, one History step.
+    pub fn drag_red_eye(&self, index: u32, from: Vec<f32>, to: Vec<f32>, done: bool) {
+        let (Some(from), Some(to)) = (point(&from), point(&to)) else {
+            return;
+        };
+        self.with_image(|image, edit| {
+            edit.drag("Move Red Eye", done, |r| {
+                crate::retouch::move_red_eye(image, r, index as usize, from, to)
+            })
+            .then_some(())
+        });
+    }
+
+    pub fn delete_red_eye(&self, index: u32) {
+        self.edit_now("Delete Red Eye", |r| {
+            (index < r.red_eye.len() as u32).then(|| {
+                r.red_eye.remove(index as usize);
+            })
+        });
     }
 
     /// Selects the photo's subject, sky or background with its model, as a

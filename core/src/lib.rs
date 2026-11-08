@@ -38,6 +38,7 @@ mod profile;
 pub use point_color::{RangeInfo, SwatchInfo};
 pub use profile::{ImportSummary, ProfileInfo, import_profiles};
 mod render;
+mod retouch;
 mod snapshots;
 pub use snapshots::SnapshotInfo;
 mod targeted;

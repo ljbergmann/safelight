@@ -23,8 +23,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
       with groups, paste onto several photos
 - [x] Export (JPEG, TIFF, PNG, size, quality) and the share sheet
 - [x] Ratings, flags, colour labels, filters, collections, Quick Collection
-- [x] Brush, linear and radial masks, with the Pencil's pressure; Heal and
-      Clone spots
+- [x] Brush, linear and radial masks, with the Pencil's pressure, Density
+      and Auto Mask; refining a Subject with taps; Heal and Clone spots
 - [x] AI Denoise; Select Subject, Sky and Background (models downloaded on
       request, ONNX Runtime embedded)
 - [x] Import core: list a card or folder, find duplicates by content, copy
@@ -72,10 +72,9 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
   Look, per-slider Auto, panel reset
 - **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
   Upright and Guided Upright, Constrain Crop, Calibration's process version
-- **Masks:** brush Density and Auto Mask, refining a Subject with taps
-  (duplicate and reset sliders are done)
-- **Retouch:** brushed spots, feather and opacity, moving or deleting a spot,
-  Visualize Spots, Red Eye and Pet Eye
+- **Retouch:** moving a Pet Eye's catchlight (brushed spots, Feather and
+  Opacity, moving, re-sourcing and deleting a spot, Visualize Spots, Red Eye
+  and Pet Eye are done)
 - **View:** photo info overlay, Reference View, camera thumbnail (zooming
   to any scale between Fit and 100% is done)
 

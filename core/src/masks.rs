@@ -1,21 +1,17 @@
-//! Masks and Heal/Clone: what the iPad's mask and retouch tools change, in
-//! the recipe's own terms.
+//! Masks: what the iPad's mask tools change, in the recipe's own terms.
 //!
 //! Positions arrive as points of the rendered view (0–1 across the photo as
 //! shown, cropped) and are turned into image space with the engine's
 //! [`ViewMapping`], where RAWmakase keeps masks and spots so they stay on
 //! the photo whatever crop, straightening or lens correction do. Sizes are
-//! fractions of the long edge, as the model keeps them. Heal and Clone find
-//! their source with the engine's [`find_source`], as the desktop's tool does.
+//! fractions of the long edge, as the model keeps them.
 
 use rawmakase_engine::develop::ViewMapping;
 use rawmakase_engine::develop::masks::Space;
-use rawmakase_engine::develop::retouch::find_source;
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::masks::{BrushStroke, MaskComponent, MaskGroup, MaskOp, MaskShape};
 use rawmakase_model::model::params::LocalParameterId;
 use rawmakase_model::model::recipe::Recipe;
-use rawmakase_model::model::retouch::{RetouchMode, RetouchOp, RetouchShape};
 use std::sync::Arc;
 
 /// A mask the Masks panel lists.
@@ -473,41 +469,6 @@ pub(crate) fn add_stroke(
     true
 }
 
-/// A Heal or Clone spot at a view point, with a source found as the desktop
-/// finds one.
-pub(crate) fn add_spot(
-    image: &CameraImage,
-    r: &mut Recipe,
-    at: [f32; 2],
-    view_radius: f32,
-    view_aspect: [f32; 2],
-    clone: bool,
-) -> bool {
-    let m = Mapper::new(image, r);
-    let center = m.point(at[0], at[1]);
-    let radius = m.length(at, view_radius, view_aspect).max(0.002);
-    let mut op = RetouchOp {
-        mode: if clone {
-            RetouchMode::Clone
-        } else {
-            RetouchMode::Heal
-        },
-        shape: RetouchShape::Spot { center, radius },
-        feather: 0.5,
-        opacity: 1.,
-        offset: [0., 0.],
-    };
-    let Some(offset) = find_source(image, &op, &r.retouch, &[]) else {
-        return false;
-    };
-    op.offset = offset;
-    if op.validate().is_err() {
-        return false;
-    }
-    r.retouch.push(op);
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -782,23 +743,6 @@ mod tests {
             panic!()
         };
         assert!(radii[0] > 0.2, "{radii:?}");
-        r.validate().unwrap();
-    }
-
-    #[test]
-    fn a_heal_spot_gets_a_source_and_stays_valid() {
-        let image = chart();
-        let mut r = Recipe::default();
-        assert!(add_spot(
-            &image,
-            &mut r,
-            [0.4, 0.4],
-            0.02,
-            [1., 0.75],
-            false
-        ));
-        assert_eq!(r.retouch.len(), 1);
-        assert_ne!(r.retouch[0].offset, [0., 0.], "a source was found");
         r.validate().unwrap();
     }
 }
