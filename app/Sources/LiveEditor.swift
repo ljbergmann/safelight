@@ -94,6 +94,13 @@ final class LiveModel {
     var refineAdd = true
     var refining = false
     var refineNote: String?
+    /// Lightroom's Info Overlay over the photo, remembered between launches.
+    var infoOverlay = UserDefaults.standard.bool(forKey: "infoOverlay") {
+        didSet { UserDefaults.standard.set(infoOverlay, forKey: "infoOverlay") }
+    }
+    /// Reference View: this photo, as edited, beside the one being edited.
+    var reference: LibraryPhoto?
+    var referenceView = false
     /// The Heal pane's tool, and what new spots get.
     var healKind: HealKind = .heal
     var spotSize: Float = 0.02
@@ -312,6 +319,9 @@ struct LiveEditor: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            if model.referenceView, let reference = model.reference, reference.id != photo.id {
+                ReferencePane(library: library, photo: reference, model: model)
+            }
             GeometryReader { geometry in
                 LiveViewRepresentable { [model] made in
                     model.live = made
@@ -368,9 +378,15 @@ struct LiveEditor: View {
             }
             .overlay(alignment: .topLeading) {
                 // Over the photo's corner, as Lightroom shows it while editing.
-                if model.pane == .edit && model.compare == .off {
-                    HistogramPanel(model: model).frame(width: 230).padding(12)
+                VStack(alignment: .leading, spacing: 8) {
+                    if model.pane == .edit && model.compare == .off {
+                        HistogramPanel(model: model).frame(width: 230)
+                    }
+                    if model.infoOverlay {
+                        PhotoInfoOverlay(library: library, photo: photo)
+                    }
                 }
+                .padding(12)
             }
             DevelopPanel(model: model)
             ToolRail(model: model, rating: rating, flag: flag, setRating: setRating, setFlag: setFlag, showInfo: showInfo)

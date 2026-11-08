@@ -75,8 +75,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - **Retouch:** moving a Pet Eye's catchlight (brushed spots, Feather and
   Opacity, moving, re-sourcing and deleting a spot, Visualize Spots, Red Eye
   and Pet Eye are done)
-- **View:** photo info overlay, Reference View, camera thumbnail (zooming
-  to any scale between Fit and 100% is done)
+- **View:** camera thumbnail (zooming to any scale between Fit and 100%,
+  the Info Overlay and Reference View are done)
 
 The desktop doesn't evaluate smart collections yet, and has no depth, object or people masks, no content-aware remove
 and no soft proofing, so they aren't gaps.

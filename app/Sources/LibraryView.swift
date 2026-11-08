@@ -424,6 +424,13 @@ struct EditorView: View {
                     Button("Create Virtual Copy", systemImage: "plus.square.on.square") { copyAndOpen() }
                     Button("Info…", systemImage: "info.circle") { model.info = InfoRequest(ids: [shown.id]) }
                     Divider()
+                    SwiftUI.Toggle("Info Overlay", systemImage: "text.below.photo", isOn: Bindable(live).infoOverlay)
+                    Button("Set as Reference Photo", systemImage: "pin") {
+                        live.reference = shown
+                    }
+                    SwiftUI.Toggle("Reference View", systemImage: "rectangle.split.2x1", isOn: Bindable(live).referenceView)
+                        .disabled(live.reference == nil || live.reference?.id == shown.id)
+                    Divider()
                     Picker("Decode", selection: Bindable(live).size) {
                         Text("Half Size").tag(DecodeSize.half)
                         Text("Full Size").tag(DecodeSize.full)

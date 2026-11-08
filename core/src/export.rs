@@ -350,86 +350,135 @@ impl Library {
             settings.subfolder = false;
             settings.existing = Existing::Unique;
 
-            let photos = self.photos()?;
-            let chosen: Vec<_> = ids
-                .iter()
-                .filter_map(|id| photos.iter().find(|p| p.id == *id))
-                .collect();
-            let photo_ids: Vec<PhotoId> = chosen.iter().map(|p| PhotoId(p.id)).collect();
-            let (records, fields) = {
-                let catalog = self.catalog();
-                (
-                    catalog.photo_records(&photo_ids)?,
-                    catalog.name_fields(&photo_ids)?,
-                )
-            };
-            let total = chosen.len();
-            let batch_photos: Vec<BatchPhoto> = chosen
-                .iter()
-                .zip(records)
-                .zip(fields)
-                .enumerate()
-                .map(|(i, ((p, record), naming))| {
-                    let name = if p.is_copy {
-                        format!("{} ({})", p.filename, p.copy_name)
-                    } else {
-                        p.filename.clone()
-                    };
-                    let mut photo =
-                        BatchPhoto::from_record(record, PathBuf::from(&p.path), name, naming);
-                    photo.place = Some((i, total));
-                    photo
-                })
-                .collect();
-            let watermark = if settings.watermark {
-                Some(
-                    rawmakase_export::watermark::named(&settings.watermark_name).ok_or_else(
-                        || anyhow::anyhow!("Watermark not found: {}", settings.watermark_name),
-                    )?,
-                )
-            } else {
-                None
-            };
-            let plan =
-                batch::plan(&batch_photos, &settings, None).map_err(|e| anyhow::anyhow!("{e}"))?;
-            let names: Vec<String> = batch_photos.iter().map(|p| p.name.clone()).collect();
-            let batch = Batch {
-                photos: batch_photos,
-                plan,
-                settings,
-                defaults: Arc::new(Default::default()),
-                watermark,
-                demosaic: Default::default(),
-                cache: self.decode_cache(),
-                // The live view's service: a result it finished is reused, and
-                // an export of a photo it hasn't denoised waits for its run.
-                ai: rawmakase_decode::ai::denoise::AiService(Arc::new(self.ai.denoise().clone())),
-            };
-            let mut result = ExportResult {
-                files: vec![],
-                problems: vec![],
-            };
-            for (name, outcome) in names.iter().zip(batch::run(&batch, Cancel::NEVER, |_| {})) {
-                match outcome {
-                    Outcome::Exported { path, notes } => {
-                        result.files.push(path.display().to_string());
-                        result
-                            .problems
-                            .extend(notes.into_iter().map(|n| format!("{name}: {n}")));
-                    }
-                    Outcome::Skipped(why) | Outcome::Failed(why) => {
-                        result.problems.push(format!("{name}: {why}"))
-                    }
-                    Outcome::Cancelled | Outcome::NotStarted => {}
-                }
-            }
-            if result.files.is_empty()
-                && let Some(first) = result.problems.first()
-            {
-                return Err(anyhow::anyhow!("{first}").into());
-            }
-            Ok(result)
+            Ok(self.run_batch(&ids, settings)?)
         })
+    }
+
+    /// Photo `id` as edited, `edge` pixels on its long side, as a JPEG file
+    /// for Reference View: rendered as an export would, then kept in the
+    /// caches until the edit changes. Call it off the main thread.
+    pub fn reference_image(self: Arc<Self>, id: i64, edge: u32) -> Result<String, RenderError> {
+        on_core_thread(move || {
+            let edited = self
+                .catalog()
+                .edit_times()?
+                .remove(&PhotoId(id))
+                .unwrap_or_default();
+            let dir = self.caches_dir().join("Reference");
+            let key = dir.join(format!(
+                "{id}-{:016x}-{edge}.jpg",
+                crate::library::fnv(edited.as_bytes())
+            ));
+            if key.exists() {
+                return Ok(key.display().to_string());
+            }
+            let work = dir.join(format!("{id}-rendering"));
+            let _ = std::fs::remove_dir_all(&work);
+            std::fs::create_dir_all(&work).map_err(anyhow::Error::from)?;
+            let mut settings = ExportSettings::default();
+            settings.choose_format(Format::Jpeg);
+            settings.quality = 90;
+            settings.resize = true;
+            settings.long_edge = edge.max(64);
+            settings.include = Include::CopyrightOnly;
+            settings.destination = Destination::Folder;
+            settings.folder = Some(work.clone());
+            settings.existing = Existing::Overwrite;
+            let result = self.run_batch(&[id], settings)?;
+            let file = result
+                .files
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("{}", result.problems.join("; ")))?;
+            std::fs::rename(file, &key).map_err(anyhow::Error::from)?;
+            let _ = std::fs::remove_dir_all(&work);
+            Ok(key.display().to_string())
+        })
+    }
+}
+
+impl Library {
+    /// Exports photos `ids` with `settings` (its folder set) through the
+    /// desktop's export batch: the files written and what went wrong.
+    fn run_batch(&self, ids: &[i64], settings: ExportSettings) -> anyhow::Result<ExportResult> {
+        let photos = self.photos()?;
+        let chosen: Vec<_> = ids
+            .iter()
+            .filter_map(|id| photos.iter().find(|p| p.id == *id))
+            .collect();
+        let photo_ids: Vec<PhotoId> = chosen.iter().map(|p| PhotoId(p.id)).collect();
+        let (records, fields) = {
+            let catalog = self.catalog();
+            (
+                catalog.photo_records(&photo_ids)?,
+                catalog.name_fields(&photo_ids)?,
+            )
+        };
+        let total = chosen.len();
+        let batch_photos: Vec<BatchPhoto> = chosen
+            .iter()
+            .zip(records)
+            .zip(fields)
+            .enumerate()
+            .map(|(i, ((p, record), naming))| {
+                let name = if p.is_copy {
+                    format!("{} ({})", p.filename, p.copy_name)
+                } else {
+                    p.filename.clone()
+                };
+                let mut photo =
+                    BatchPhoto::from_record(record, PathBuf::from(&p.path), name, naming);
+                photo.place = Some((i, total));
+                photo
+            })
+            .collect();
+        let watermark = if settings.watermark {
+            Some(
+                rawmakase_export::watermark::named(&settings.watermark_name).ok_or_else(|| {
+                    anyhow::anyhow!("Watermark not found: {}", settings.watermark_name)
+                })?,
+            )
+        } else {
+            None
+        };
+        let plan =
+            batch::plan(&batch_photos, &settings, None).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let names: Vec<String> = batch_photos.iter().map(|p| p.name.clone()).collect();
+        let batch = Batch {
+            photos: batch_photos,
+            plan,
+            settings,
+            defaults: Arc::new(Default::default()),
+            watermark,
+            demosaic: Default::default(),
+            cache: self.decode_cache(),
+            // The live view's service: a result it finished is reused, and
+            // an export of a photo it hasn't denoised waits for its run.
+            ai: rawmakase_decode::ai::denoise::AiService(Arc::new(self.ai.denoise().clone())),
+        };
+        let mut result = ExportResult {
+            files: vec![],
+            problems: vec![],
+        };
+        for (name, outcome) in names.iter().zip(batch::run(&batch, Cancel::NEVER, |_| {})) {
+            match outcome {
+                Outcome::Exported { path, notes } => {
+                    result.files.push(path.display().to_string());
+                    result
+                        .problems
+                        .extend(notes.into_iter().map(|n| format!("{name}: {n}")));
+                }
+                Outcome::Skipped(why) | Outcome::Failed(why) => {
+                    result.problems.push(format!("{name}: {why}"))
+                }
+                Outcome::Cancelled | Outcome::NotStarted => {}
+            }
+        }
+        if result.files.is_empty()
+            && let Some(first) = result.problems.first()
+        {
+            return Err(anyhow::anyhow!("{first}"));
+        }
+        Ok(result)
     }
 }
 
@@ -549,6 +598,24 @@ mod tests {
             .unwrap();
         assert_eq!(again.files.len(), 2);
         assert!(again.files.iter().all(|f| !result.files.contains(f)));
+    }
+
+    #[test]
+    fn a_reference_image_is_rendered_once_and_leaves_the_last_export_alone() {
+        let (_dir, library, ids) = two_charts();
+        let first = library.clone().reference_image(ids[0], 300).unwrap();
+        let (w, h) = image::image_dimensions(&first).unwrap();
+        assert_eq!(w.max(h), 300);
+        let made = std::fs::metadata(&first).unwrap().modified().unwrap();
+        let again = library.clone().reference_image(ids[0], 300).unwrap();
+        assert_eq!(again, first);
+        assert_eq!(
+            std::fs::metadata(&again).unwrap().modified().unwrap(),
+            made,
+            "from the cache"
+        );
+        assert_ne!(library.clone().reference_image(ids[1], 300).unwrap(), first);
+        assert_eq!(library.last_export_choice(), ExportChoice::default());
     }
 
     #[test]

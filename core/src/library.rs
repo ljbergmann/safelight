@@ -363,6 +363,13 @@ impl Library {
         self.catalog.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// The caches folder: thumbnails and other renders kept for speed.
+    pub(crate) fn caches_dir(&self) -> PathBuf {
+        self.thumbnails
+            .parent()
+            .map_or_else(|| self.thumbnails.clone(), Path::to_path_buf)
+    }
+
     /// The cache file for `path` at `edge`, named by the file's size and
     /// modification time, so a replaced file gets a new thumbnail.
     fn thumbnail_path(&self, path: &Path, edge: u32) -> Result<PathBuf, RenderError> {
@@ -434,7 +441,7 @@ fn fit(width: u32, height: u32, edge: u32) -> (u32, u32) {
 }
 
 /// FNV-1a, to name a cache file after a path.
-fn fnv(bytes: &[u8]) -> u64 {
+pub(crate) fn fnv(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
     })
