@@ -77,7 +77,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
   and folders.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount, and importing camera profiles, looks and `.cube` LUTs from Files; swiping to the next or previous photo; white balance presets and
-  eyedropper; Auto; the point curve; the Color Mixer a band at a time and
+  eyedropper (a circle to place, then ✓, as Lightroom samples); Auto; the point curve; the Color Mixer a band at a time and
   Color Grading's wheels; Crop,
   Straighten, Rotate and Flip; Undo, Redo, Reset and a History you can step
   back through or clear; Snapshots; Before/After, side by side or split.
@@ -154,6 +154,7 @@ them after `--`):
 | `-metadata-test` | Sets and reads back a title and a keyword on a test copy, with its camera info, then takes them off |
 | `-virtual-copy-test` | Makes a virtual copy of the test copy, renames it and removes it |
 | `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
+| `-wb-loupe` (with `-open`) | Opens the white balance eyedropper's sampling circle |
 | `-import-profiles <folder>` (with `-open`) | Imports the profiles in that folder of the app's Documents as Import Profiles does, and lists the photo's profiles again |
 | `-mask-color-test` (with `-open`) | Adds a mask over the whole photo and checks each of its Color sliders changes the live render, then goes back |
 | `-show-mask` (with `-open`, after `-mask-test -keep`) | Opens the Masks pane on the first mask with its Color sliders |

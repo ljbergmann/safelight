@@ -271,6 +271,8 @@ struct LiveEditor: View {
                 .overlay {
                     if model.cropping {
                         CropOverlay(model: model, size: geometry.size)
+                    } else if model.tool.samples {
+                        SampleLoupe(model: model, size: geometry.size)
                     } else if model.tool != .none {
                         PhotoToolOverlay(model: model, size: geometry.size)
                     } else if model.compare != .off {
@@ -363,6 +365,8 @@ struct LiveEditor: View {
             let looks = live.profiles().filter { $0.title.contains("Teal") }.map { "\($0.group)/\($0.title)" }
             print("PROFILES IMPORT \(result.message); failed \(result.failed) \(result.details); profiles \(before) → \(live.profiles().count); \(looks)")
         }
+        // -wb-loupe: the white balance eyedropper open, to look at.
+        if args.contains("-wb-loupe") { model.tool = .whiteBalance }
         // -show-mask: the Masks pane on the first mask, its Color open.
         if args.contains("-show-mask"), let first = model.edit?.masks.first?.index {
             model.pane = .masks

@@ -465,7 +465,7 @@ struct WhiteBalanceRow: View {
                 .buttonStyle(.plain)
             }
             if model.tool == .whiteBalance {
-                Text("Tap something that should be neutral grey or white.")
+                Text("Move the circle onto something neutral grey or white, then tap ✓.")
                     .font(.caption).foregroundStyle(Theme.secondaryText)
             }
         }

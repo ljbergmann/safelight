@@ -13,7 +13,7 @@ enum PhotoTool: Equatable {
     case brush
     /// Tap to place a Heal (or Clone) spot.
     case heal
-    /// Tap something neutral to set white balance from it.
+    /// Sample something neutral to set white balance from it.
     case whiteBalance
 }
 
@@ -123,7 +123,7 @@ struct MasksPanel: View {
             switch model.tool {
             case .newGradient(.colorRange), .newGradient(.luminanceRange),
                  .newPart(.colorRange, _), .newPart(.luminanceRange, _):
-                hint("Tap the colour or brightness to select.")
+                hint("Move the circle onto the colour or brightness to select, then tap ✓.")
             case .newGradient, .newPart:
                 hint("Drag on the photo to place it.")
             default:
@@ -429,13 +429,10 @@ final class PaintView: UIView {
         let view = { (p: CGPoint) in model.viewPoint(p, in: self.photo) }
         switch model.tool {
         case .newGradient(let kind):
-            // A range mask samples where the touch ended.
-            let from = kind == .colorRange || kind == .luminanceRange ? view(last) : view(first)
-            model.addMask(kind, from: from, to: view(last))
+            model.addMask(kind, from: view(first), to: view(last))
         case .newPart(let kind, let op):
             guard let mask = model.selectedMask else { return }
-            let from = kind == .colorRange || kind == .luminanceRange ? view(last) : view(first)
-            _ = model.live?.addMaskComponent(mask: mask, kind: kind, operation: op, from: from, to: view(last))
+            _ = model.live?.addMaskComponent(mask: mask, kind: kind, operation: op, from: view(first), to: view(last))
             model.tool = .none
             model.refresh()
         case .brush:
@@ -449,11 +446,8 @@ final class PaintView: UIView {
         case .heal:
             _ = model.live?.addSpot(at: view(last), radius: model.spotSize, clone: model.cloneSpots)
             model.refresh()
-        case .whiteBalance:
-            model.live?.pickWhiteBalance(at: view(last))
-            model.tool = .none
-            model.refresh()
-        case .none:
+        // Sampling tools take their point through `SampleLoupe`.
+        case .whiteBalance, .none:
             break
         }
     }
