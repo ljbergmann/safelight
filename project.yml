@@ -13,6 +13,12 @@ targets:
     sources:
       - app/Sources
       - app/Generated
+    # A full-size decode of a 45 MP RAW and its 100% view need more than the
+    # default limit on an 8 GB iPad (MEASUREMENTS.md).
+    entitlements:
+      path: app/Rawmakase.entitlements
+      properties:
+        com.apple.developer.kernel.increased-memory-limit: true
     dependencies:
       - framework: build/RawmakaseCore.xcframework
         embed: false

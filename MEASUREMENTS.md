@@ -74,5 +74,33 @@ the engine on the GPU into its own texture and drawn into the view's
   the decode itself, as in Stage 2.
 - In the simulator the device is created with the engine's limits clamped to
   the adapter's, and the GPU path works there too (9 ms renders, on the Mac).
-- Not measured yet: the latency from finger to frame, and 100% views, which
-  render a region at full resolution and are the expensive case.
+- Not measured yet: the latency from finger to frame.
+
+## Stage 3: 100% and panning (2026-11-08)
+
+Same iPad, `-open <photo> -pan [-full]`: at 100%, the view's centre moved
+from 30% to 70% of the photo's width and back, 240 positions in 4 s. Each
+frame renders the region the view covers (2028×1497 pixels) at full
+resolution, as the desktop's 100% view does, with no reduced draft first.
+
+| Photo | Decode | First 100% frame | Frames in 4 s | Mean render | Footprint | Peak |
+| --- | --- | --- | --- | --- | --- | --- |
+| Leica Q2 | half, 4184×2792 | 0.18 s | 179, 45 fps | 22 ms | 1.3 GB | 2.2 GB |
+| Leica Q2 | full, 8368×5584 | 0.22 s | 179, 45 fps | 22 ms | 3.1 GB | 5.2 GB |
+| Canon EOS R5 | half, 2732×4096 | 0.06 s | 203, 51 fps | 17 ms | 1.3 GB | 2.0 GB |
+| Canon EOS R5 | full, 5463×8191 | 0.7–2.2 s | 182–183, 46 fps | 22 ms | 3.0 GB | 5.0 GB |
+
+- **Without the increased-memory-limit entitlement**, the Leica at full size
+  was killed by iPadOS (signal 9) as soon as it went to 100%: the full-size
+  decode plus the photo kept on the GPU for regions passed the 5.1 GB limit.
+  The Canon peaked at 5.0 GB, just under it. With the entitlement
+  (`com.apple.developer.kernel.increased-memory-limit`, now in the app) the
+  limit on this 8 GB iPad is about 8.2 GB and both run.
+- The first 100% frame of a full-size decode varies (0.7 s and 2.2 s for the
+  same Canon file in two runs): it uploads the full photo to the GPU.
+- Panning keeps up with about three of four positions: a region costs 17–22
+  ms, against 13–14 ms for Fit. The desktop draws a reduced region first
+  while sliders move at 100%; panning here could do the same.
+- Pinch: the frame on screen is scaled while the fingers move, then the
+  view settles on 100% around the pinch point, or back to Fit. Double tap
+  switches between them. Tried in the simulator, not yet by hand on the iPad.

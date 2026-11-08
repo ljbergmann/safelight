@@ -10,9 +10,9 @@
 
 use crate::render::{DecodeSize, RenderError, STACK_BYTES};
 use rawmakase_cancel::Cancel;
-use rawmakase_engine::develop::PreviewRenderer;
 use rawmakase_engine::develop::gpu::{self, Display, Processor, Slot};
 use rawmakase_engine::develop::quality::Output;
+use rawmakase_engine::develop::{Geometry, PreviewRenderer};
 use rawmakase_interop::edits::{EditRecord, resolve};
 use rawmakase_interop::raw_defaults::DevelopDefaults;
 use rawmakase_model::camera_data::{CameraImage, Decode};
@@ -30,11 +30,24 @@ struct Requests {
     /// A photo to open, replacing the current one.
     open: Option<(String, DecodeSize)>,
     exposure: f32,
+    zoom: Zoom,
     /// The drawable's size in pixels.
     size: [u32; 2],
     /// Something changed since the last frame.
     dirty: bool,
     quit: bool,
+}
+
+/// How the photo is shown.
+#[derive(uniffi::Enum, Clone, Copy, Debug, Default, PartialEq)]
+pub enum Zoom {
+    /// The whole photo, fitted to the view.
+    #[default]
+    Fit,
+    /// One image pixel per screen pixel, centred on a point of the developed
+    /// photo given as fractions of its width and height. With a half-size
+    /// decode, a pixel of the half-size image.
+    Actual { center_x: f32, center_y: f32 },
 }
 
 /// What the last frames cost, for the app to show.
@@ -52,6 +65,12 @@ pub struct FrameStats {
     /// The rendered preview's size.
     pub width: u32,
     pub height: u32,
+    /// The developed photo's size at the decode's full resolution: what 100%
+    /// shows a pixel of.
+    pub full_width: u32,
+    pub full_height: u32,
+    /// The zoom the last frame showed, with its centre kept inside the photo.
+    pub zoom: Zoom,
     /// The open photo, its camera and what opening and decoding it took.
     pub camera: String,
     pub decode_ms: f64,
@@ -137,12 +156,18 @@ impl LiveView {
         self.shared.request(|r| {
             r.open = Some((path, size));
             r.exposure = 0.;
+            r.zoom = Zoom::Fit;
         });
     }
 
     /// Exposure in stops, as the Basic panel's slider.
     pub fn set_exposure(&self, stops: f32) {
         self.shared.request(|r| r.exposure = stops);
+    }
+
+    /// Fit, or 100% around a point.
+    pub fn set_zoom(&self, zoom: Zoom) {
+        self.shared.request(|r| r.zoom = zoom);
     }
 
     /// The layer's drawable changed size, in pixels.
@@ -194,7 +219,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
     loop {
-        let (open, exposure, size) = {
+        let (open, exposure, zoom, size) = {
             let mut r = shared
                 .requests
                 .lock()
@@ -206,7 +231,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
                 return Ok(());
             }
             r.dirty = false;
-            (r.open.take(), r.exposure, r.size)
+            (r.open.take(), r.exposure, r.zoom, r.size)
         };
         screen.resize(size);
 
@@ -234,7 +259,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
             continue;
         };
         p.recipe.exposure = exposure;
-        match screen.show(p) {
+        match screen.show(p, zoom) {
             Ok(frame) => {
                 times.push_back(frame.render_ms);
                 if times.len() > 30 {
@@ -249,6 +274,9 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
                     s.backend = frame.backend.into();
                     s.width = frame.width;
                     s.height = frame.height;
+                    s.full_width = frame.full[0];
+                    s.full_height = frame.full[1];
+                    s.zoom = frame.zoom;
                 });
             }
             Err(e) => shared.stats(|s| s.error = Some(format!("{e:#}"))),
@@ -270,6 +298,8 @@ struct Shown {
     backend: &'static str,
     width: u32,
     height: u32,
+    full: [u32; 2],
+    zoom: Zoom,
 }
 
 /// The device, the surface on the layer, and the pass that draws a preview
@@ -487,11 +517,36 @@ impl Screen {
         ))
     }
 
-    /// Renders the photo for the drawable's size and draws it.
-    fn show(&mut self, p: &mut Photo) -> anyhow::Result<Shown> {
+    /// Renders the photo for the drawable's size and draws it: the whole
+    /// photo from the pyramid, or at 100% the region the view covers, as the
+    /// desktop's Develop does.
+    fn show(&mut self, p: &mut Photo, zoom: Zoom) -> anyhow::Result<Shown> {
         let t = Instant::now();
+        let g = Geometry::new(&p.image, &p.recipe, 0);
+        let (region, zoom) = match zoom {
+            Zoom::Fit => (None, Zoom::Fit),
+            Zoom::Actual { center_x, center_y } => {
+                let w = self.config.width.min(g.width);
+                let h = self.config.height.min(g.height);
+                let x = (center_x * g.width as f32 - w as f32 / 2.)
+                    .round()
+                    .clamp(0., (g.width - w) as f32) as u32;
+                let y = (center_y * g.height as f32 - h as f32 / 2.)
+                    .round()
+                    .clamp(0., (g.height - h) as f32) as u32;
+                let center = Zoom::Actual {
+                    center_x: (x as f32 + w as f32 / 2.) / g.width as f32,
+                    center_y: (y as f32 + h as f32 / 2.) / g.height as f32,
+                };
+                (Some([x, y, w, h]), center)
+            }
+        };
         let display = Display {
-            slot: Slot::Whole,
+            slot: if region.is_some() {
+                Slot::Region
+            } else {
+                Slot::Whole
+            },
             clipping: ClipOverlay::NONE,
             monitor: None,
             navigator: None,
@@ -499,12 +554,16 @@ impl Screen {
             samples: false,
             drawn: Vec::new(),
         };
-        let max_edge = self.config.width.max(self.config.height);
+        let max_edge = if region.is_some() {
+            0
+        } else {
+            self.config.width.max(self.config.height)
+        };
         let out = p.renderer.render_to(
             &p.image,
             &p.recipe,
             max_edge,
-            None,
+            region,
             Cancel::NEVER,
             Some(&display),
         )?;
@@ -516,13 +575,15 @@ impl Screen {
             Output::Pixels(pixels) => (self.upload_pixels(&pixels), "CPU"),
         };
         let (width, height) = (texture.width(), texture.height());
-        self.draw(Some(&texture));
+        self.draw(Some((&texture, region.is_some())));
         Ok(Shown {
             render_ms,
             present_ms: t.elapsed().as_secs_f64() * 1000.,
             backend,
             width,
             height,
+            full: [g.width, g.height],
+            zoom,
         })
     }
 
@@ -573,9 +634,9 @@ impl Screen {
         texture
     }
 
-    /// Draws `texture` fitted and centred on a dark background, or only the
-    /// background.
-    fn draw(&mut self, texture: Option<&wgpu::Texture>) {
+    /// Draws `texture` centred on a dark background, fitted to the surface,
+    /// or with one texel per pixel when `actual`; or only the background.
+    fn draw(&mut self, texture: Option<(&wgpu::Texture, bool)>) {
         let target = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -590,10 +651,10 @@ impl Screen {
         };
         let view = target.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
-        let bind = texture.map(|texture| {
+        let bind = texture.map(|(texture, actual)| {
             let (w, h) = (self.config.width as f32, self.config.height as f32);
             let (tw, th) = (texture.width() as f32, texture.height() as f32);
-            let fit = (w / tw).min(h / th);
+            let fit = if actual { 1. } else { (w / tw).min(h / th) };
             let scale = [tw * fit / w, th * fit / h, 0., 0.];
             self.queue
                 .write_buffer(&self.fit, 0, bytemuck::cast_slice(&scale));
