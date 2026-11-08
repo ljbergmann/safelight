@@ -5,6 +5,9 @@
 
 uniffi::setup_scaffolding!();
 
+mod render;
+pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
+
 /// Where RAWmakase's crates put their files on this device.
 #[derive(uniffi::Record)]
 pub struct Folders {
@@ -28,5 +31,8 @@ pub fn folders() -> Folders {
 /// A greeting from Rust, to show the bridge works at all.
 #[uniffi::export]
 pub fn hello() -> String {
-    format!("RAWmakase core {} running on Rust", env!("CARGO_PKG_VERSION"))
+    format!(
+        "RAWmakase core {} running on Rust",
+        env!("CARGO_PKG_VERSION")
+    )
 }

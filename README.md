@@ -29,8 +29,29 @@ The build script uses rustup's toolchain explicitly: a Homebrew `rustc` on
 
 Run `scripts/build-core.sh` again after any change to `core/` or the crates.
 
+On an iPad, from the command line (unlock it first; Developer Mode on):
+
+```sh
+xcodebuild -project Rawmakase.xcodeproj -scheme Rawmakase -configuration Release \
+  -destination 'id=<the iPad's UDID>' -derivedDataPath build/DerivedData \
+  -allowProvisioningUpdates DEVELOPMENT_TEAM=<your team ID> build
+```
+
+## Measuring
+
+Put RAW files in the app's Documents folder (Finder, the Files app, or
+`xcrun simctl get_app_container <device> com.ljbergmann.rawmakase-ipad data`
+in the simulator). Launched with `-benchmark`, the app renders each one on
+the GPU and the CPU, full and half size, and writes the timings and memory to
+`Documents/benchmark.txt` and its console, and each GPU full-size render to
+`<name>.ipad.ppm` for comparing with the Mac's (`cargo run --release
+--example render` in `core/`, with `HOME` pointing at an empty folder so
+neither side reads installed profiles).
+
 ## Status
 
-Stage 0 and 1: every RAWmakase crate below the app builds for the iPad and
-its simulator; the app shows a string and the data folders from Rust, inside
-its sandbox.
+- Stage 0 and 1: every RAWmakase crate below the app builds for the iPad and
+  its simulator.
+- Stage 2: the app opens, decodes and renders RAWs from its Documents folder
+  through the core; in the simulator the pixels are identical to the Mac's
+  CPU render of the same photo.
