@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct RawmakaseApp: App {
+struct SafelightApp: App {
     var body: some Scene {
         WindowGroup {
             LibraryView()

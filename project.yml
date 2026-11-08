@@ -1,4 +1,4 @@
-name: Rawmakase
+name: Safelight
 options:
   bundleIdPrefix: com.ljbergmann
   deploymentTarget:
@@ -7,7 +7,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
 targets:
-  Rawmakase:
+  Safelight:
     type: application
     platform: iOS
     sources:
@@ -16,7 +16,7 @@ targets:
     # A full-size decode of a 45 MP RAW and its 100% view need more than the
     # default limit on an 8 GB iPad (MEASUREMENTS.md).
     entitlements:
-      path: app/Rawmakase.entitlements
+      path: app/Safelight.entitlements
       properties:
         com.apple.developer.kernel.increased-memory-limit: true
     dependencies:
@@ -31,7 +31,10 @@ targets:
         codeSign: true
     settings:
       base:
+        # Kept from before the rename, so the app installed on an iPad stays
+        # the same app and keeps its catalog.
         PRODUCT_BUNDLE_IDENTIFIER: com.ljbergmann.rawmakase-ipad
+        INFOPLIST_KEY_CFBundleDisplayName: Safelight
         TARGETED_DEVICE_FAMILY: "2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

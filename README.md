@@ -1,8 +1,8 @@
-# RAWmakase for iPad
+# Safelight
 
 *Lightroom's way of working on the iPad, without Lightroom.*
 
-RAWmakase for iPad is a native iPad app for developing RAW photos, built on
+Safelight is a native iPad app for developing RAW photos, built on
 [RAWmakase](https://github.com/pch/rawmakase)'s engine: the same RAW
 decoders, colour pipeline, catalog and edits as the desktop app, under a
 touch interface written in SwiftUI. A catalog you edit on the iPad opens in
@@ -94,7 +94,7 @@ rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim
 scripts/build-core.sh    # the Rust core and its Swift bindings
 scripts/build-ort.sh     # Microsoft's ONNX Runtime for iOS, for the AI features
 xcodegen generate
-open Rawmakase.xcodeproj
+open Safelight.xcodeproj
 ```
 
 Then run it on your iPad from Xcode, with your own team for signing. The
@@ -105,7 +105,7 @@ the crates.
 From the command line (the iPad unlocked, Developer Mode on):
 
 ```sh
-xcodebuild -project Rawmakase.xcodeproj -scheme Rawmakase -configuration Release \
+xcodebuild -project Safelight.xcodeproj -scheme Safelight -configuration Release \
   -destination 'id=<the iPad's UDID>' -derivedDataPath build/DerivedData \
   -allowProvisioningUpdates DEVELOPMENT_TEAM=<your team ID> build
 ```

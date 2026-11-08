@@ -1,4 +1,4 @@
-# Contributing to RAWmakase for iPad
+# Contributing to Safelight
 
 Thanks for helping. This app is a SwiftUI front end over RAWmakase's own Rust
 crates, so most of what makes a good change here is what makes one in
@@ -18,7 +18,7 @@ rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim
 scripts/build-core.sh    # the Rust core and its Swift bindings
 scripts/build-ort.sh     # ONNX Runtime for iOS, for the AI features
 xcodegen generate
-open Rawmakase.xcodeproj
+open Safelight.xcodeproj
 ```
 
 Run `scripts/build-core.sh` again after changing `core/` or the crates.
