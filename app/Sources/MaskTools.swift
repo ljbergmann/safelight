@@ -10,6 +10,8 @@ enum PhotoTool: Equatable {
     case brush
     /// Tap to place a Heal (or Clone) spot.
     case heal
+    /// Tap something neutral to set white balance from it.
+    case whiteBalance
 }
 
 extension LiveModel {
@@ -219,6 +221,10 @@ final class PaintView: UIView {
             model.refresh()
         case .heal:
             _ = model.live?.addSpot(at: view(last), radius: model.spotSize, clone: model.cloneSpots)
+            model.refresh()
+        case .whiteBalance:
+            model.live?.pickWhiteBalance(at: view(last))
+            model.tool = .none
             model.refresh()
         case .none:
             break

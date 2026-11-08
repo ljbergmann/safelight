@@ -11,6 +11,8 @@ mod alloc;
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 
 mod controls;
+mod curve;
+pub use curve::CurveState;
 mod edit;
 mod export;
 pub use ai::{AiModel, AiModelInfo, AiSelection, ModelInstall, ai_models};
@@ -26,6 +28,8 @@ pub use library::{Added, CollectionInfo, Library, LibraryPhoto};
 pub use masks::{MaskInfo, NewMask, Stroke};
 mod render;
 mod transfer;
+mod wb;
+pub use wb::AutoKind;
 pub use live::{FrameStats, LiveView, Zoom};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
 pub use transfer::{CopyGroup, PresetInfo, copy_groups, import_presets, presets};

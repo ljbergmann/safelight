@@ -43,6 +43,10 @@ pub struct EditState {
     pub save_error: Option<String>,
     /// What AI Denoise is doing for the photo on screen, when it is on.
     pub ai_denoise: Option<String>,
+    /// The white balance menu: the current choice ("As Shot", "Auto", a
+    /// preset or "Custom") and what it offers (none for a monochrome photo).
+    pub white_balance: String,
+    pub white_balance_choices: Vec<String>,
 }
 
 /// Rotate and Flip.
@@ -176,6 +180,61 @@ impl OpenEdit {
         self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
     }
 
+    /// Edits point curve `channel` as one editor frame: adds a point at `at`
+    /// (when `index` is `None`) or moves point `index` there. Returns the
+    /// point's index, which the drag keeps moving; `done` ends the drag,
+    /// one History step ("Point Curve" and the channel).
+    pub(crate) fn curve_point(
+        &mut self,
+        channel: u32,
+        index: Option<u32>,
+        at: [f32; 2],
+        done: bool,
+    ) -> Option<u32> {
+        crate::curve::curve(self.session.recipe(), channel)?;
+        let frame = self.session.begin();
+        let curve = crate::curve::curve_mut(self.session.recipe_mut(), channel)?;
+        let index = match index {
+            Some(i) => {
+                curve.move_point(i as usize, at);
+                i as usize
+            }
+            None => curve.insert(at),
+        };
+        let channel_name = crate::curve::CHANNELS[channel as usize];
+        self.session
+            .name_next_step(Step::new("Point Curve", channel_name));
+        let gesture = if done {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        self.session.finish(frame, gesture);
+        Some(index as u32)
+    }
+
+    /// Removes point `index` of curve `channel` (not an end point): one
+    /// History step.
+    pub(crate) fn remove_curve_point(&mut self, channel: u32, index: u32) -> bool {
+        let mut after = self.session.recipe().clone();
+        let removed = crate::curve::curve_mut(&mut after, channel)
+            .is_some_and(|c| c.remove(index as usize));
+        if removed {
+            self.change("Point Curve", crate::curve::CHANNELS[channel as usize], |r| *r = after);
+        }
+        removed
+    }
+
+    /// Sets the RGB curve to one of Lightroom's built-in curves.
+    pub(crate) fn set_builtin_curve(&mut self, name: &str) -> bool {
+        let mut after = self.session.recipe().clone();
+        if !crate::curve::set_builtin(&mut after, name) {
+            return false;
+        }
+        self.change("Point Curve", name, |r| *r = after);
+        true
+    }
+
     /// Rotates or flips the photo as shown, keeping the crop on the same part
     /// of it, as the desktop's Rotate and Flip do: one History step.
     pub(crate) fn orient(&mut self, orientation: Orientation) -> bool {
@@ -247,6 +306,23 @@ impl OpenEdit {
     }
 
     /// Moves History one step back (`by` −1) or forward (+1).
+    /// Sets white balance to As Shot or a named preset, as one History step.
+    pub(crate) fn set_white_balance(&mut self, name: &str) -> bool {
+        let mut after = self.session.recipe().clone();
+        if !crate::wb::set_named(&mut after, &self.metadata, name) {
+            return false;
+        }
+        self.change("White Balance", name, |r| *r = after);
+        true
+    }
+
+    /// Shows History with `applied` of its steps applied, as tapping a step
+    /// in the History list does (0 is the edit as it was opened).
+    pub(crate) fn go_to(&mut self, applied: usize) -> bool {
+        self.session.finish_gesture();
+        self.session.jump(applied)
+    }
+
     pub(crate) fn step(&mut self, by: i32) -> bool {
         self.session.finish_gesture();
         let (_, applied) = self.session.history().steps();
@@ -273,6 +349,8 @@ impl OpenEdit {
             needs_save: self.session.save_state().needs_save(),
             save_error: self.session.save_state().message().map(str::to_string),
             ai_denoise: None,
+            white_balance: crate::wb::current(self.session.recipe(), &self.metadata),
+            white_balance_choices: crate::wb::choices(self.session.recipe(), &self.metadata),
         }
     }
 
@@ -436,6 +514,61 @@ mod tests {
         let mut edit = open(&library, id, &path);
         edit.set(Control::Param { index: 2 }, 12., true);
         assert_eq!(exposure(&edit), slider(&edit, "Exposure").max);
+    }
+
+    #[test]
+    fn white_balance_presets_set_lightrooms_values_as_one_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        assert_eq!(edit.state().white_balance, "As Shot");
+        assert!(edit.state().white_balance_choices.contains(&"Tungsten".to_string()));
+        assert!(edit.set_white_balance("Daylight"));
+        assert_eq!((edit.recipe().temperature, edit.recipe().tint), (5500., 10.));
+        assert_eq!(edit.state().white_balance, "Daylight");
+        assert_eq!(edit.state().steps, ["White Balance Daylight"]);
+        assert!(edit.set_white_balance("As Shot"));
+        assert_eq!(edit.state().white_balance, "As Shot");
+        assert!(!edit.set_white_balance("Moonlight"));
+    }
+
+    #[test]
+    fn a_curve_drag_adds_a_point_and_is_one_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let i = edit.curve_point(0, None, [0.5, 0.5], false).unwrap();
+        edit.curve_point(0, Some(i), [0.5, 0.6], false);
+        edit.curve_point(0, Some(i), [0.5, 0.65], true);
+        assert_eq!(edit.recipe().curve.points.len(), 3);
+        assert!((edit.recipe().curve.evaluate(0.5) - 0.65).abs() < 1e-3);
+        assert_eq!(edit.state().steps, ["Point Curve RGB"]);
+        // A point can't be dragged past its neighbours.
+        edit.curve_point(2, None, [0.3, 0.4], true);
+        let red = &edit.recipe().effects.channels[1];
+        assert_eq!(red.points.len(), 3);
+        edit.recipe().validate().unwrap();
+        assert!(edit.remove_curve_point(0, i));
+        assert!(!edit.remove_curve_point(0, 0), "an end point stays");
+        assert!(edit.set_builtin_curve("Strong Contrast"));
+        assert_eq!(crate::curve::state(edit.recipe(), 0).unwrap().name, "Strong Contrast");
+    }
+
+    #[test]
+    fn tapping_a_history_step_shows_the_edit_as_it_was_then() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        edit.set(Control::Param { index: 2 }, 0.5, true);
+        edit.set(Control::Param { index: 2 }, 1.0, true);
+        edit.set(Control::Param { index: 3 }, 20., true);
+        assert!(edit.go_to(1));
+        assert_eq!((exposure(&edit), edit.state().applied), (0.5, 1));
+        // The later steps stay, to go forward to.
+        assert_eq!(edit.state().steps.len(), 3);
+        assert!(edit.go_to(3));
+        assert_eq!(exposure(&edit), 1.0);
+        assert!(!edit.go_to(9), "past the last step");
     }
 
     #[test]

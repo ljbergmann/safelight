@@ -36,6 +36,8 @@ final class LiveModel {
     /// A Select Subject, Sky or Background run in progress, and why the last
     /// one failed.
     var selecting: AiSelection?
+    /// An Auto estimate running.
+    var autoRunning: AutoKind?
     var selectionError: String?
     /// The model whose download the install sheet offers.
     var offeredModel: AiModel?
@@ -290,6 +292,21 @@ struct LiveEditor: View {
             model.refresh()
             print("MASKS \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); spots \(model.edit?.spots ?? 0) (heal found a source: \(healed)); steps \(model.edit?.steps ?? [])")
         }
+        if args.contains("-develop-test"), let live = model.live {
+            // White balance, the eyedropper, Auto, a curve drag and History.
+            live.setWhiteBalance(name: "Daylight")
+            live.pickWhiteBalance(at: [0.5, 0.5])
+            let start = Date()
+            let auto = await Task.detached { Result { try live.auto(kind: .settings) } }.value
+            let autoMs = Int(Date().timeIntervalSince(start) * 1000)
+            let i = live.setCurvePoint(channel: 0, index: nil, x: 0.5, y: 0.5, done: false)
+            _ = live.setCurvePoint(channel: 0, index: i, x: 0.5, y: 0.6, done: true)
+            let steps = live.editState()?.steps ?? []
+            live.goToStep(applied: 1)
+            let wb = live.editState()?.whiteBalance ?? "?"
+            print("DEVELOP steps \(steps); auto \(auto) in \(autoMs) ms; curve \(live.pointCurve(channel: 0)?.points ?? []); after going to step 1: WB \(wb), applied \(live.editState()?.applied ?? 0)")
+            live.goToStep(applied: 0)
+        }
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)
         }
@@ -447,6 +464,8 @@ struct DevelopPanels: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                HistoryPanel(model: model)
+                Divider()
                 PresetsPanel(model: model)
                 Divider()
                 MasksPanel(model: model)
@@ -481,6 +500,12 @@ struct PanelSection: View {
     var body: some View {
         DisclosureGroup(isExpanded: $isOpen) {
             VStack(alignment: .leading, spacing: 6) {
+                if section.title == "Basic" {
+                    BasicExtras(model: model)
+                }
+                if section.title == "Tone Curve" {
+                    PointCurveEditor(model: model)
+                }
                 ForEach(section.switches, id: \.label) { item in
                     SwitchRow(item: item, model: model)
                 }

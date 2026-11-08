@@ -445,6 +445,132 @@ impl LiveView {
         self.step(1);
     }
 
+    /// Point curve `channel` (0 RGB, 1 Red, 2 Green, 3 Blue) as drawn.
+    pub fn point_curve(&self, channel: u32) -> Option<crate::curve::CurveState> {
+        crate::curve::state(self.shared.edit().as_ref()?.recipe(), channel)
+    }
+
+    /// Lightroom's built-in point curves' names.
+    pub fn builtin_curves(&self) -> Vec<String> {
+        crate::curve::builtin_names()
+    }
+
+    /// Adds a point to curve `channel` at `x`, `y` (`index` none) or moves
+    /// point `index` there; returns the point's index for the rest of the
+    /// drag. `done` ends the drag, one History step.
+    pub fn set_curve_point(
+        &self,
+        channel: u32,
+        index: Option<u32>,
+        x: f32,
+        y: f32,
+        done: bool,
+    ) -> Option<u32> {
+        let out = self
+            .shared
+            .edit()
+            .as_mut()?
+            .curve_point(channel, index, [x, y], done);
+        self.shared.request(|_| {});
+        out
+    }
+
+    pub fn remove_curve_point(&self, channel: u32, index: u32) {
+        if self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.remove_curve_point(channel, index))
+        {
+            self.shared.request(|_| {});
+        }
+    }
+
+    pub fn set_builtin_curve(&self, name: String) {
+        if self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_builtin_curve(&name))
+        {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Sets white balance to As Shot or a named preset: one History step.
+    pub fn set_white_balance(&self, name: String) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_white_balance(&name));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// The eyedropper: makes the point `at` of the view (0–1 across the
+    /// photo as shown) neutral, as one History step.
+    pub fn pick_white_balance(&self, at: Vec<f32>) {
+        let Some([u, v]) = point(&at) else { return };
+        self.with_image(|image, edit| {
+            edit.change("White Balance", "Custom", |r| crate::wb::pick(image, r, u, v));
+            Some(())
+        });
+    }
+
+    /// Runs Auto Settings or Auto white balance and applies it as one
+    /// History step. Takes a moment (a reduced render): call it off the main
+    /// thread. Nothing changes when another photo opened, or the settings
+    /// Auto measures changed, while it ran.
+    pub fn auto(&self, kind: crate::wb::AutoKind) -> Result<bool, RenderError> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| RenderError::Failed {
+                message: "No photo is open".into(),
+            })?;
+        let Some((base, id)) = self
+            .shared
+            .edit()
+            .as_ref()
+            .map(|e| (e.recipe().clone(), e.id))
+        else {
+            return Ok(false);
+        };
+        let estimate_base = base.clone();
+        let auto = on_core_thread(move || Ok(crate::wb::estimate(kind, &image, &estimate_base)?))?;
+        {
+            let mut guard = self.shared.edit();
+            let Some(edit) = guard.as_mut().filter(|e| e.id == id) else {
+                return Ok(false);
+            };
+            if crate::wb::inputs(kind, edit.recipe()) != crate::wb::inputs(kind, &base) {
+                return Ok(false);
+            }
+            let (name, value) = kind.step();
+            edit.change(name, value, |r| crate::wb::apply(kind, &auto, r));
+        }
+        self.shared.request(|_| {});
+        Ok(true)
+    }
+
+    /// Shows the edit with `applied` of History's steps applied, as tapping
+    /// a step in the History list does.
+    pub fn go_to_step(&self, applied: u32) {
+        let moved = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.go_to(applied as usize));
+        if moved {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// The sliders, History and save state; `None` until the edit has loaded.
     pub fn edit_state(&self) -> Option<EditState> {
         let mut state = self.shared.edit().as_ref().map(OpenEdit::state)?;

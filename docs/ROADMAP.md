@@ -1,48 +1,105 @@
-# What the Mac's Develop has that the iPad doesn't (2026-11-08)
+# Roadmap
 
-An audit of the desktop's Develop module against the iPad's core and app.
-Every slider is there: the iPad exposes all of the desktop's sliders
-(`ParameterId`s) but the two incremental white balance ones, which Temp and
-Tint stand in for, and all 17 mask sliders. The gaps are settings without a
-slider, tools used on the photo, and views. "Wiring" means the model or
-engine has it and only the core's API and the iPad's screens are missing.
+What the iPad app does, what the desktop RAWmakase does that it doesn't yet,
+and the order to close the gaps. Checked off as it lands; "S", "M" and "L"
+are rough sizes. "Wiring" means the model or engine has it already and only
+the core's API and the iPad's screens are missing.
 
-## The ten a Lightroom user misses most
+Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 
-1. Point curve editor, RGB and per channel (wiring + a curve control; M)
-2. Profile browser and Profile Amount (M–L)
-3. White balance presets and the eyedropper (S–M)
-4. Auto Settings and Auto white balance (engine has `auto_tone`; M)
-5. Before/After (a second render; M–L)
-6. Histogram and clipping indicators (S–M)
-7. Mask math (add, subtract, intersect, invert) and Color and Luminance
-   Range masks (M)
-8. Editing a placed gradient, and showing the mask over the photo (M)
-9. History list with tap to go to a step, and Snapshots (S–M)
-10. Saving presets and Preset Amount (M)
+## Done
 
-Close behind: Upright, Point Color.
+- [x] Catalog in the app's storage, the desktop's format; survives relaunch
+      and the app's container moving
+- [x] Live preview on Metal, Fit and 100%, pinch and pan
+- [x] Every Develop slider: all of the desktop's sliders but the two
+      incremental white balance ones, which Temp and Tint stand in for, and
+      all 17 mask sliders
+- [x] Panel switches, B&W, lens profile on/off, chromatic aberration
+- [x] Crop, Straighten, Rotate, Flip, aspect ratios
+- [x] Undo and Redo, History saved with the edit
+- [x] Presets (built-in and imported Lightroom XMP), Copy/Paste Settings
+      with groups, paste onto several photos
+- [x] Export (JPEG, TIFF, PNG, size, quality) and the share sheet
+- [x] Ratings, flags, colour labels, filters, collections, Quick Collection
+- [x] Brush, linear and radial masks, with the Pencil's pressure; Heal and
+      Clone spots
+- [x] AI Denoise; Select Subject, Sky and Background (models downloaded on
+      request, ONNX Runtime embedded)
+- [x] Import core: list a card or folder, find duplicates by content, copy
+      into year/date folders, progress and Cancel
 
-## The rest, by panel
+## Now: the Develop gaps a Lightroom user misses most
 
-- **Basic:** WB presets, Treatment Auto, the HDR switch (HDR display is L),
-  Fit Camera Look, per-slider auto, panel and slider reset.
-- **Tone Curve:** saved point curves, the parametric graph with split
-  points, Levels Black and White point, the targeted adjustment tool.
+- [ ] History list, tap a step to go back to it (S; in progress)
+- [ ] White balance presets and the eyedropper (S–M; in progress)
+- [ ] Auto Settings and Auto white balance (M; in progress)
+- [ ] Point curve, RGB and per channel, built-in curves (M; in progress)
+- [ ] Profile browser (camera, Adobe, creative, imported DCP and `.cube`)
+      and Profile Amount (M–L)
+- [ ] Histogram and clipping warnings (S–M)
+- [ ] Mask math (add, subtract, intersect, invert), mask invert and Amount,
+      Color and Luminance Range masks (M)
+- [ ] Editing a placed gradient with handles; showing the mask over the
+      photo (M)
+- [ ] Saving presets, Update, Rename, Delete; Preset Amount; Snapshots (M)
+- [ ] Before/After: side by side, top and bottom, split (M–L)
+
+## Next: import and library, for daily use
+
+- [ ] Import screen modelled on Lightroom for iPad: a card's or folder's
+      grid, already-imported photos marked, select all new, progress (M)
+- [ ] Import from the Photos library, RAW originals (M)
+- [ ] Import a Lightroom Classic catalog (`.lrcat`) or a Lightroom cloud
+      library, with edits (the desktop has both; M–L)
+- [ ] Loupe with swipe between photos, compare and survey views (M)
+- [ ] Sort orders, stacks, smart collections (M)
+- [ ] Metadata (title, caption, creator, copyright) and keywords (M)
+- [ ] Virtual copies (M)
+- [ ] Delete photos, move and rename files and folders (M)
+
+## Then: the rest of Develop
+
+- **Basic:** Treatment Auto, the HDR switch (HDR display is L), Fit Camera
+  Look, per-slider Auto, panel and slider reset by double tap
+- **Tone Curve:** saved curves, the parametric graph with split points,
+  Levels Black and White point, the targeted adjustment tool
 - **Color:** Point Color, targeted HSL and B&W, the mixer's All view,
-  grading wheels.
+  grading wheels
 - **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
-  Upright and Guided Upright, Constrain Crop, Calibration's process version.
-- **Crop:** Auto Straighten and the ruler, crop overlays (thirds, golden
-  ratio…), a custom ratio.
-- **Masks:** mask invert and Amount, brush Density and Auto Mask, duplicate,
-  reset sliders, refining a Subject with clicks.
+  Upright and Guided Upright, Constrain Crop, Calibration's process version
+- **Crop:** Auto Straighten and the ruler, overlays (thirds, golden ratio…),
+  a custom ratio
+- **Masks:** brush Density and Auto Mask, duplicate, reset sliders, refining
+  a Subject with taps
 - **Retouch:** brushed spots, feather and opacity, moving or deleting a spot,
-  Visualize Spots, Red Eye and Pet Eye.
-- **Presets:** new, update, rename, delete; favorites and search; Paste from
-  Previous.
-- **View and workflow:** zoom levels between Fit and 100%, virtual copies,
-  metadata and keywords.
+  Visualize Spots, Red Eye and Pet Eye
+- **Presets:** favorites and search, Paste from Previous
+- **View:** zoom levels between Fit and 100%, photo info overlay, Reference
+  View, camera thumbnail
 
 The desktop has no depth, object or people masks, no content-aware remove
-and no soft proofing, so the iPad doesn't lack those either.
+and no soft proofing, so they aren't gaps.
+
+## Export, fuller
+
+- [ ] Export presets, file naming templates, metadata options, output
+      sharpening, colour space, watermarks (the desktop has all; M)
+
+## Sync
+
+- [ ] Sync through S3-compatible storage: per-device change records,
+      originals by content hash, never the SQLite file (L; needs a bucket)
+- [ ] Smart previews: edit without the original on the device (L)
+
+## Platforms and polish
+
+- [ ] iPhone layout (M–L)
+- [ ] The interface modelled on Lightroom for iPad throughout (M–L)
+- [ ] AI Denoise on CoreML (GPU / Neural Engine); measure against the CPU (S–M)
+- [ ] Hand testing on the device: the Pencil, the Files picker, a real SD card
+
+## Desktop features not planned for the iPad
+
+MIDI controllers, the MCP server and scripting, remote inference, the
+command line and self-update are the desktop's.
