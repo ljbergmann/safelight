@@ -753,6 +753,64 @@ impl LiveView {
         })
     }
 
+    /// The parametric curve as the Tone Curve's graph draws it.
+    pub fn parametric_curve(&self) -> Option<crate::tone::ParametricCurve> {
+        Some(crate::tone::parametric(
+            &self.shared.edit().as_ref()?.recipe().effects,
+        ))
+    }
+
+    /// The slider a drag up or down at input `x` (0–1) of the parametric
+    /// graph moves: its region's.
+    pub fn parametric_region_control(&self, x: f32) -> Option<crate::controls::Control> {
+        crate::tone::region_control(&self.shared.edit().as_ref()?.recipe().effects, x)
+    }
+
+    /// Moves the parametric curve's split `index` to `t` (0–1), or with
+    /// `None` back to where it starts; `done` ends the drag, one History step.
+    pub fn set_parametric_split(&self, index: u32, t: Option<f32>, done: bool) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_parametric_split(index as usize, t, done));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// The Point Curve menu for the photo.
+    pub fn point_curve_menu(&self) -> Option<crate::tone::PointCurveMenu> {
+        Some(crate::tone::menu(self.shared.edit().as_ref()?.recipe()))
+    }
+
+    /// Gives the photo the menu's curve `index`: one History step.
+    pub fn choose_point_curve(&self, index: u32) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.choose_point_curve(index as usize));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Saves the photo's point curves under `name`, for the menu here and
+    /// in Lightroom's Curves folder layout.
+    pub fn save_point_curve(&self, name: String) -> Result<(), RenderError> {
+        let recipe = self
+            .shared
+            .edit()
+            .as_ref()
+            .map(|e| e.recipe().clone())
+            .ok_or_else(|| RenderError::Failed {
+                message: "No photo is open".into(),
+            })?;
+        crate::tone::save(&recipe, name.trim())?;
+        Ok(())
+    }
+
     /// Starts a Targeted Adjustment drag at `at` (fractions across the
     /// photo as shown): samples the photo there as each control sees it,
     /// then decides which sliders the drag moves. Takes a moment (it renders

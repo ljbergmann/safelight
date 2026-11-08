@@ -36,6 +36,9 @@ pub enum Control {
     ProfileAmount,
     /// A mask's Amount, which scales all its sliders (0–200%).
     MaskAmount { mask: u32 },
+    /// Levels' black point (`which` 0) or white point (1), 0–1, kept at
+    /// least 0.01 apart as the desktop keeps them.
+    Levels { which: u32 },
     /// A Point Color swatch's setting: `which` 0 to 2 its Hue, Saturation
     /// and Luminance shifts, 3 its Variance, 4 its Range.
     PointColor { swatch: u32, which: u32 },
@@ -307,6 +310,21 @@ impl Control {
                 signed: false,
                 unit: "",
             }),
+            Control::Levels { which } => Some(Spec {
+                label: if which == 0 {
+                    "Black Point"
+                } else {
+                    "White Point"
+                }
+                .into(),
+                min: 0.,
+                max: 1.,
+                step: 0.,
+                scale: 100.,
+                decimals: 0,
+                signed: false,
+                unit: "",
+            }),
             Control::PointColor { which, .. } => Some(Spec {
                 label: ["Hue Shift", "Sat Shift", "Lum Shift", "Variance", "Range"]
                     .get(which as usize)?
@@ -397,6 +415,11 @@ impl Control {
                 grade.get(channel as usize).copied()
             }
             Control::ProfileAmount => Some(r.profile_amount),
+            Control::Levels { which } => Some(if which == 0 {
+                r.black_point
+            } else {
+                r.white_point
+            }),
             Control::MaskAmount { mask } => Some(r.masks.get(mask as usize)?.amount),
             Control::PointColor { swatch, which } => {
                 let p = r.point_colors.get(swatch as usize)?;
@@ -473,6 +496,16 @@ impl Control {
                     } else if which == 1 {
                         *low = low.min(*high);
                     }
+                }
+            }
+            Control::Levels { which } => {
+                // A hair over the 0.01 the model asks for, so rounding never
+                // leaves them closer.
+                const APART: f32 = 0.0101;
+                if which == 0 {
+                    r.black_point = value.min(r.white_point - APART).max(0.);
+                } else {
+                    r.white_point = value.max(r.black_point + APART).min(1.);
                 }
             }
             Control::ProfileAmount => {
@@ -790,9 +823,17 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata, start: &Recipe) -> Vec<Sect
                 P::ParametricLights,
                 P::ParametricDarks,
                 P::ParametricShadows,
-                P::Midtone,
                 P::CurveSaturation,
             ]),
+        ),
+        group(
+            "Light",
+            "Tone Curve · Levels",
+            vec![],
+            [Control::Levels { which: 0 }, Control::Levels { which: 1 }]
+                .into_iter()
+                .chain(params(&[P::Midtone]))
+                .collect(),
         ),
         group(
             "Color",

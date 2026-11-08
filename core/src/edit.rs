@@ -588,6 +588,50 @@ impl OpenEdit {
         }
     }
 
+    /// Moves the parametric curve's split `i` (0 to 2) to `t`, kept apart
+    /// from its neighbours, or with `None` back to where it starts, as one
+    /// editor frame; `done` ends the drag, one History step. The panel turns
+    /// on, as any change to it does.
+    pub(crate) fn set_parametric_split(&mut self, i: usize, t: Option<f32>, done: bool) -> bool {
+        use rawmakase_model::model::effects::Effects;
+        use rawmakase_model::model::panels::{Panel, PanelState};
+        if i > 2 {
+            return false;
+        }
+        let frame = self.session.begin();
+        let r = self.session.recipe_mut();
+        match t {
+            Some(t) => r.effects.move_split(i, t),
+            None => r.effects.splits[i] = Effects::DEFAULT_SPLITS[i],
+        }
+        r.panels.set(Panel::ToneCurve, PanelState::On);
+        self.session
+            .name_next_step(Step::new("Tone Curve", "Splits"));
+        let gesture = if done || t.is_none() {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+    }
+
+    /// Gives the photo the Point Curve menu's curve `index` (built-in ones
+    /// first, then saved ones): one History step ("Point Curve", its name),
+    /// none when it already has it.
+    pub(crate) fn choose_point_curve(&mut self, index: usize) -> bool {
+        use rawmakase_model::model::panels::{Panel, PanelState};
+        let mut after = self.session.recipe().clone();
+        let Some(name) = crate::tone::choose(&mut after, index) else {
+            return false;
+        };
+        after.panels.set(Panel::ToneCurve, PanelState::On);
+        if after == *self.session.recipe() {
+            return false;
+        }
+        self.change("Point Curve", &name, |r| *r = after);
+        true
+    }
+
     /// Duplicates mask `index` as the next mask: one History step. Returns
     /// the copy's index; `None` when there is no such mask or no room.
     pub(crate) fn duplicate_mask(&mut self, index: usize) -> Option<usize> {
@@ -1388,6 +1432,38 @@ pub(crate) mod tests {
         assert_eq!(second.recipe().exposure, wanted);
         assert_eq!(second.state().steps.last().unwrap(), "Paste from Previous");
         assert_eq!(second.paste_previous(), None, "nothing more to change");
+    }
+
+    #[test]
+    fn levels_splits_and_point_curves_are_steps_that_keep_the_edit_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let steps = edit.state().steps.len();
+        // The black point can't pass the white point.
+        edit.set(Control::Levels { which: 1 }, 0.4, true);
+        edit.set(Control::Levels { which: 0 }, 0.9, true);
+        assert!((edit.recipe().black_point - 0.3899).abs() < 1e-5);
+        edit.recipe().validate().unwrap();
+        // A split drag is one step and stays apart from its neighbour.
+        for (t, done) in [(0.45, false), (0.6, false), (0.9, true)] {
+            edit.set_parametric_split(0, Some(t), done);
+        }
+        assert_eq!(edit.recipe().effects.splits[0], 0.45);
+        // Strong Contrast from the menu, by its index.
+        let menu = crate::tone::menu(edit.recipe());
+        let strong = menu
+            .names
+            .iter()
+            .position(|n| n == "Strong Contrast")
+            .unwrap();
+        assert!(edit.choose_point_curve(strong));
+        assert!(!edit.choose_point_curve(strong), "already that curve");
+        assert_eq!(crate::tone::menu(edit.recipe()).shown, "Strong Contrast");
+        let names = edit.state().steps;
+        assert_eq!(names.len(), steps + 4, "{names:?}");
+        assert_eq!(names.last().unwrap(), "Point Curve Strong Contrast");
+        edit.recipe().validate().unwrap();
     }
 
     #[test]
