@@ -53,5 +53,5 @@ neither side reads installed profiles).
 - Stage 0 and 1: every RAWmakase crate below the app builds for the iPad and
   its simulator.
 - Stage 2: the app opens, decodes and renders RAWs from its Documents folder
-  through the core; in the simulator the pixels are identical to the Mac's
-  CPU render of the same photo.
+  through the core, on the simulator and on an M1 iPad Pro, with the same
+  pixels as the Mac. Timings and memory: [MEASUREMENTS.md](MEASUREMENTS.md).
