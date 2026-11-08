@@ -1,8 +1,8 @@
-<img src="docs/brand/icon-256.png" alt="" width="128" align="right">
+<p align="center"><img src="docs/brand/icon-256.png" alt="" width="128"></p>
 
-# Safelight
+<h1 align="center">Safelight</h1>
 
-*Lightroom's way of working on the iPad, without Lightroom.*
+<p align="center"><em>Lightroom's way of working on the iPad, without Lightroom.</em></p>
 
 Safelight is a native iPad app for developing RAW photos, built on
 [RAWmakase](https://github.com/pch/rawmakase)'s engine: the same RAW
