@@ -21,6 +21,7 @@ extension LiveModel {
 struct HistoryPanel: View {
     let model: LiveModel
     @State private var expanded = false
+    @State private var clearing = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
@@ -34,7 +35,20 @@ struct HistoryPanel: View {
             }
             .padding(.top, 4)
         } label: {
-            Text("History").font(.headline)
+            HStack {
+                Text("History").font(.headline)
+                Spacer()
+                Menu("History", systemImage: "ellipsis.circle") {
+                    Button("Clear History", systemImage: "trash", role: .destructive) { clearing = true }
+                        .disabled((model.edit?.steps.isEmpty ?? true))
+                }
+                .labelStyle(.iconOnly)
+            }
+        }
+        .confirmationDialog("Clear this photo's History?", isPresented: $clearing, titleVisibility: .visible) {
+            Button("Clear History", role: .destructive) { model.live?.clearHistory(); model.refresh() }
+        } message: {
+            Text("The edit stays as it is; its steps can't be gone back to.")
         }
     }
 

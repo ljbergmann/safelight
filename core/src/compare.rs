@@ -121,11 +121,10 @@ impl OpenEdit {
     /// The settings Before shows: those copied to it, else the photo's
     /// starting settings, framed as the edit is.
     pub(crate) fn before_settings(&self) -> Recipe {
-        let before = self.before.clone().unwrap_or_else(|| {
-            rawmakase_interop::raw_defaults::DevelopDefaults::default()
-                .resolve(&self.metadata, &self.profiles)
-                .recipe
-        });
+        let before = self
+            .before
+            .clone()
+            .unwrap_or_else(|| self.starting_settings());
         before_after::framed_like(before, self.session.recipe())
     }
 

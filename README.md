@@ -72,8 +72,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount; swiping to the next or previous photo; white balance presets and
   eyedropper; Auto; the point curve; Crop,
-  Straighten, Rotate and Flip; Undo, Redo and a History you can step back
-  through; Snapshots; Before/After, side by side or split.
+  Straighten, Rotate and Flip; Undo, Redo, Reset and a History you can step
+  back through or clear; Snapshots; Before/After, side by side or split.
 - **Masks and retouching**: brush (with the Pencil's pressure), linear and
   radial masks with their own sliders; Select Subject, Sky and Background;
   Heal and Clone.
@@ -147,6 +147,7 @@ them after `--`):
 | `-open <file>` | Opens a photo of the catalog in the editor |
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |
 | `-set-exposure <stops>`, `-save` | Edits and saves, to check edits survive a relaunch |
+| `-reset`, `-clear-history` (with `-open`) | Resets the edit to the photo's starting settings, then clears History, before any `-set-exposure`: for putting a photo back |
 | `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets, snapshots and Before/After; masks and Heal; the AI models. The first two go back to the edit as opened, but their steps stay in History; use them on a copy of a photo |
 | `-loupe-test` (with `-open`) | Swipes to the next photo and back, waiting for each one's own edit |
 | `-export <file>` | Exports a photo at full size, timed |

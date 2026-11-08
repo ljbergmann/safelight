@@ -399,6 +399,21 @@ impl LiveView {
         Ok(skipped)
     }
 
+    /// Back to the photo's starting settings: one History step.
+    pub fn reset(&self) {
+        let changed = self.shared.edit().as_mut().is_some_and(OpenEdit::reset);
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Clears History, keeping the edit as it is.
+    pub fn clear_history(&self) {
+        if let Some(edit) = self.shared.edit().as_mut() {
+            edit.clear_history();
+        }
+    }
+
     /// Shows Before alone or beside the edit, or the edit alone.
     pub fn set_compare(&self, compare: crate::compare::Compare) {
         self.shared.request(|r| r.compare = compare);

@@ -254,6 +254,8 @@ struct LiveEditor: View {
                     .disabled(!(model.edit?.canUndo ?? false))
                 Button("Redo", systemImage: "arrow.uturn.forward") { model.redo() }
                     .disabled(!(model.edit?.canRedo ?? false))
+                Button("Reset Settings", systemImage: "arrow.counterclockwise") { model.live?.reset(); model.refresh() }
+                    .disabled(model.edit == nil)
                 Button("Copy Settings", systemImage: "doc.on.doc") { model.copying = true }
                 Button("Paste Settings", systemImage: "doc.on.clipboard") { model.paste() }
                     .disabled(!(model.copied || (library.hasCopiedSettings())))
@@ -320,6 +322,10 @@ struct LiveEditor: View {
         // The edit as opened: the tests below go back to it when they're
         // done, as the app saves whatever is shown when it is ended.
         let opened = model.edit?.applied ?? 0
+        // -reset and -clear-history: back to the starting settings, then no
+        // History, before any -set-exposure: for putting a photo back.
+        if args.contains("-reset") { model.live?.reset() }
+        if args.contains("-clear-history") { model.live?.clearHistory() }
         if let i = args.firstIndex(of: "-set-exposure"), i + 1 < args.count, let stops = Float(args[i + 1]) {
             model.set(.param(index: 2), to: stops, done: true)
         }

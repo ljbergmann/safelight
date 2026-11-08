@@ -17,7 +17,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
       all 17 mask sliders
 - [x] Panel switches, B&W, lens profile on/off, chromatic aberration
 - [x] Crop, Straighten, Rotate, Flip, aspect ratios
-- [x] Undo and Redo, History saved with the edit
+- [x] Undo and Redo, History saved with the edit; Reset Settings, Clear
+      History
 - [x] Presets (built-in and imported Lightroom XMP), Copy/Paste Settings
       with groups, paste onto several photos
 - [x] Export (JPEG, TIFF, PNG, size, quality) and the share sheet

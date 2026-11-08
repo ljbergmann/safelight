@@ -412,6 +412,40 @@ impl OpenEdit {
         }
     }
 
+    /// The photo's starting settings: its raw defaults, as a photo opened
+    /// with no edit gets them.
+    pub(crate) fn starting_settings(&self) -> Recipe {
+        rawmakase_interop::raw_defaults::DevelopDefaults::default()
+            .resolve(&self.metadata, &self.profiles)
+            .recipe
+    }
+
+    /// Back to the photo's starting settings, as the desktop's Reset
+    /// Settings: one History step.
+    pub(crate) fn reset(&mut self) -> bool {
+        self.session.finish_gesture();
+        let defaults = self.starting_settings();
+        if defaults == *self.session.recipe() {
+            return false;
+        }
+        let was = self.session.replace(defaults);
+        self.session
+            .commit(was, Some(Step::new("Reset Settings", "")));
+        true
+    }
+
+    /// Lightroom's Clear History: the edit stays as it is, with no steps to
+    /// go back through; saved as such.
+    pub(crate) fn clear_history(&mut self) {
+        self.session.finish_gesture();
+        let recipe = self.session.recipe().clone();
+        let mut session = EditSession::default();
+        session.replace(recipe);
+        session.save_state_mut().mark_changed();
+        self.session = session;
+        self.amount = None;
+    }
+
     /// Moves History one step back (`by` −1) or forward (+1).
     /// The profiles this photo can use, as the Profile browser lists them.
     pub(crate) fn profiles(&self) -> Vec<crate::profile::ProfileInfo> {
@@ -582,6 +616,38 @@ pub(crate) mod tests {
 
     pub(crate) fn exposure(edit: &OpenEdit) -> f32 {
         slider(edit, "Exposure").value
+    }
+
+    #[test]
+    fn reset_is_one_step_and_clear_history_keeps_the_edit_with_no_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let fresh = edit.recipe().clone();
+        edit.set(Control::Param { index: 2 }, 1.2, true);
+        edit.set(Control::Param { index: 3 }, 0.4, true);
+        assert!(edit.reset());
+        assert_eq!(*edit.recipe(), fresh);
+        assert_eq!(edit.state().steps.last().unwrap(), "Reset Settings");
+        assert!(!edit.reset(), "already the starting settings");
+
+        edit.set(Control::Param { index: 2 }, 0.75, true);
+        edit.clear_history();
+        let state = edit.state();
+        assert_eq!(
+            (state.steps.len(), state.applied, state.can_undo),
+            (0, 0, false)
+        );
+        assert_eq!(exposure(&edit), 0.75);
+        assert!(state.needs_save);
+        edit.save().unwrap();
+        drop(edit);
+        let reopened = open(&library, id, &path);
+        assert_eq!(exposure(&reopened), 0.75);
+        assert!(
+            reopened.state().steps.is_empty(),
+            "the cleared History is what was saved"
+        );
     }
 
     #[test]

@@ -317,3 +317,15 @@ show nothing of the last photo while the next one opens.
   applied, and ending the app from the Mac saves what is shown, so the
   tested photo kept the test's edit. Both now go back to the edit as
   opened when they're done.
+
+## Reset Settings and Clear History (2026-11-08)
+
+Reset Settings (the toolbar's ↺) goes back to the photo's starting
+settings as one step, as on the desktop. Clear History (History's menu)
+keeps the edit and drops its steps; the save stores the History as
+cleared.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| Reset, then Clear History, saved and reopened | Mac, core test | the edit kept, no steps |
+| `-open 407A5994.CR3 -reset -clear-history -set-exposure 0.75 -save`, then relaunched | M1 iPad Pro | `EDIT exposure +0.75; steps ["Exposure +0.75"]; applied 1; unsaved false` both times: the photo the earlier test runs had edited, put back |
