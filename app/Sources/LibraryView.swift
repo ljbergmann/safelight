@@ -6,17 +6,34 @@ struct LibraryView: View {
     @State private var model = LibraryModel()
     @State private var path: [LibraryPhoto.ID] = []
     @State private var picking = false
+    /// Select mode: taps choose photos instead of opening them.
+    @State private var selecting = false
+    @State private var selected: Set<Int64> = []
+    @State private var pasteNote: String?
 
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
                     ForEach(model.photos, id: \.id) { photo in
-                        NavigationLink(value: photo.id) {
-                            ThumbnailCell(photo: photo, model: model)
+                        if selecting {
+                            Button {
+                                if selected.contains(photo.id) { selected.remove(photo.id) } else { selected.insert(photo.id) }
+                            } label: {
+                                ThumbnailCell(photo: photo, model: model)
+                                    .overlay(alignment: .topTrailing) {
+                                        Image(systemName: selected.contains(photo.id) ? "checkmark.circle.fill" : "circle")
+                                            .font(.title2).foregroundStyle(.white, Color.accentColor).padding(6)
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            NavigationLink(value: photo.id) {
+                                ThumbnailCell(photo: photo, model: model)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { RatingMenu(photo: photo, model: model) }
                         }
-                        .buttonStyle(.plain)
-                        .contextMenu { RatingMenu(photo: photo, model: model) }
                     }
                 }
                 .padding()
@@ -37,6 +54,8 @@ struct LibraryView: View {
                 ToolbarItem(placement: .status) {
                     if let importing = model.importing {
                         HStack { ProgressView(); Text(importing) }
+                    } else if let pasteNote {
+                        Text(pasteNote).foregroundStyle(.secondary).lineLimit(1)
                     } else {
                         Text("\(model.photos.count) photos").foregroundStyle(.secondary).fixedSize()
                     }
@@ -44,6 +63,24 @@ struct LibraryView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Import", systemImage: "square.and.arrow.down") { picking = true }
                         .disabled(model.library == nil || model.importing != nil)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(selecting ? "Done" : "Select") {
+                        selecting.toggle()
+                        selected = []
+                    }
+                }
+                if selecting {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Paste Settings", systemImage: "doc.on.clipboard") {
+                            let ids = Array(selected)
+                            let notes = (try? model.library?.pasteSettings(ids: ids)) ?? []
+                            pasteNote = notes.isEmpty ? "Pasted onto \(ids.count) photos" : notes.joined(separator: " · ")
+                            selecting = false
+                            selected = []
+                        }
+                        .disabled(selected.isEmpty || !(model.library?.hasCopiedSettings() ?? false))
+                    }
                 }
             }
             .fileImporter(

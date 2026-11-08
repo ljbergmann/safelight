@@ -19,6 +19,11 @@ final class LiveModel {
     var cropAspect: CropAspect = .free
     /// The chosen ratio turned to portrait (the crop bar's Swap).
     var cropPortrait = false
+    /// Settings were copied in this editor (the catalog may also hold some).
+    var copied = false
+    var copying = false
+    /// What a paste couldn't carry over, shown below the controls.
+    var pasteNote: String?
     /// Fit, or 100% around a centre in fractions of the developed photo.
     var zoom: Zoom = .fit { didSet { live?.setZoom(zoom: zoom) } }
     /// A pinch in progress, shown by scaling the last frame until it ends.
@@ -184,6 +189,9 @@ struct LiveEditor: View {
                     .disabled(!(model.edit?.canUndo ?? false))
                 Button("Redo", systemImage: "arrow.uturn.forward") { model.redo() }
                     .disabled(!(model.edit?.canRedo ?? false))
+                Button("Copy Settings", systemImage: "doc.on.doc") { model.copying = true }
+                Button("Paste Settings", systemImage: "doc.on.clipboard") { model.paste() }
+                    .disabled(!(model.copied || (library.hasCopiedSettings())))
                 Spacer()
                 saveStatus
                 Picker("Decode", selection: Bindable(model).size) {
@@ -196,6 +204,9 @@ struct LiveEditor: View {
             .font(.title3)
             Text(historyText).font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let note = model.pasteNote {
+                Text(note).font(.caption).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
                 // Picks up the edit once it has loaded.
@@ -211,6 +222,7 @@ struct LiveEditor: View {
                 .frame(maxHeight: sizeClass == .regular ? .infinity : 360)
         }
         .padding()
+        .sheet(isPresented: Bindable(model).copying) { CopySettingsSheet(model: model) }
         .task { await scripted() }
         .onAppear {
             // -full: decode at full size from the start, for -sweep.
@@ -352,6 +364,8 @@ struct DevelopPanels: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                PresetsPanel(model: model)
+                Divider()
                 ForEach(model.edit?.sections ?? [], id: \.title) { section in
                     PanelSection(section: section, model: model, isOpen: isOpen(section.title))
                     Divider()

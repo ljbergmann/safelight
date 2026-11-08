@@ -35,6 +35,8 @@ struct Requests {
     zoom: Zoom,
     /// The Crop tool is open: the photo is shown uncropped.
     cropping: bool,
+    /// A preset to apply, by id, once the photo is decoded.
+    preset: Option<String>,
     /// The drawable's size in pixels.
     size: [u32; 2],
     /// Something changed since the last frame.
@@ -226,6 +228,30 @@ impl LiveView {
         }
     }
 
+    /// Applies a preset (an id from [`crate::presets`]) as one History step;
+    /// the worker applies it, as its Auto settings measure the decoded photo.
+    pub fn apply_preset(&self, id: String) {
+        self.shared.request(|r| r.preset = Some(id));
+    }
+
+    /// Copies this photo's settings in `groups` (indices from
+    /// [`crate::copy_groups`]) for Paste.
+    pub fn copy_settings(&self, groups: Vec<u32>) {
+        if let Some(edit) = self.shared.edit().as_ref() {
+            crate::transfer::copy(&edit.library, edit.recipe(), &edit.metadata, &groups);
+        }
+    }
+
+    /// Pastes the copied settings over this photo's, as one History step;
+    /// returns notes on what didn't transfer as it was.
+    pub fn paste_settings(&self) -> Vec<String> {
+        let notes = self.shared.edit().as_mut().and_then(OpenEdit::paste);
+        if notes.is_some() {
+            self.shared.request(|_| {});
+        }
+        notes.unwrap_or_default()
+    }
+
     /// Rotates or flips the photo as shown, as one History step.
     pub fn orient(&self, orientation: Orientation) {
         let changed = self
@@ -333,7 +359,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
     loop {
-        let (open, zoom, cropping, size) = {
+        let (open, zoom, cropping, preset, size) = {
             let mut r = shared
                 .requests
                 .lock()
@@ -345,7 +371,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
                 return Ok(());
             }
             r.dirty = false;
-            (r.open.take(), r.zoom, r.cropping, r.size)
+            (r.open.take(), r.zoom, r.cropping, r.preset.take(), r.size)
         };
         screen.resize(size);
 
@@ -353,6 +379,20 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
             open_photo(shared, &screen, &mut photo, request);
             times.clear();
             shared.stats(|s| s.loading = false);
+        }
+
+        if let (Some(id), Some(p)) = (preset, photo.as_ref()) {
+            let applied = rawmakase_interop::presets::find_preset(&id)
+                .ok_or_else(|| anyhow::anyhow!("The preset is gone"))
+                .and_then(|preset| {
+                    shared
+                        .edit()
+                        .as_mut()
+                        .map_or(Ok(vec![]), |e| e.apply_preset(&preset, &p.image))
+                });
+            if let Err(e) = applied {
+                shared.stats(|s| s.error = Some(format!("{e:#}")));
+            }
         }
 
         // The edit as it is now; changes made while this renders ask for the

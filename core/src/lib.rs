@@ -17,8 +17,10 @@ pub use edit::{EditState, Orientation};
 mod live;
 pub use library::{Added, Library, LibraryPhoto};
 mod render;
+mod transfer;
 pub use live::{FrameStats, LiveView, Zoom};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
+pub use transfer::{CopyGroup, PresetInfo, copy_groups, import_presets, presets};
 
 /// Where RAWmakase's crates put their files on this device.
 #[derive(uniffi::Record)]

@@ -64,6 +64,8 @@ pub(crate) struct OpenEdit {
     pub(crate) path: PathBuf,
     pub(crate) metadata: Metadata,
     pub(crate) export: ExportOptions,
+    /// The camera profiles the edit resolves with, for presets and Paste.
+    pub(crate) profiles: Vec<Arc<rawmakase_model::camera_profiles::CameraProfile>>,
     pub(crate) session: EditSession,
 }
 
@@ -103,6 +105,7 @@ impl OpenEdit {
             path,
             metadata,
             export: resolved.export,
+            profiles: profiles.to_vec(),
             session,
         })
     }
@@ -186,6 +189,43 @@ impl OpenEdit {
                 Orientation::FlipVertical => mirror(r, Mirror::Vertical),
             });
         true
+    }
+
+    /// Applies `preset` as the desktop's Presets panel does, its Auto
+    /// settings measured on `image`: one History step.
+    pub(crate) fn apply_preset(
+        &mut self,
+        preset: &rawmakase_interop::xmp::Preset,
+        image: &rawmakase_model::camera_data::CameraImage,
+    ) -> anyhow::Result<Vec<String>> {
+        self.session.finish_gesture();
+        let applied = rawmakase_interop::presets::apply_to_photo(
+            preset,
+            self.session.recipe(),
+            &self.metadata,
+            &self.profiles,
+            Some(&rawmakase_engine::develop::Measures(image)),
+        )?;
+        applied.recipe.validate()?;
+        let name = rawmakase_interop::presets::display_name(&preset.name);
+        self.session
+            .change(Some(Step::new("Preset", name)), |r| *r = applied.recipe);
+        Ok(applied.skipped)
+    }
+
+    /// The copied settings pasted over this photo's, as one History step.
+    pub(crate) fn paste(&mut self) -> Option<Vec<String>> {
+        self.session.finish_gesture();
+        let (recipe, notes) = crate::transfer::paste(
+            &self.library,
+            self.session.recipe(),
+            &self.metadata,
+            &self.profiles,
+        )?;
+        recipe.validate().ok()?;
+        self.session
+            .change(Some(Step::new("Paste Settings", "")), |r| *r = recipe);
+        Some(notes)
     }
 
     /// Moves History one step back (`by` −1) or forward (+1).

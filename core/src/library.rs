@@ -39,6 +39,8 @@ pub struct Library {
     catalog: Mutex<Catalog>,
     photos: PathBuf,
     thumbnails: PathBuf,
+    /// The settings Copy Settings copied last, for Paste.
+    pub(crate) copied: crate::transfer::Copied,
 }
 
 #[uniffi::export]
@@ -68,6 +70,7 @@ impl Library {
             catalog: Mutex::new(catalog),
             photos,
             thumbnails,
+            copied: Default::default(),
         }))
     }
 
