@@ -296,6 +296,107 @@ impl LiveView {
         self.shared.request(|r| r.preset = Some(id));
     }
 
+    /// Sets the Amount of the preset just applied (0–2, 1 = 100%); `done`
+    /// ends the drag, one History step. Does nothing once another change
+    /// has ended the Amount ([`EditState::preset_amount`] is `None`).
+    pub fn set_preset_amount(&self, amount: f32, done: bool) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_preset_amount(amount, done));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Saves this photo's settings in `groups` (indices from
+    /// [`crate::copy_groups`]) as a new preset `name` in `group`; returns
+    /// its id.
+    pub fn create_preset(
+        &self,
+        name: String,
+        group: String,
+        groups: Vec<u32>,
+    ) -> Result<String, RenderError> {
+        let edit = self.shared.edit();
+        let edit = edit.as_ref().ok_or_else(no_photo)?;
+        Ok(edit.create_preset(
+            &rawmakase_interop::presets::user::UserPresets::default(),
+            &name,
+            &group,
+            &groups,
+        )?)
+    }
+
+    /// Lightroom's Update with Current Settings for preset `id`, from this
+    /// photo's settings.
+    pub fn update_preset(&self, id: String) -> Result<(), RenderError> {
+        let preset = crate::transfer::find(&id)?;
+        let edit = self.shared.edit();
+        let edit = edit.as_ref().ok_or_else(no_photo)?;
+        Ok(edit.update_preset(
+            &rawmakase_interop::presets::user::UserPresets::default(),
+            &preset,
+        )?)
+    }
+
+    /// The open photo's snapshots, alphabetically.
+    pub fn snapshots(&self) -> Vec<crate::snapshots::SnapshotInfo> {
+        self.shared
+            .edit()
+            .as_ref()
+            .and_then(|e| e.snapshots().ok())
+            .unwrap_or_default()
+    }
+
+    /// Saves the edit as it is as a snapshot, named `name` or "Snapshot N";
+    /// returns its id.
+    pub fn add_snapshot(&self, name: Option<String>) -> Result<i64, RenderError> {
+        let mut edit = self.shared.edit();
+        let edit = edit.as_mut().ok_or_else(no_photo)?;
+        Ok(edit.add_snapshot(name.as_deref())?)
+    }
+
+    /// Lightroom's Update with Current Settings for snapshot `id`.
+    pub fn update_snapshot(&self, id: i64) -> Result<(), RenderError> {
+        let mut edit = self.shared.edit();
+        Ok(edit.as_mut().ok_or_else(no_photo)?.update_snapshot(id)?)
+    }
+
+    /// Renames snapshot `id`; an empty name keeps the old one.
+    pub fn rename_snapshot(&self, id: i64, name: String) -> Result<(), RenderError> {
+        let edit = self.shared.edit();
+        Ok(edit
+            .as_ref()
+            .ok_or_else(no_photo)?
+            .rename_snapshot(id, &name)?)
+    }
+
+    pub fn delete_snapshot(&self, id: i64) -> Result<(), RenderError> {
+        let edit = self.shared.edit();
+        Ok(edit.as_ref().ok_or_else(no_photo)?.delete_snapshot(id)?)
+    }
+
+    /// Applies snapshot `id` as one History step; returns what a snapshot
+    /// from Lightroom set that doesn't render here.
+    pub fn apply_snapshot(&self, id: i64) -> Result<Vec<String>, RenderError> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let skipped = {
+            let mut edit = self.shared.edit();
+            edit.as_mut()
+                .ok_or_else(no_photo)?
+                .apply_snapshot(id, image.as_deref())?
+        };
+        self.shared.request(|_| {});
+        Ok(skipped)
+    }
+
     /// Copies this photo's settings in `groups` (indices from
     /// [`crate::copy_groups`]) for Paste.
     pub fn copy_settings(&self, groups: Vec<u32>) {
@@ -1101,6 +1202,13 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             }
             Err(e) => shared.stats(|s| s.error = Some(format!("{e:#}"))),
         }
+    }
+}
+
+/// What a call that needs the open photo's edit says without one.
+fn no_photo() -> RenderError {
+    RenderError::Failed {
+        message: "No photo is open".into(),
     }
 }
 

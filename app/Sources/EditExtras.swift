@@ -59,6 +59,97 @@ struct HistoryPanel: View {
     }
 }
 
+/// Lightroom's Snapshots, above History: named states of the photo's edit,
+/// kept in the catalog. + saves the edit as it is and asks for a name; a tap
+/// applies one as a History step; its menu updates, renames or deletes it.
+struct SnapshotsPanel: View {
+    let model: LiveModel
+    @State private var expanded = false
+    @State private var list: [SnapshotInfo] = []
+    @State private var renaming: SnapshotInfo?
+    @State private var name = ""
+    @State private var note: String?
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 2) {
+                if list.isEmpty {
+                    Text("+ saves the photo as it is now").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(list, id: \.id) { snapshot in
+                    Button {
+                        act { note = try live().applySnapshot(id: snapshot.id).map { "Not rendered: \($0)" }.first }
+                        model.refresh()
+                    } label: {
+                        Text(snapshot.name).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .font(.callout)
+                    .padding(.vertical, 3)
+                    .contextMenu {
+                        Button("Update with Current Settings", systemImage: "arrow.triangle.2.circlepath") {
+                            act { try live().updateSnapshot(id: snapshot.id) }
+                        }
+                        Button("Rename…", systemImage: "pencil") { name = snapshot.name; renaming = snapshot }
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            act { try live().deleteSnapshot(id: snapshot.id) }
+                        }
+                    }
+                }
+                if let note { Text(note).font(.caption).foregroundStyle(.orange) }
+            }
+            .padding(.top, 4)
+        } label: {
+            HStack {
+                Text("Snapshots").font(.headline)
+                Spacer()
+                Button("New Snapshot", systemImage: "plus") {
+                    act {
+                        let id = try live().addSnapshot(name: nil)
+                        expanded = true
+                        if let made = try live().snapshots().first(where: { $0.id == id }) {
+                            name = made.name
+                            renaming = made
+                        }
+                    }
+                }
+                .labelStyle(.iconOnly)
+                .disabled(model.edit == nil)
+            }
+        }
+        .onChange(of: model.photo?.id, initial: true) { load() }
+        .onChange(of: model.edit == nil) { load() }
+        .alert("Name Snapshot", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $name)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                if let snapshot = renaming { act { try live().renameSnapshot(id: snapshot.id, name: name) } }
+            }
+        }
+    }
+
+    private struct NoPhoto: Error {}
+
+    private func live() throws -> LiveView {
+        guard let live = model.live else { throw NoPhoto() }
+        return live
+    }
+
+    private func act(_ change: () throws -> Void) {
+        do {
+            note = nil
+            try change()
+        } catch {
+            note = "Snapshot not saved: \(error)"
+        }
+        load()
+    }
+
+    private func load() {
+        list = model.live?.snapshots() ?? []
+    }
+}
+
 /// Above Basic's sliders: Profile, Auto, and white balance's menu and
 /// eyedropper.
 struct BasicExtras: View {

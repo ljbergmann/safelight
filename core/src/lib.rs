@@ -29,11 +29,16 @@ pub use masks::{ComponentInfo, MaskInfo, MaskOperation, NewMask, Stroke};
 mod profile;
 pub use profile::ProfileInfo;
 mod render;
+mod snapshots;
+pub use snapshots::SnapshotInfo;
 mod transfer;
 mod wb;
 pub use live::{FrameStats, HistogramData, LiveView, MaskOverlay, Zoom};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
-pub use transfer::{CopyGroup, PresetInfo, copy_groups, import_presets, presets};
+pub use transfer::{
+    CopyGroup, PresetAmountState, PresetInfo, copy_groups, delete_preset, import_presets,
+    preset_groups, presets, rename_preset,
+};
 pub use wb::AutoKind;
 
 /// Where RAWmakase's crates put their files on this device.

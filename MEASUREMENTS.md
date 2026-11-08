@@ -223,3 +223,23 @@ runtime).
 - **Found by the Mac test:** AI Denoise's cache folder lives inside the
   decode cache's, which nothing had created on a new install, so results were
   computed but not kept.
+
+## Presets made here, Preset Amount and Snapshots (2026-11-08)
+
+M1 iPad Pro, Release build, `-open 407A5994.CR3 -develop-test`, which now
+also applies built-in presets until one offers an Amount, drags it, makes a
+preset of Exposure, updates, renames and deletes it, and makes, applies and
+deletes a snapshot.
+
+| Check | Result |
+| --- | --- |
+| Preset Amount | `Warm: 0.4, last step Preset Amount 40`: a drag through 50% to 40% is one step |
+| Create, Update, Rename, Delete | listed as `Safelight Test/Develop Test`, managed; renamed; none left |
+| Snapshot | applied as `Snapshot: Develop Test`, taking Exposure back from +1.50; none left |
+
+The core's tests cover the rest on the Mac: a preset made here sets only its
+groups on another photo, Update keeps its identity and groups, a second
+preset of the same name and built-in presets are refused; Amount 0 is the
+photo as before, 100% is the preset again with no drift, and any other edit
+ends it; snapshots are this photo's, survive reopening, and an emptied name
+keeps the old one.

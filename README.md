@@ -70,14 +70,15 @@ out is [docs/PLAN.md](docs/PLAN.md).
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount; white balance presets and eyedropper; Auto; the point curve; Crop,
   Straighten, Rotate and Flip; Undo, Redo and a History you can step back
-  through.
+  through; Snapshots.
 - **Masks and retouching**: brush (with the Pencil's pressure), linear and
   radial masks with their own sliders; Select Subject, Sky and Background;
   Heal and Clone.
 - **AI Denoise**, on the device (about 38 s for a 45 MP photo on an M1 iPad
   Pro). The models are downloaded once, on request, and checked.
-- **Presets** (RAWmakase's and your Lightroom XMP presets) and Copy/Paste
-  Settings, onto one photo or many.
+- **Presets**: RAWmakase's, your Lightroom XMP presets and your own (Create,
+  Update, Rename, Delete), with Lightroom's Amount; Copy/Paste Settings,
+  onto one photo or many.
 - **Export** to JPEG, TIFF or PNG, and the share sheet.
 
 What's missing compared with the desktop, and what comes next (an import
@@ -141,7 +142,7 @@ them after `--`):
 | `-open <file>` | Opens a photo of the catalog in the editor |
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |
 | `-set-exposure <stops>`, `-save` | Edits and saves, to check edits survive a relaunch |
-| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve and History; masks and Heal; the AI models |
+| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets and snapshots; masks and Heal; the AI models |
 | `-export <file>` | Exports a photo at full size, timed |
 | `-benchmark`, `-allocprobe`, `-thumbnails`, `-rate <file> <stars>` | Rendering and memory measurements, thumbnails, ratings |
 

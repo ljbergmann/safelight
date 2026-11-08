@@ -42,7 +42,7 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
       Color and Luminance Range masks
 - [x] Editing a placed gradient with handles; showing the mask over the
       photo (at Fit; not yet at 100%)
-- [ ] Saving presets, Update, Rename, Delete; Preset Amount; Snapshots (M)
+- [x] Saving presets, Update, Rename, Delete; Preset Amount; Snapshots
 - [ ] Before/After: side by side, top and bottom, split (M–L)
 
 ## Next: import and library, for daily use

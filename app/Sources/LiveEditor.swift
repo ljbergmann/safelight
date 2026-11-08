@@ -339,6 +339,9 @@ struct LiveEditor: View {
             let masks = live.editState()?.masks.map { "\($0.kind)[\($0.components.map { "\($0.operation) \($0.kind)" }.joined(separator: ", "))]\($0.invert ? " inverted" : "")" } ?? []
             print("MASKS2 \(masks); histogram \(h.green.reduce(0, +)) pixels (frames \(frames) then \(live.stats().frames)), clipped shadows \(h.shadowsClipped) highlights \(h.highlightsClipped); first mask sliders \(live.maskSliders(index: 0).prefix(3).map(\.label))")
         }
+        if args.contains("-develop-test"), let live = model.live {
+            await presetsAndSnapshotsTest(live)
+        }
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)
         }
@@ -346,6 +349,51 @@ struct LiveEditor: View {
         if let edit = model.edit {
             let exposure = edit.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
             print("EDIT exposure \(exposure); steps \(edit.steps); applied \(edit.applied); unsaved \(edit.needsSave)")
+        }
+    }
+
+    /// `-develop-test`, continued: a built-in preset's Amount, a preset made,
+    /// updated, renamed and deleted, and a snapshot made, applied and
+    /// deleted, printing `PRESETS …` and `SNAPSHOTS …`. Leaves no preset or
+    /// snapshot behind.
+    private func presetsAndSnapshotsTest(_ live: LiveView) async {
+        var amount = "none"
+        for preset in presets().filter({ $0.id.hasPrefix("builtin:") }).prefix(12) {
+            live.applyPreset(id: preset.id)
+            for _ in 0..<30 where live.editState()?.presetAmount == nil { try? await Task.sleep(for: .milliseconds(100)) }
+            if live.editState()?.presetAmount != nil {
+                live.setPresetAmount(amount: 0.5, done: false)
+                live.setPresetAmount(amount: 0.4, done: true)
+                amount = "\(preset.name): \(live.editState()?.presetAmount?.amount ?? -1), last step \(live.editState()?.steps.last ?? "")"
+                break
+            }
+        }
+        let exposure = copyGroups().filter { $0.label == "Exposure" }.map(\.index)
+        var made = "not made"
+        do {
+            let id = try live.createPreset(name: "Develop Test", group: "Safelight Test", groups: exposure)
+            let listed = presets().first { $0.id == id }
+            try live.updatePreset(id: id)
+            try renamePreset(id: id, name: "Develop Test Renamed")
+            let renamed = presets().first { $0.name == "Develop Test Renamed" }
+            if let renamed { try deletePreset(id: renamed.id) }
+            made = "listed \(listed.map { "\($0.group)/\($0.name) managed \($0.managed)" } ?? "no"); renamed \(renamed != nil); left \(presets().contains { $0.name.hasPrefix("Develop Test") })"
+        } catch {
+            made = "failed: \(error)"
+        }
+        print("PRESETS amount \(amount); made \(made); groups \(presetGroups())")
+        do {
+            let before = live.editState()?.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
+            let id = try live.addSnapshot(name: nil)
+            live.setControl(control: .param(index: 2), value: 1.5, done: true)
+            try live.renameSnapshot(id: id, name: "Develop Test")
+            _ = try live.applySnapshot(id: id)
+            let after = live.editState()?.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
+            let listed = live.snapshots().map(\.name)
+            try live.deleteSnapshot(id: id)
+            print("SNAPSHOTS \(listed); exposure \(before) -> \(after) after applying; last step \(live.editState()?.steps.last ?? ""); left \(live.snapshots().count)")
+        } catch {
+            print("SNAPSHOTS failed: \(error)")
         }
     }
 
@@ -497,6 +545,7 @@ struct DevelopPanels: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 HistogramPanel(model: model)
+                SnapshotsPanel(model: model)
                 HistoryPanel(model: model)
                 Divider()
                 PresetsPanel(model: model)

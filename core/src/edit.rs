@@ -47,6 +47,9 @@ pub struct EditState {
     /// preset or "Custom") and what it offers (none for a monochrome photo).
     pub white_balance: String,
     pub white_balance_choices: Vec<String>,
+    /// The Amount of the preset just applied, until anything else changes
+    /// the photo.
+    pub preset_amount: Option<crate::transfer::PresetAmountState>,
 }
 
 /// Rotate and Flip.
@@ -79,6 +82,8 @@ pub(crate) struct OpenEdit {
     /// Where the Profile browser lists each profile.
     pub(crate) profile_groups: rawmakase_model::camera_profiles::Groups,
     pub(crate) session: EditSession,
+    /// The Amount of the preset applied last, while it shows.
+    pub(crate) amount: Option<crate::transfer::AmountShown>,
 }
 
 impl OpenEdit {
@@ -120,6 +125,7 @@ impl OpenEdit {
             profile_groups: rawmakase_model::camera_profiles::listed(&metadata).groups,
             metadata,
             session,
+            amount: None,
         })
     }
 
@@ -300,9 +306,76 @@ impl OpenEdit {
         )?;
         applied.recipe.validate()?;
         let name = rawmakase_interop::presets::display_name(&preset.name);
+        let before = self.session.recipe().clone();
         self.session
             .change(Some(Step::new("Preset", name)), |r| *r = applied.recipe);
+        // Kept once: every Amount is computed from these again.
+        self.amount =
+            crate::transfer::AmountShown::new(preset, before, self.session.recipe().clone());
         Ok(applied.skipped)
+    }
+
+    /// Sets the Amount of the preset just applied (0–2, 1 = 100%) as one
+    /// editor frame; `done` ends the drag, one History step ("Preset
+    /// Amount" and the percentage). Does nothing once anything else has
+    /// changed the photo, which ends the Amount.
+    pub(crate) fn set_preset_amount(&mut self, amount: f32, done: bool) -> bool {
+        let current = self.session.recipe();
+        let Some(shown) = self.amount.as_mut().filter(|a| a.shown == *current) else {
+            self.amount = None;
+            return false;
+        };
+        let amount = amount.clamp(
+            *rawmakase_interop::presets::amount::RANGE.start(),
+            *rawmakase_interop::presets::amount::RANGE.end(),
+        );
+        let target = shown.scale.at(amount, &self.metadata);
+        shown.amount = amount;
+        shown.shown = target.clone();
+        let frame = self.session.begin();
+        // Named only when it changes the photo: a name left over would name
+        // the next edit.
+        if target != *self.session.recipe() {
+            *self.session.recipe_mut() = target;
+            self.session
+                .name_next_step(Step::new("Preset Amount", format!("{:.0}", amount * 100.)));
+        }
+        let gesture = if done {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+    }
+
+    /// Saves this photo's settings in `groups` as a new preset, as the
+    /// desktop's New Develop Preset does; returns its id.
+    pub(crate) fn create_preset(
+        &self,
+        user: &rawmakase_interop::presets::user::UserPresets,
+        name: &str,
+        group: &str,
+        groups: &[u32],
+    ) -> anyhow::Result<String> {
+        let path = crate::transfer::create_preset(
+            user,
+            self.session.recipe(),
+            &self.metadata,
+            name,
+            group,
+            groups,
+        )?;
+        Ok(path.display().to_string())
+    }
+
+    /// Lightroom's Update with Current Settings: `preset` keeps its name,
+    /// group and the setting groups it had, with this photo's values.
+    pub(crate) fn update_preset(
+        &self,
+        user: &rawmakase_interop::presets::user::UserPresets,
+        preset: &rawmakase_interop::xmp::Preset,
+    ) -> anyhow::Result<()> {
+        crate::transfer::update_preset(user, preset, self.session.recipe(), &self.metadata)
     }
 
     /// The copied settings pasted over this photo's, as one History step.
@@ -405,6 +478,10 @@ impl OpenEdit {
             ai_denoise: None,
             white_balance: crate::wb::current(self.session.recipe(), &self.metadata),
             white_balance_choices: crate::wb::choices(self.session.recipe(), &self.metadata),
+            preset_amount: self
+                .amount
+                .as_ref()
+                .and_then(|a| a.state(self.session.recipe())),
         }
     }
 
@@ -444,14 +521,14 @@ impl OpenEdit {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::controls::{Control, Switch};
     use rawmakase_cancel::Cancel;
     use std::path::Path;
 
     /// A catalog with one of RAWmakase's synthetic chart DNGs, and the photo's id.
-    fn library(dir: &Path) -> (Arc<Library>, i64, PathBuf) {
+    pub(crate) fn library(dir: &Path) -> (Arc<Library>, i64, PathBuf) {
         let library = Library::open(
             dir.join("data").display().to_string(),
             dir.join("caches").display().to_string(),
@@ -468,7 +545,7 @@ mod tests {
         (library, id, path)
     }
 
-    fn open(library: &Arc<Library>, id: i64, path: &Path) -> OpenEdit {
+    pub(crate) fn open(library: &Arc<Library>, id: i64, path: &Path) -> OpenEdit {
         let raw = rawmakase_decode::photo::open(path).unwrap();
         let profiles = rawmakase_decode::camera_look::with_default(
             path,
@@ -495,7 +572,7 @@ mod tests {
             .unwrap()
     }
 
-    fn exposure(edit: &OpenEdit) -> f32 {
+    pub(crate) fn exposure(edit: &OpenEdit) -> f32 {
         slider(edit, "Exposure").value
     }
 
