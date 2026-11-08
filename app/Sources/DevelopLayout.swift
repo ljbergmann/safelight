@@ -478,6 +478,15 @@ struct WhiteBalanceRow: View {
 struct CropPane: View {
     let model: LiveModel
     @State private var showGeometry = false
+    /// A ratio of the user's own, width by height, and its entry.
+    @State private var custom: (Float, Float)?
+    @State private var askingRatio = false
+    @State private var ratioWidth = ""
+    @State private var ratioHeight = ""
+
+    private static func number(_ v: Float) -> String {
+        v.rounded() == v ? String(Int(v)) : String(format: "%g", v)
+    }
 
     /// The guide overlay over the crop, and a turn for those that turn.
     private var guides: some View {
@@ -521,6 +530,20 @@ struct CropPane: View {
         let geometry = (model.edit?.sections ?? []).filter { $0.group == "Geometry" }
         VStack(alignment: .leading, spacing: 0) {
             Text("Crop and Geometry").font(.title3.weight(.semibold)).padding(16)
+                .alert("Custom Aspect Ratio", isPresented: $askingRatio) {
+                    TextField("Width", text: $ratioWidth).keyboardType(.decimalPad)
+                    TextField("Height", text: $ratioHeight).keyboardType(.decimalPad)
+                    Button("Use") {
+                        let parse = { (t: String) in Float(t.replacingOccurrences(of: ",", with: ".")) }
+                        if let w = parse(ratioWidth), let h = parse(ratioHeight), (0.01...1000).contains(w), (0.01...1000).contains(h) {
+                            custom = (w, h)
+                            model.chooseAspect(.ratio(w / h))
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Width and height, as 5 and 7 for 5 × 7.")
+                }
             rule
             VStack(alignment: .leading, spacing: 14) {
                 Text("Aspect").font(.headline)
@@ -538,6 +561,21 @@ struct CropPane: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    Button { askingRatio = true } label: {
+                        VStack(spacing: 6) {
+                            if let custom {
+                                AspectShape(aspect: .ratio(custom.0 / custom.1)).frame(height: 30)
+                                Text("\(Self.number(custom.0)) × \(Self.number(custom.1))").font(.caption2).lineLimit(1)
+                            } else {
+                                Image(systemName: "plus.rectangle").font(.title3).frame(height: 30)
+                                Text("Custom").font(.caption2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                        .background(custom.map { model.cropAspect == .ratio($0.0 / $0.1) } == true ? Theme.chosen : .clear,
+                                    in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
                     Button { model.swapCropOrientation() } label: {
                         VStack(spacing: 6) {
                             Image(systemName: "rectangle.portrait.rotate").font(.title3).frame(height: 30)
