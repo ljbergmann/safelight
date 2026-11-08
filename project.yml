@@ -22,6 +22,13 @@ targets:
     dependencies:
       - framework: build/RawmakaseCore.xcframework
         embed: false
+      # ONNX Runtime, for AI Denoise and the AI masks. The core opens it by
+      # path at run time, so it is embedded but not linked
+      # (scripts/build-ort.sh).
+      - framework: build/onnxruntime.xcframework
+        embed: true
+        link: false
+        codeSign: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ljbergmann.rawmakase-ipad

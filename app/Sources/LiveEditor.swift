@@ -33,6 +33,12 @@ final class LiveModel {
     var brushErase = false
     var spotSize: Float = 0.02
     var cloneSpots = false
+    /// A Select Subject, Sky or Background run in progress, and why the last
+    /// one failed.
+    var selecting: AiSelection?
+    var selectionError: String?
+    /// The model whose download the install sheet offers.
+    var offeredModel: AiModel?
     /// What a paste couldn't carry over, shown below the controls.
     var pasteNote: String?
     /// Fit, or 100% around a centre in fractions of the developed photo.
@@ -230,7 +236,8 @@ struct LiveEditor: View {
 
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
                 // Picks up the edit once it has loaded.
-                let _ = model.edit == nil ? model.refresh() : ()
+                // AI Denoise's progress arrives from the core on its own.
+                let _ = (model.edit == nil || model.edit?.aiDenoise != nil) ? model.refresh() : ()
                 Text(summary(model.live?.stats() ?? .empty))
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
@@ -244,6 +251,9 @@ struct LiveEditor: View {
         .padding()
         .sheet(isPresented: Bindable(model).copying) { CopySettingsSheet(model: model) }
         .sheet(isPresented: Bindable(model).exporting) { ExportSheet(library: library, ids: [photo.id]) }
+        .sheet(item: Bindable(model).offeredModel) { offered in
+            ModelInstallSheet(offered: offered) { model.live?.redraw(); model.refresh() }
+        }
         .task { await scripted() }
         .onAppear {
             // -full: decode at full size from the start, for -sweep.
@@ -280,11 +290,48 @@ struct LiveEditor: View {
             model.refresh()
             print("MASKS \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); spots \(model.edit?.spots ?? 0) (heal found a source: \(healed)); steps \(model.edit?.steps ?? [])")
         }
+        if args.contains("-ai-test"), let live = model.live {
+            await aiTest(live)
+        }
         if args.contains("-save") { model.save() }
         if let edit = model.edit {
             let exposure = edit.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
             print("EDIT exposure \(exposure); steps \(edit.steps); applied \(edit.applied); unsaved \(edit.needsSave)")
         }
+    }
+
+    /// `-ai-test`: installs any missing model, selects the subject and the
+    /// sky as masks, then turns AI Denoise on and waits for its result,
+    /// printing `AI …` lines with the times.
+    private func aiTest(_ live: LiveView) async {
+        for info in aiModels() where !info.installed {
+            let start = Date()
+            let install = ModelInstall.start(model: info.model)
+            while !install.finished() { try? await Task.sleep(for: .milliseconds(500)) }
+            print("AI install \(info.name): \(install.error() ?? "done") in \(Int(Date().timeIntervalSince(start))) s")
+        }
+        for what in [AiSelection.subject, .sky] {
+            let start = Date()
+            let outcome = await Task.detached { Result { try live.selectMask(what: what) } }.value
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            switch outcome {
+            case .success(let index): print("AI select \(what): mask \(index.map(String.init) ?? "none") in \(ms) ms, footprint \(Memory.mb(Memory.footprint().current)), peak \(Memory.mb(Memory.footprint().peak))")
+            case .failure(let error): print("AI select \(what) failed in \(ms) ms: \(error)")
+            }
+        }
+        let start = Date()
+        live.setSwitch(which: .aiDenoise, on: true)
+        var last = ""
+        for _ in 0..<1200 {
+            let status = live.editState()?.aiDenoise ?? "none"
+            if status != last { print("AI denoise \(Int(Date().timeIntervalSince(start))) s: \(status), footprint \(Memory.mb(Memory.footprint().current)), peak \(Memory.mb(Memory.footprint().peak))"); last = status }
+            // "none" until the full-size decode has rendered once.
+            let running = status == "none" || status.hasPrefix("Waiting") || status.hasPrefix("Denoising")
+            if !running { break }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        model.refresh()
+        print("AI masks \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); steps \(model.edit?.steps ?? [])")
     }
 
     private var historyText: String {
@@ -406,6 +453,9 @@ struct DevelopPanels: View {
                 Divider()
                 ForEach(model.edit?.sections ?? [], id: \.title) { section in
                     PanelSection(section: section, model: model, isOpen: isOpen(section.title))
+                    if section.title == "AI Denoise" {
+                        AiDenoiseStatus(model: model)
+                    }
                     Divider()
                 }
             }

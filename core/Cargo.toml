@@ -20,7 +20,9 @@ path = "src/bin/uniffi-bindgen.rs"
 uniffi = { version = "0.32", features = ["cli"] }
 # RAWmakase's crates, from the fork's ios/build-crates branch, checked out
 # as the vendor/rawmakase submodule at the commit this repository pins.
+rawmakase-ai = { path = "../vendor/rawmakase/crates/rawmakase-ai" }
 rawmakase-cancel = { path = "../vendor/rawmakase/crates/rawmakase-cancel" }
+rawmakase-inference = { path = "../vendor/rawmakase/crates/rawmakase-inference" }
 rawmakase-catalog = { path = "../vendor/rawmakase/crates/rawmakase-catalog" }
 rawmakase-decode = { path = "../vendor/rawmakase/crates/rawmakase-decode" }
 rawmakase-edit-session = { path = "../vendor/rawmakase/crates/rawmakase-edit-session" }

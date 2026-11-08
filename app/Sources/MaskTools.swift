@@ -57,6 +57,7 @@ struct MasksPanel: View {
                     Button("Radial", systemImage: "circle.dashed") { model.tool = .newGradient(.radial) }
                 }
                 .buttonStyle(.bordered).font(.callout)
+                SelectButtons(model: model)
                 if case .newGradient = model.tool {
                     Text("Drag on the photo to place it.").font(.caption).foregroundStyle(.secondary)
                 }

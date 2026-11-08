@@ -45,6 +45,9 @@ pub enum Switch {
     /// Lens Corrections: the lens profile, and chromatic aberration removal.
     LensProfile,
     LensChromaticAberration,
+    /// AI Denoise; switching it on sets manual noise reduction to 0, as on
+    /// the desktop.
+    AiDenoise,
 }
 
 #[derive(uniffi::Record)]
@@ -78,7 +81,7 @@ pub struct Section {
 
 /// The develop parameters the panels show, in one list so a [`Control`] can
 /// name one by index.
-pub const PARAMS: [ParameterId; 57] = [
+pub const PARAMS: [ParameterId; 58] = [
     // Basic
     ParameterId::Temperature,
     ParameterId::Tint,
@@ -145,6 +148,7 @@ pub const PARAMS: [ParameterId; 57] = [
     ParameterId::BluePrimarySaturation,
     // Crop & Straighten (appended, so the indices above stay as they are)
     ParameterId::Straighten,
+    ParameterId::AiDenoiseAmount,
 ];
 
 const BANDS: [&str; 8] = [
@@ -383,6 +387,7 @@ impl Switch {
             Switch::Monochrome => "Black & White",
             Switch::LensProfile => "Enable Profile Corrections",
             Switch::LensChromaticAberration => "Remove Chromatic Aberration",
+            Switch::AiDenoise => "AI Denoise",
         }
     }
 
@@ -394,6 +399,7 @@ impl Switch {
             Switch::Monochrome => r.effects.monochrome,
             Switch::LensProfile => r.lens_profile,
             Switch::LensChromaticAberration => r.lens_ca,
+            Switch::AiDenoise => r.ai_denoise.enabled,
         })
     }
 
@@ -421,6 +427,10 @@ impl Switch {
             Switch::LensChromaticAberration => {
                 r.lens_ca = on;
                 ("Remove Chromatic Aberration".into(), word.into())
+            }
+            Switch::AiDenoise => {
+                r.switch_ai_denoise(on);
+                ("AI Denoise".into(), word.into())
             }
         })
     }
@@ -552,6 +562,11 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
             "Color Grading · Blending".into(),
             vec![],
             params(&[P::GradingBlending, P::GradingBalance]),
+        ),
+        (
+            "AI Denoise".into(),
+            vec![Switch::AiDenoise],
+            params(&[P::AiDenoiseAmount]),
         ),
         (
             "Detail".into(),

@@ -41,6 +41,8 @@ pub struct EditState {
     pub needs_save: bool,
     /// Why the last save failed; the edit stays unsaved.
     pub save_error: Option<String>,
+    /// What AI Denoise is doing for the photo on screen, when it is on.
+    pub ai_denoise: Option<String>,
 }
 
 /// Rotate and Flip.
@@ -270,6 +272,7 @@ impl OpenEdit {
             crop: self.session.recipe().crop.to_vec(),
             needs_save: self.session.save_state().needs_save(),
             save_error: self.session.save_state().message().map(str::to_string),
+            ai_denoise: None,
         }
     }
 
@@ -449,6 +452,28 @@ mod tests {
         assert!(!titles.iter().any(|t| t.starts_with("Color Mixer")));
         // Setting it as it is changes nothing.
         assert!(!edit.switch(Switch::Monochrome, true));
+    }
+
+    #[test]
+    fn ai_denoise_switches_on_as_on_the_desktop() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let amount = edit
+            .state()
+            .sections
+            .into_iter()
+            .find(|s| s.title == "AI Denoise")
+            .and_then(|s| s.sliders.into_iter().next())
+            .unwrap();
+        assert!(edit.switch(Switch::AiDenoise, true));
+        assert!(edit.recipe().ai_denoise.renders());
+        // As the desktop's switch: manual noise reduction goes to 0.
+        assert_eq!(edit.recipe().noise_luma, 0.);
+        assert_eq!(edit.recipe().noise_chroma, 0.);
+        assert_eq!(edit.state().steps, ["AI Denoise On"]);
+        // Amount is its own section's slider, at the desktop's default.
+        assert_eq!((amount.label.as_str(), amount.value), ("Amount", 0.5));
     }
 
     #[test]

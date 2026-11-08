@@ -5,6 +5,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod ai;
 mod alloc;
 #[global_allocator]
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
@@ -12,6 +13,7 @@ static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 mod controls;
 mod edit;
 mod export;
+pub use ai::{AiModel, AiModelInfo, AiSelection, ModelInstall, ai_models};
 pub use controls::{Control, Section, SliderState, Switch, SwitchState};
 pub use export::{ExportChoice, ExportFormat};
 mod library;

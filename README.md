@@ -24,6 +24,7 @@ Needs rustup's stable toolchain with the iPad targets, Xcode and XcodeGen:
 git clone --recurse-submodules https://github.com/ljbergmann/rawmakase-ios
 rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim
 scripts/build-core.sh          # Rust → build/RawmakaseCore.xcframework + Swift bindings
+scripts/build-ort.sh           # Microsoft's ONNX Runtime for iOS → build/onnxruntime.xcframework
 xcodegen generate              # → Rawmakase.xcodeproj
 open Rawmakase.xcodeproj
 ```
@@ -72,11 +73,16 @@ neither side reads installed profiles).
 - Stage 5: six Basic sliders, Undo and Redo, and History, kept by
   RAWmakase's own edit session and saved to the catalog when leaving the
   photo or the app; the desktop renders the iPad's edit the same.
+- Since then: every Develop panel, Crop and Straighten, presets and
+  Copy/Paste Settings, export and share, flags, labels, filters and
+  collections, masks (brush, linear, radial, with the Pencil) and Heal, and
+  AI Denoise with Select Subject, Sky and Background, running RAWmakase's
+  models on the iPad through Microsoft's ONNX Runtime.
 
 Launch options for measuring without touching the screen: `-import-documents`
 (move the RAWs in Documents into the catalog), `-thumbnails`, `-rate <file>
 <stars>`, `-open <file>` with `-sweep` or `-pan` (and `-full`), `-benchmark`,
-`-allocprobe`, `-set-exposure <stops>` and `-save` (with `-open`).
+`-allocprobe`, `-set-exposure <stops>`, `-save`, `-mask-test` and `-ai-test` (with `-open`).
   `-open <photo> -sweep [-full]` and `-open <photo> -pan [-full]` measure it (with `devicectl`, put the app's
   arguments after `--`).
 

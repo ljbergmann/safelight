@@ -128,9 +128,9 @@ fn export_one(
             watermark: None,
             demosaic: Default::default(),
             cache: library.decode_cache(),
-            ai: rawmakase_decode::ai::denoise::AiService::refusing(
-                "AI Denoise isn't on the iPad yet",
-            ),
+            // The live view's service: a result it finished is reused, and an
+            // export of a photo it hasn't denoised waits for its run.
+            ai: rawmakase_decode::ai::denoise::AiService(Arc::new(library.ai.denoise().clone())),
             file,
         },
         settings,
@@ -179,5 +179,66 @@ mod tests {
         assert!(files[0].ends_with("chart.jpg"), "{}", files[0]);
         let (w, h) = image::image_dimensions(&files[0]).unwrap();
         assert_eq!(w.max(h), 400);
+    }
+
+    /// An export with AI Denoise on runs the model through the library's
+    /// service. Needs the AI Denoise model installed in this Mac's data
+    /// folder and `RAWMAKASE_ORT_LIB` naming an ONNX Runtime library:
+    /// `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "needs the AI Denoise model and RAWMAKASE_ORT_LIB"]
+    fn an_export_with_ai_denoise_on_runs_the_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = Library::open(
+            dir.path().join("data").display().to_string(),
+            dir.path().join("caches").display().to_string(),
+        )
+        .unwrap();
+        let day = Path::new(&library.photos_folder()).join("d");
+        std::fs::create_dir_all(&day).unwrap();
+        let chart = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../vendor/rawmakase/tests/corpus/charts/canon-eos-r100-d65.dng");
+        std::fs::copy(chart, day.join("chart.dng")).unwrap();
+        library.add_new_photos().unwrap();
+        let photo = &library.photos().unwrap()[0];
+        let raw = rawmakase_decode::photo::open(Path::new(&photo.path)).unwrap();
+        let profiles = rawmakase_decode::camera_look::with_default(
+            Path::new(&photo.path),
+            &raw.metadata,
+            rawmakase_model::camera_profiles::installed(&raw.metadata).0,
+            Cancel::NEVER,
+        );
+        let mut edit = crate::edit::OpenEdit::load(
+            library.clone(),
+            photo.id,
+            photo.path.clone().into(),
+            raw.metadata,
+            &profiles,
+        )
+        .unwrap();
+        assert!(edit.switch(crate::controls::Switch::AiDenoise, true));
+        edit.save().unwrap();
+        drop(edit);
+
+        let files = library
+            .clone()
+            .export_photos(
+                vec![photo.id],
+                ExportChoice {
+                    format: ExportFormat::Jpeg,
+                    quality: 85,
+                    long_edge: 400,
+                },
+                dir.path().join("out").display().to_string(),
+            )
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        // The result is cached for the live view to reuse.
+        assert!(
+            std::fs::read_dir(library.ai.denoise.cache().dir())
+                .unwrap()
+                .next()
+                .is_some()
+        );
     }
 }

@@ -195,3 +195,31 @@ sRGB profile).
 | --- | --- | --- | --- | --- |
 | Canon EOS R5 CR3, 8192×5464 | 11.9 s | 16.8 MB | 3.55 GB | 0.72 GB |
 | Leica Q2 DNG, 8368×5584 | 9.0 s | 12.0 MB | 3.26 GB | 0.09 GB |
+
+## AI Denoise and Select Subject, Sky and Background (2026-11-08)
+
+M1 iPad Pro, Release build, `-open <photo> -ai-test`: installs any missing
+model pack, selects the subject and the sky as masks, then turns AI Denoise on
+and waits for its result. ONNX Runtime 1.23.0 (Microsoft's iOS build,
+embedded), on the CPU. The photo is a Canon EOS R5 CR3 (8192×5464), indoors
+under a glass roof.
+
+| Step | Result |
+| --- | --- |
+| Download and check Select Subject's, Select Sky's and AI Denoise's packs | 15 s, 9 s, 3 s |
+| Select Subject | 3.4–4.3 s (the first loads the models), peak 3.2 GB; one mask, "Subject" |
+| Select Sky | 6.9–7.2 s; "No sky was found in this photo", which is right for it |
+| AI Denoise on: decode again at full size, then the model over the whole photo | Ready in 38 s; peak 4.1 GB, 3.6 GB after |
+| History | `Select Subject`, `AI Denoise On` |
+
+On the Mac, the core's opt-in test exports a photo with AI Denoise on
+through the library's service and finds its result cached
+(`cargo test -- --ignored`, with `RAWMAKASE_ORT_LIB` naming the desktop's
+runtime).
+
+- **Found on the iPad:** turning AI Denoise on with a half-size decode
+  deadlocked the live view's worker: the edit's lock, taken to ask for the
+  full-size decode, was still held when opening the photo took it again.
+- **Found by the Mac test:** AI Denoise's cache folder lives inside the
+  decode cache's, which nothing had created on a new install, so results were
+  computed but not kept.

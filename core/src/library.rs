@@ -55,6 +55,8 @@ pub struct Library {
     thumbnails: PathBuf,
     /// The settings Copy Settings copied last, for Paste.
     pub(crate) copied: crate::transfer::Copied,
+    /// AI Denoise and the selection models.
+    pub(crate) ai: crate::ai::Ai,
 }
 
 #[uniffi::export]
@@ -66,7 +68,8 @@ impl Library {
         let data = PathBuf::from(data);
         let file = data.join("Catalog").join("Photos.rawmakase");
         let photos = data.join("Photos");
-        let thumbnails = PathBuf::from(caches).join("Thumbnails");
+        let caches = PathBuf::from(caches);
+        let thumbnails = caches.join("Thumbnails");
         let catalog = on_core_thread(move || {
             std::fs::create_dir_all(&photos).map_err(anyhow::Error::from)?;
             let mut catalog = if file.exists() {
@@ -75,16 +78,27 @@ impl Library {
                 Catalog::create(&file)?
             };
             follow_container(&mut catalog, &photos)?;
+            // A catalog made before raster masks existed can't keep a selection.
+            catalog.upgrade_for_raster_masks()?;
             Ok((catalog, photos))
         });
         let (catalog, photos) = catalog?;
         std::fs::create_dir_all(&thumbnails)
             .map_err(|e| RenderError::from(anyhow::Error::from(e)))?;
+        // Selections' rasters are kept in the catalog; the mask store reads
+        // them back from it when an edit names one.
+        rawmakase_model::storage::mask_assets::add_loader(catalog.mask_asset_loader());
+        // AI Denoise's cache is a folder of the decode cache's, which it
+        // doesn't create.
+        let decoded = caches.join("Decoded");
+        std::fs::create_dir_all(&decoded).map_err(|e| RenderError::from(anyhow::Error::from(e)))?;
+        let ai = crate::ai::Ai::new(&decoded);
         Ok(std::sync::Arc::new(Self {
             catalog: Mutex::new(catalog),
             photos,
             thumbnails,
             copied: Default::default(),
+            ai,
         }))
     }
 

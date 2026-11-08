@@ -13,17 +13,20 @@
 use crate::controls::{Control, Switch};
 use crate::edit::{EditState, OpenEdit, Orientation};
 use crate::library::Library;
-use crate::render::{DecodeSize, RenderError, STACK_BYTES};
+use crate::ai::AiSelection;
+use crate::render::{DecodeSize, RenderError, STACK_BYTES, on_core_thread};
 use rawmakase_cancel::Cancel;
 use rawmakase_engine::develop::gpu::{self, Display, Processor, Slot};
 use rawmakase_engine::develop::quality::Output;
-use rawmakase_engine::develop::{Geometry, PreviewRenderer};
+use rawmakase_ai::ai_denoise::{Request as AiRequest, State as AiState};
+use rawmakase_engine::develop::{AiSource, Geometry, PreviewRenderer};
 use rawmakase_model::camera_data::{CameraImage, Decode};
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::rendered::ClipOverlay;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, PoisonError, Weak};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
@@ -106,6 +109,36 @@ struct Shared {
     /// The decoded photo the worker renders, shared for turning points on
     /// screen into image space (masks, Heal).
     image: Mutex<Option<Arc<CameraImage>>>,
+    /// AI Denoise's request and result for the open photo.
+    ai: Mutex<AiShown>,
+}
+
+/// AI Denoise for the decoded image on screen, as the desktop's Develop keeps
+/// it: the request (withdrawn when the switch goes off or the photo closes),
+/// the latest result, partial or final, and what the panel says.
+#[derive(Default)]
+struct AiShown {
+    requested: Option<(Weak<CameraImage>, Arc<AtomicBool>)>,
+    source: Option<AiSource>,
+    complete: bool,
+    failed: bool,
+    status: Option<String>,
+}
+
+impl AiShown {
+    fn asked_for(&self, image: &Arc<CameraImage>) -> bool {
+        self.requested
+            .as_ref()
+            .is_some_and(|(asked, _)| std::ptr::eq(asked.as_ptr(), Arc::as_ptr(image)))
+    }
+
+    /// Withdraws the request and forgets the result.
+    fn release(&mut self) {
+        if let Some((_, wanted)) = self.requested.take() {
+            wanted.store(false, Ordering::Relaxed);
+        }
+        *self = Self::default();
+    }
 }
 
 impl Shared {
@@ -149,6 +182,7 @@ impl LiveView {
             stats: Mutex::new(FrameStats::default()),
             edit: Mutex::new(None),
             image: Mutex::new(None),
+            ai: Mutex::new(AiShown::default()),
         });
         let worker_shared = shared.clone();
         let worker = std::thread::Builder::new()
@@ -332,6 +366,53 @@ impl LiveView {
         .is_some()
     }
 
+    /// Selects the photo's subject, sky or background with its model, as a
+    /// new mask: one History step. Returns its index. Running the model takes
+    /// seconds: call it off the main thread. Nothing is added when another
+    /// photo opened or the masks changed meanwhile, as on the desktop.
+    pub fn select_mask(&self, what: AiSelection) -> Result<Option<u32>, RenderError> {
+        let none_open = || RenderError::Failed {
+            message: "No photo is open".into(),
+        };
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(none_open)?;
+        let (library, recipe, id) = {
+            let edit = self.shared.edit();
+            let edit = edit.as_ref().ok_or_else(none_open)?;
+            (edit.library.clone(), edit.recipe().clone(), edit.id)
+        };
+        let masks = recipe.masks.clone();
+        let generated = on_core_thread(move || crate::ai::select(&library, &image, &recipe, what))?;
+        let mut edit = self.shared.edit();
+        let Some(edit) = edit.as_mut().filter(|e| e.id == id) else {
+            return Ok(None);
+        };
+        if edit.recipe().masks != masks {
+            generated.discard_unless_in(edit.recipe());
+            return Err(RenderError::Failed {
+                message: "The masks changed while selecting; nothing was added".into(),
+            });
+        }
+        let mut index = None;
+        edit.change(&crate::ai::step_name(what), "", |r| {
+            index = crate::ai::add_mask(r, what, &generated);
+        });
+        generated.discard_unless_in(edit.recipe());
+        self.shared.request(|_| {});
+        Ok(index.map(|i| i as u32))
+    }
+
+    /// Renders the photo again: after a model was installed, say, so AI
+    /// Denoise asks for its result.
+    pub fn redraw(&self) {
+        self.shared.request(|_| {});
+    }
+
     /// Rotates or flips the photo as shown, as one History step.
     pub fn orient(&self, orientation: Orientation) {
         let changed = self
@@ -366,7 +447,15 @@ impl LiveView {
 
     /// The sliders, History and save state; `None` until the edit has loaded.
     pub fn edit_state(&self) -> Option<EditState> {
-        self.shared.edit().as_ref().map(OpenEdit::state)
+        let mut state = self.shared.edit().as_ref().map(OpenEdit::state)?;
+        state.ai_denoise = self
+            .shared
+            .ai
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .status
+            .clone();
+        Some(state)
     }
 
     /// Saves the edit and its History to the catalog, if anything changed:
@@ -467,11 +556,106 @@ impl Drop for LiveView {
 /// The open photo's decoded image and what renders it.
 struct Photo {
     id: i64,
+    /// The file as it was before it was decoded: AI Denoise refuses a file
+    /// changed since, as the desktop does.
+    file: Option<rawmakase_model::storage::Identity>,
     image: Arc<CameraImage>,
     renderer: PreviewRenderer,
 }
 
-fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
+/// The AI Denoise result the next frame of `p` shows with `recipe`, asking
+/// the service for one when the edit renders AI Denoise and none was asked
+/// for this image yet; withdraws the request when it no longer does.
+fn ai_denoise(shared: &Arc<Shared>, p: &Photo, recipe: &Recipe) -> Option<AiSource> {
+    let mut ai = shared.ai.lock().unwrap_or_else(PoisonError::into_inner);
+    if !recipe.ai_denoise.renders() {
+        ai.release();
+        return None;
+    }
+    if p.image.fast {
+        return None;
+    }
+    if !ai.asked_for(&p.image) && !ai.complete && !ai.failed {
+        let Some((library, path)) = shared
+            .edit()
+            .as_ref()
+            .filter(|e| e.id == p.id)
+            .map(|e| (e.library.clone(), e.path.clone()))
+        else {
+            return None;
+        };
+        let Some(file) = p.file.clone() else {
+            ai.failed = true;
+            ai.status = Some("The photo changed since it was opened".into());
+            return None;
+        };
+        let service = library.ai.denoise();
+        if !rawmakase_ai::model_install::Pack::Denoise.is_installed() {
+            ai.status = Some("Install the AI Denoise model to use it.".into());
+            return None;
+        }
+        let wanted = Arc::new(AtomicBool::new(true));
+        ai.requested = Some((Arc::downgrade(&p.image), wanted.clone()));
+        ai.status = Some("Waiting…".into());
+        // The service may answer at once, from its cache, through the sink,
+        // which takes this lock.
+        drop(ai);
+        let sink_shared = Arc::downgrade(shared);
+        service.request(AiRequest {
+            path,
+            file,
+            plain: p.image.clone(),
+            region: None,
+            wanted,
+            sink: Arc::new(move |update| {
+                if let Some(shared) = sink_shared.upgrade() {
+                    ai_update(&shared, update);
+                }
+            }),
+        });
+        ai = shared.ai.lock().unwrap_or_else(PoisonError::into_inner);
+    }
+    ai.source.clone()
+}
+
+/// An update from the service: kept when it is for the image asked for, which
+/// renders again with it.
+fn ai_update(shared: &Shared, update: rawmakase_ai::ai_denoise::Update) {
+    {
+        let mut ai = shared.ai.lock().unwrap_or_else(PoisonError::into_inner);
+        let current = ai
+            .requested
+            .as_ref()
+            .is_some_and(|(asked, _)| asked.as_ptr() == update.plain.as_ptr());
+        if !current {
+            return;
+        }
+        match &update.state {
+            AiState::Queued => ai.status = Some("Waiting for another photo…".into()),
+            AiState::Running(done) => {
+                ai.status = Some(format!("Denoising… {:.0}%", done * 100.));
+            }
+            AiState::Partial(source) => {
+                ai.source = Some(source.clone());
+                ai.status = Some("Denoising… the view is ready".into());
+            }
+            AiState::Ready(source) => {
+                ai.source = Some(source.clone());
+                ai.complete = true;
+                ai.status = Some("Ready".into());
+            }
+            AiState::Failed(why) => {
+                // A partial result isn't shown once the final one won't come.
+                ai.source = None;
+                ai.failed = true;
+                ai.status = Some(why.clone());
+            }
+        }
+    }
+    shared.request(|_| {});
+}
+
+fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
     let mut screen = Screen::new(layer, current_size(shared))?;
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
@@ -523,10 +707,33 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
             }
             r
         });
+        // AI Denoise runs on the full-size decode, as on the desktop: a
+        // half-size photo is decoded again at full size first.
+        let full_size = photo.as_ref().is_some_and(|p| p.image.fast)
+            && recipe.as_ref().is_some_and(|r| r.ai_denoise.renders());
+        // Taken in a statement of its own: `open_photo` locks the edit again.
+        let reopen = full_size
+            .then(|| {
+                shared.edit().as_ref().map(|e| OpenRequest {
+                    library: e.library.clone(),
+                    id: e.id,
+                    path: e.path.clone(),
+                    decode: DecodeSize::Full,
+                })
+            })
+            .flatten();
+        if let Some(request) = reopen {
+            shared.stats(|s| s.loading = true);
+            open_photo(shared, &screen, &mut photo, request);
+            times.clear();
+            shared.stats(|s| s.loading = false);
+        }
         let (Some(p), Some(recipe)) = (photo.as_mut(), recipe) else {
             screen.clear();
             continue;
         };
+        let ai = ai_denoise(shared, p, &recipe);
+        p.renderer.set_ai(ai);
         match screen.show(p, &recipe, zoom) {
             Ok(frame) => {
                 times.push_back(frame.render_ms);
@@ -581,6 +788,7 @@ fn open_photo(shared: &Shared, screen: &Screen, photo: &mut Option<Photo>, reque
     }
     // Let go of the previous photo, its pyramid and its GPU copies before
     // decoding the next one.
+    shared.ai.lock().unwrap_or_else(PoisonError::into_inner).release();
     *photo = None;
     *shared.image.lock().unwrap_or_else(PoisonError::into_inner) = None;
     let opened = screen.open(&request.path, request.decode).and_then(
@@ -820,6 +1028,7 @@ impl Screen {
         f64,
     )> {
         let t = Instant::now();
+        let file = rawmakase_model::storage::Identity::read(path).ok();
         let raw = rawmakase_decode::photo::open(path)?;
         let profiles = rawmakase_decode::camera_look::with_default(
             path,
@@ -844,6 +1053,7 @@ impl Screen {
         Ok((
             Photo {
                 id: 0,
+                file,
                 image: Arc::new(image),
                 renderer,
             },
