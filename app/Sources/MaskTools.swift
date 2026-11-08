@@ -263,10 +263,12 @@ struct MaskStrip: View {
 struct MaskSettings: View {
     let model: LiveModel
     let mask: UInt32
-    @State private var open: Set<String> = ["Light"]
+    @State private var open: Set<String> = ProcessInfo.processInfo.arguments.contains("-show-mask") ? ["Color"] : ["Light"]
 
     var body: some View {
-        let sections = model.live?.maskSections(index: mask) ?? []
+        // Read through `model.edit`, which every change refreshes, so the
+        // sliders show the values just set: `live` itself never changes.
+        let sections = model.edit == nil ? [] : (model.live?.maskSections(index: mask) ?? [])
         VStack(alignment: .leading, spacing: 0) {
             ForEach(sections.filter { $0.group == "Mask" }, id: \.title) { section in
                 ForEach(section.sliders, id: \.label) { SliderRow(slider: $0, model: model) }

@@ -123,6 +123,9 @@ final class LiveModel {
     func set(_ control: Control, to value: Float, done: Bool) {
         dragging = done ? nil : (control, value)
         live?.setControl(control: control, value: value, done: done)
+        // A mask's overlay would hide what its sliders do, colour above all:
+        // once one moves it goes off, as in Lightroom, until shown again.
+        switch control { case .mask, .maskAmount: showMaskOverlay = false; default: break }
         refresh()
     }
 
@@ -346,6 +349,31 @@ struct LiveEditor: View {
             model.refresh()
             print("MASKS \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); spots \(model.edit?.spots ?? 0) (heal found a source: \(healed)); steps \(model.edit?.steps ?? [])")
         }
+        // -show-mask: the Masks pane on the first mask, its Color open.
+        if args.contains("-show-mask"), let first = model.edit?.masks.first?.index {
+            model.pane = .masks
+            model.selectedMask = first
+        }
+        if args.contains("-mask-color-test"), let live = model.live {
+            // A radial mask over the whole photo; each Color slider in turn
+            // must change the live histogram, then goes back.
+            func frame() async -> [UInt32]? {
+                let frames = live.stats().frames
+                for _ in 0..<50 where live.stats().frames == frames { try? await Task.sleep(for: .milliseconds(100)) }
+                let h = live.histogram()
+                return h.red + h.green + h.blue
+            }
+            if let mask = live.addMask(kind: .radial, from: [0.5, 0.5], to: [1.5, 1.5]) {
+                let base = await frame()
+                for slider in (live.maskSections(index: mask).first { $0.title == "Color" }?.sliders ?? []) {
+                    live.setControl(control: slider.control, value: slider.label == "Hue" ? 90 : slider.max, done: true)
+                    let after = await frame()
+                    print("MASK COLOR \(slider.label) → \(live.maskSliders(index: mask).first { $0.label == slider.label }?.text ?? "?"): \(after == base ? "NO CHANGE" : "changed")")
+                    live.undo()
+                    _ = await frame()
+                }
+            }
+        }
         if args.contains("-develop-test"), let live = model.live {
             // White balance, the eyedropper, Auto, a curve drag and History.
             live.setWhiteBalance(name: "Daylight")
@@ -395,7 +423,7 @@ struct LiveEditor: View {
         }
         // -keep leaves what the tests did, to look at; never on a photo you
         // keep, as ending the app saves it.
-        if (args.contains("-develop-test") || args.contains("-mask-test")) && !args.contains("-keep") {
+        if (args.contains("-develop-test") || args.contains("-mask-test") || args.contains("-mask-color-test")) && !args.contains("-keep") {
             model.live?.goToStep(applied: opened)
             model.refresh()
             print("TESTS DONE: back to the edit as opened (\(opened) steps applied)")

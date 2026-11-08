@@ -154,6 +154,8 @@ them after `--`):
 | `-metadata-test` | Sets and reads back a title and a keyword on a test copy, with its camera info, then takes them off |
 | `-virtual-copy-test` | Makes a virtual copy of the test copy, renames it and removes it |
 | `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
+| `-mask-color-test` (with `-open`) | Adds a mask over the whole photo and checks each of its Color sliders changes the live render, then goes back |
+| `-show-mask` (with `-open`, after `-mask-test -keep`) | Opens the Masks pane on the first mask with its Color sliders |
 | `-color-mix`, `-grading` (with `-open`) | Opens the Color Mixer, or the Color Grading pane |
 | `-survey`, `-compare` | Opens Survey or Compare on four photos, passing over the test charts |
 | `-stack-test` | Stacks three photos of the test copy's folder, expands and unstacks them (`-keep` leaves the stack) |

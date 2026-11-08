@@ -587,6 +587,54 @@ mod tests {
     }
 
     #[test]
+    fn a_masks_color_sliders_change_the_render() {
+        let image = chart();
+        let mut base = Recipe::default();
+        new_mask(&image, &mut base, NewMask::Linear, [0.5, 0.2], [0.5, 0.8]);
+        // Through the preview renderer the live view draws with (the GPU
+        // where there is one), as well as the CPU's.
+        let preview =
+            std::cell::RefCell::new(rawmakase_engine::develop::PreviewRenderer::default());
+        let render = |r: &Recipe| {
+            let cpu = rawmakase_engine::develop::render(
+                &image,
+                &r.checked().unwrap(),
+                256,
+                Cancel::NEVER,
+            )
+            .unwrap()
+            .pixels;
+            let live = preview
+                .borrow_mut()
+                .render_to(&image, r, 256, None, Cancel::NEVER, None)
+                .unwrap()
+                .pixels()
+                .rgb8();
+            (cpu, live)
+        };
+        let before = render(&base);
+        let photo = rawmakase_model::camera_data::Metadata::default();
+        for (id, value) in [
+            (LocalParameterId::Temperature, 0.8),
+            (LocalParameterId::Tint, 0.8),
+            (LocalParameterId::Saturation, -1.),
+            (LocalParameterId::Hue, 0.5),
+        ] {
+            let mut r = base.clone();
+            let index = LOCAL.iter().position(|p| *p == id).unwrap() as u32;
+            crate::controls::Control::Mask { mask: 0, index }
+                .set(&mut r, &photo, value)
+                .unwrap();
+            let after = render(&r);
+            assert_ne!(
+                after.0, before.0,
+                "{id:?} {value} changed nothing on the CPU"
+            );
+            assert_ne!(after.1, before.1, "{id:?} {value} changed nothing live");
+        }
+    }
+
+    #[test]
     fn range_masks_and_parts_combine_as_in_lightroom() {
         let image = chart();
         let mut r = Recipe::default();
