@@ -33,7 +33,7 @@ final class LiveModel {
             toolStart = pane.isTool ? edit?.applied : nil
             cropping = pane == .crop
             if pane != .masks { selectedMask = nil; if tool != .whiteBalance && !(pane == .heal && tool == .heal) { tool = .none } }
-            if pane != .edit, tool == .whiteBalance { tool = .none }
+            if pane != .edit, tool == .whiteBalance || tool == .pointColor { tool = .none }
         }
     }
     /// A tool's Cancel: back to the edit as it was when the tool opened,
@@ -61,6 +61,10 @@ final class LiveModel {
     /// a tool is open.
     var tool: PhotoTool = .none { didSet { if tool != .none && compare != .off { compare = .off } } }
     var selectedMask: UInt32?
+    /// The Point Color swatch whose sliders show.
+    var pointColorSelected: UInt32?
+    /// Why the last sample made no swatch, or that it is being taken.
+    var pointColorNote: String?
     var brushSize: Float = 0.04
     var brushFeather: Float = 0.5
     var brushFlow: Float = 1
@@ -367,6 +371,8 @@ struct LiveEditor: View {
         }
         // -wb-loupe: the white balance eyedropper open, to look at.
         if args.contains("-wb-loupe") { model.tool = .whiteBalance }
+        // -point-color (with -color-mix): Point Color's eyedropper open.
+        if args.contains("-point-color") { model.tool = .pointColor }
         // -show-mask: the Masks pane on the first mask, its Color open.
         if args.contains("-show-mask"), let first = model.edit?.masks.first?.index {
             model.pane = .masks

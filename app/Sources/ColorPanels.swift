@@ -18,12 +18,28 @@ struct ColorMixView: View {
     let sections: [Section]
     let model: LiveModel
     @State private var band = 0
+    @State private var pointColor = ProcessInfo.processInfo.arguments.contains("-point-color")
 
     private static let channels = ["Hue", "Saturation", "Luminance"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(sections.first?.switches ?? [], id: \.label) { SwitchRow(item: $0, model: model) }
+            Picker("View", selection: $pointColor) {
+                Text("Mixer").tag(false)
+                Text("Point Color").tag(true)
+            }
+            .pickerStyle(.segmented)
+            if pointColor {
+                PointColorView(model: model)
+            } else {
+                mixer
+            }
+        }
+        .onChange(of: pointColor) { if !pointColor, model.tool == .pointColor { model.tool = .none } }
+    }
+
+    @ViewBuilder private var mixer: some View {
             HStack(spacing: 0) {
                 ForEach(MixerBand.colors.indices, id: \.self) { index in
                     swatch(index)
@@ -36,7 +52,6 @@ struct ColorMixView: View {
                     SliderRow(slider: slider, model: model, track: track(channel), label: name)
                 }
             }
-        }
     }
 
     private func slider(_ channel: Int) -> SliderState? {
@@ -219,4 +234,89 @@ struct GradingWheel: View {
     private func point(_ location: CGPoint, _ radius: CGFloat) -> (Float, Float) {
         (Float((location.x - radius) / radius), Float((location.y - radius) / radius))
     }
+}
+
+/// Point Color: the eyedropper, up to eight swatches, and the chosen
+/// swatch's sampled colour beside what it becomes, then its sliders. The
+/// eyedropper samples through [`SampleLoupe`].
+struct PointColorView: View {
+    let model: LiveModel
+
+    private static let slots = 8
+
+    var body: some View {
+        // Read again as the edit or a drag changes: `live` itself never does.
+        let _ = model.dragging?.1
+        let swatches = model.edit == nil ? [] : (model.live?.pointColors() ?? [])
+        let chosen = swatches.first { $0.index == model.pointColorSelected } ?? swatches.last
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    model.tool = model.tool == .pointColor ? .none : .pointColor
+                    model.pointColorNote = nil
+                } label: {
+                    Image(systemName: "eyedropper").padding(8)
+                        .background(model.tool == .pointColor ? Theme.accent : Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sample a colour")
+                ForEach(0..<Self.slots, id: \.self) { slot in
+                    if slot < swatches.count {
+                        swatch(swatches[slot], chosen: swatches[slot].index == chosen?.index)
+                    } else {
+                        Circle().strokeBorder(Theme.line, lineWidth: 1).frame(width: 22, height: 22)
+                    }
+                }
+            }
+            if let note = model.pointColorNote {
+                Text(note).font(.caption).foregroundStyle(Theme.secondaryText)
+            } else if model.tool == .pointColor {
+                Text("Move the circle onto a colour, then tap ✓.").font(.caption).foregroundStyle(Theme.secondaryText)
+            } else if swatches.isEmpty {
+                Text("Tap the eyedropper to sample a colour in the photo.").font(.caption).foregroundStyle(Theme.secondaryText)
+            }
+            if let chosen {
+                HStack(spacing: 0) {
+                    Self.color(chosen.color)
+                    Self.color(chosen.adjusted)
+                }
+                .frame(height: 18)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .accessibilityLabel("The sampled colour, and what it becomes")
+                ForEach(chosen.sliders, id: \.label) { SliderRow(slider: $0, model: model) }
+            }
+        }
+    }
+
+    private func swatch(_ s: SwatchInfo, chosen: Bool) -> some View {
+        Button { model.pointColorSelected = s.index } label: {
+            Self.color(s.color)
+                .frame(width: 22, height: 22)
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(.white, lineWidth: chosen ? 2 : 0).padding(-3))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Delete Swatch", systemImage: "trash", role: .destructive) {
+                model.live?.deletePointColor(index: s.index)
+                model.pointColorSelected = nil
+                model.refresh()
+            }
+            Button("Delete All Swatches", role: .destructive) {
+                model.live?.deletePointColor(index: nil)
+                model.pointColorSelected = nil
+                model.refresh()
+            }
+        }
+        .accessibilityLabel("Swatch \(s.index + 1)")
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+
+    private static func color(_ rgb: [Float]) -> Color {
+        Color(red: Double(rgb[safe: 0] ?? 0), green: Double(rgb[safe: 1] ?? 0), blue: Double(rgb[safe: 2] ?? 0))
+    }
+}
+
+private extension Array {
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

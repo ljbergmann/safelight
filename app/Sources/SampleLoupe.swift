@@ -6,7 +6,7 @@ extension PhotoTool {
     /// through [`SampleLoupe`], placed and then confirmed, as Lightroom's are.
     var samples: Bool {
         switch self {
-        case .whiteBalance, .newGradient(.colorRange), .newGradient(.luminanceRange),
+        case .whiteBalance, .pointColor, .newGradient(.colorRange), .newGradient(.luminanceRange),
              .newPart(.colorRange, _), .newPart(.luminanceRange, _):
             true
         default:
@@ -24,6 +24,23 @@ extension LiveModel {
             live?.pickWhiteBalance(at: point)
             tool = .none
             refresh()
+        case .pointColor:
+            tool = .none
+            pointColorNote = "Sampling…"
+            let live = live
+            Task {
+                let result = await Task.detached { Result { try live?.addPointColor(at: point) } }.value
+                switch result {
+                case .success(let index):
+                    pointColorSelected = index
+                    pointColorNote = nil
+                case .failure(RenderError.Failed(let message)):
+                    pointColorNote = message
+                case .failure(let error):
+                    pointColorNote = "\(error)"
+                }
+                refresh()
+            }
         case .newGradient(let kind):
             addMask(kind, from: point, to: point)
         case .newPart(let kind, let op):
@@ -97,11 +114,19 @@ struct SampleLoupe: View {
                     .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
             }
             .buttonStyle(.plain)
-            // On the ring, up and to the right.
-            .position(x: center.x + r * 0.71, y: center.y - r * 0.71)
+            // On the ring, up and to the right, or on whichever side keeps it
+            // within the view near an edge.
+            .position(Self.check(center, r, in: size))
             .accessibilityLabel("Use this point")
         }
         .frame(width: size.width, height: size.height)
+    }
+
+    private static func check(_ c: CGPoint, _ r: CGFloat, in size: CGSize) -> CGPoint {
+        let d = r * 0.71, room: CGFloat = 20
+        let x = c.x + d + room > size.width ? c.x - d : c.x + d
+        let y = c.y - d - room < 0 ? c.y + d : c.y - d
+        return CGPoint(x: x, y: y)
     }
 
     private static func clamped(_ p: CGPoint) -> CGPoint {

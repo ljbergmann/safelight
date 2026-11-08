@@ -15,6 +15,8 @@ enum PhotoTool: Equatable {
     case heal
     /// Sample something neutral to set white balance from it.
     case whiteBalance
+    /// Sample a colour for a new Point Color swatch.
+    case pointColor
 }
 
 extension LiveModel {
@@ -447,7 +449,7 @@ final class PaintView: UIView {
             _ = model.live?.addSpot(at: view(last), radius: model.spotSize, clone: model.cloneSpots)
             model.refresh()
         // Sampling tools take their point through `SampleLoupe`.
-        case .whiteBalance, .none:
+        case .whiteBalance, .pointColor, .none:
             break
         }
     }
