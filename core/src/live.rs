@@ -726,6 +726,67 @@ impl LiveView {
         });
     }
 
+    /// Straightens the photo so the line drawn from `from` to `to` (view
+    /// points over the photo as shown) is level or plumb: one History step.
+    /// False for a line too short to go by.
+    pub fn straighten_with_ruler(&self, from: Vec<f32>, to: Vec<f32>) -> bool {
+        let (Some(from), Some(to)) = (point(&from), point(&to)) else {
+            return false;
+        };
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.straighten_with_ruler(from, to));
+        if changed {
+            self.shared.request(|_| {});
+        }
+        changed
+    }
+
+    /// The Crop panel's Auto: measures the angle Upright's Level would turn
+    /// the photo by and sets it, one History step ("Straighten", "Auto"), as
+    /// the desktop does. Takes a moment: call it off the main thread. False,
+    /// with nothing changed, when the photo changed meanwhile; an error when
+    /// there is no horizon or verticals to go by.
+    pub fn auto_straighten(&self) -> Result<bool, RenderError> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| RenderError::Failed {
+                message: "No photo is open".into(),
+            })?;
+        let Some((base, id)) = self
+            .shared
+            .edit()
+            .as_ref()
+            .map(|e| (e.recipe().clone(), e.id))
+        else {
+            return Ok(false);
+        };
+        let measured = base.clone();
+        let angle = on_core_thread(move || {
+            Ok(rawmakase_engine::develop::upright::straighten_angle(
+                &image, &measured,
+            ))
+        })?
+        .ok_or_else(|| RenderError::Failed {
+            message: "Auto straighten found no horizon or verticals to level".into(),
+        })?;
+        {
+            let mut guard = self.shared.edit();
+            let Some(edit) = guard.as_mut().filter(|e| e.id == id && *e.recipe() == base) else {
+                return Ok(false);
+            };
+            edit.change("Straighten", "Auto", |r| r.set_auto_straighten(Some(angle)));
+        }
+        self.shared.request(|_| {});
+        Ok(true)
+    }
+
     /// Duplicates mask `index` as the next mask, as the desktop does: one
     /// History step. Returns the copy's index; `None` with no room for it.
     pub fn duplicate_mask(&self, index: u32) -> Option<u32> {

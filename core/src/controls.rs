@@ -205,7 +205,7 @@ pub(crate) const REGIONS: [(&str, &str); 4] = [
     ("Global", "Global"),
 ];
 
-fn index_of(id: ParameterId) -> Option<u32> {
+pub(crate) fn index_of(id: ParameterId) -> Option<u32> {
     PARAMS.iter().position(|p| *p == id).map(|i| i as u32)
 }
 

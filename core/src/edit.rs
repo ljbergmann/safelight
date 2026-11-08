@@ -493,6 +493,22 @@ impl OpenEdit {
         }
     }
 
+    /// Sets Straighten so the line drawn from `from` to `to` (view points,
+    /// y down, over the photo as shown) is level or, nearer upright, plumb,
+    /// as the desktop's ruler does: through the Straighten slider, one
+    /// History step. False for a line too short to go by.
+    pub(crate) fn straighten_with_ruler(&mut self, from: [f32; 2], to: [f32; 2]) -> bool {
+        use rawmakase_model::model::params::ParameterId;
+        let Some(index) = crate::controls::index_of(ParameterId::Straighten) else {
+            return false;
+        };
+        let current = self.session.recipe().straighten;
+        match rawmakase_model::model::transform::ruler_angle(from, to, current) {
+            Some(angle) => self.set(Control::Param { index }, angle, true),
+            None => false,
+        }
+    }
+
     /// Duplicates mask `index` as the next mask: one History step. Returns
     /// the copy's index; `None` when there is no such mask or no room.
     pub(crate) fn duplicate_mask(&mut self, index: usize) -> Option<usize> {
@@ -1201,6 +1217,26 @@ pub(crate) mod tests {
         assert!(!edit.reset_mask_sliders(1), "already reset");
         assert_eq!(edit.state().steps.len(), steps + 2);
         assert_eq!(edit.duplicate_mask(7), None);
+    }
+
+    #[test]
+    fn the_ruler_levels_a_line_through_the_straighten_slider() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let steps = edit.state().steps.len();
+        // A line falling 5° to the right is levelled by turning it back.
+        let fall = 300. * 5f32.to_radians().tan();
+        assert!(edit.straighten_with_ruler([0., 0.], [300., fall]));
+        assert!(
+            (edit.recipe().straighten + 5.).abs() < 0.01,
+            "{}",
+            edit.recipe().straighten
+        );
+        let names = edit.state().steps;
+        assert_eq!(names.len(), steps + 1);
+        assert!(names.last().unwrap().starts_with("Angle"), "{names:?}");
+        assert!(!edit.straighten_with_ruler([0., 0.], [3., 1.]), "too short");
     }
 
     #[test]
