@@ -83,8 +83,13 @@ and no soft proofing, so they aren't gaps.
 
 ## Export, fuller
 
-- [ ] Export presets, file naming templates, metadata options, output
-      sharpening, colour space, watermarks (the desktop has all; M)
+- [x] Export presets (the desktop's export settings, by name), Lightroom's
+      Rename To templates with an example, colour space, JPEG XL, Metadata
+      Include and Remove Location, the Simple Copyright Watermark; through
+      the desktop's export batch, with the last choices remembered
+- [ ] Custom filename templates and watermark presets made on the desktop
+      (its data folder isn't on the iPad); output sharpening (the desktop
+      has none yet)
 
 ## Sync
 

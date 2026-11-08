@@ -176,7 +176,7 @@ struct LibraryView: View {
                 let start = ContinuousClock.now
                 let folder = URL.temporaryDirectory.appending(path: "Export-test").path
                 let outcome = await Task.detached {
-                    Result { try library.exportPhotos(ids: [photo.id], choice: ExportChoice(format: .jpeg, quality: 90, longEdge: 0), folder: folder) }
+                    Result { try library.exportPhotos(ids: [photo.id], choice: ExportChoice(format: .jpeg, quality: 90, longEdge: 0, colorSpace: .srgb, naming: .filename, customText: "", startNumber: 1, metadata: .all, removeLocation: false, watermark: false), folder: folder).files }
                 }.value
                 let memory = Memory.footprint()
                 switch outcome {

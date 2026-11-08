@@ -1773,6 +1773,8 @@ dependencies = [
  "rawmakase-interop",
  "rawmakase-model",
  "rawmakase-protocol",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "uniffi",
