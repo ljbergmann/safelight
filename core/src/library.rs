@@ -29,6 +29,10 @@ pub struct LibraryPhoto {
     /// Lightroom's colour label ("Red", "Yellow", "Green", "Blue", "Purple"),
     /// or empty.
     pub label: String,
+    /// A virtual copy's name ("Copy 1"); empty for a master.
+    pub copy_name: String,
+    /// A virtual copy: the same file as its master, with its own edit.
+    pub is_copy: bool,
 }
 
 /// A collection and its photos.
@@ -134,6 +138,8 @@ impl Library {
                 rating: p.rating,
                 flag: p.flag,
                 label: p.label,
+                copy_name: p.copy_name,
+                is_copy: p.master.is_some(),
             })
             .collect();
         photos.sort_by(|a, b| (&a.captured, &a.filename).cmp(&(&b.captured, &b.filename)));
@@ -569,5 +575,35 @@ impl Library {
         let mut indices: Vec<usize> = (0..photos.len()).collect();
         sort.sort(&photos, &mut indices, &keys, reverse);
         Ok(indices.into_iter().map(|i| photos[i].id.0).collect())
+    }
+}
+
+#[uniffi::export]
+impl Library {
+    /// Lightroom's Create Virtual Copy: a photo of the same file with photo
+    /// `id`'s edit, rating, flag, label, keywords and metadata, named "Copy
+    /// N". Returns its id.
+    pub fn create_virtual_copy(&self, id: i64) -> Result<i64, RenderError> {
+        Ok(self.catalog().create_virtual_copy(PhotoId(id))?.0)
+    }
+
+    /// Renames a virtual copy.
+    pub fn rename_virtual_copy(&self, id: i64, name: String) -> Result<(), RenderError> {
+        self.catalog().set_copy_name(PhotoId(id), name.trim())?;
+        Ok(())
+    }
+
+    /// Lightroom's Set Copy as Master: the copy becomes the master, the
+    /// master and the other copies its copies.
+    pub fn set_copy_as_master(&self, id: i64) -> Result<(), RenderError> {
+        self.catalog().set_copy_as_master(PhotoId(id))?;
+        Ok(())
+    }
+
+    /// Removes a virtual copy from the catalog; its file, which its master
+    /// shows, stays.
+    pub fn remove_virtual_copy(&self, id: i64) -> Result<(), RenderError> {
+        self.catalog().remove_virtual_copy(PhotoId(id))?;
+        Ok(())
     }
 }

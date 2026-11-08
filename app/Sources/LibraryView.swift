@@ -159,6 +159,7 @@ struct LibraryView: View {
         }
         }
         .sheet(item: Bindable(model).info) { request in InfoSheet(model: model, ids: request.ids) }
+        .modifier(CopyAlerts(model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy))
         .onChange(of: path) { _, open in columns = open.isEmpty ? .automatic : .detailOnly }
         .task {
             await model.open()
@@ -168,6 +169,7 @@ struct LibraryView: View {
             if args.contains("-import-screen-test") { await model.importScreenTest() }
             if args.contains("-sort-test") { model.sortTest() }
             if args.contains("-metadata-test") { model.metadataTest() }
+            if args.contains("-virtual-copy-test") { await model.virtualCopyTest() }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,
@@ -239,7 +241,7 @@ struct ThumbnailCell: View {
                     Image(systemName: photo.flag > 0 ? "flag.fill" : "xmark.circle.fill")
                         .font(.caption2).foregroundStyle(photo.flag > 0 ? Color.primary : Color.red)
                 }
-                Text(photo.filename).font(.caption).lineLimit(1)
+                Text(photo.title).font(.caption).lineLimit(1)
                 Spacer()
                 Stars(rating: photo.rating).font(.caption2)
             }
@@ -287,6 +289,7 @@ struct PhotoMenu: View {
             Button("None") { model.setLabel(photo, to: "") }
         }
         Button("Info…", systemImage: "info.circle") { model.info = InfoRequest(ids: [photo.id]) }
+        CopyMenu(photo: photo, model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy)
         if model.inQuickCollection(photo) {
             Button("Remove from Quick Collection", systemImage: "circle.slash") { model.setQuickCollection([photo.id], false) }
         } else {
@@ -402,7 +405,7 @@ struct EditorView: View {
                 LiveEditor(photo: shown, library: library, model: live)
             }
         }
-        .navigationTitle(shown.filename)
+        .navigationTitle(shown.title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden()
         .onAppear { live.onSwipe = { go(by: $0) } }
@@ -426,6 +429,8 @@ struct EditorView: View {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 2) {
                     Button("Info", systemImage: "info.circle") { model.info = InfoRequest(ids: [shown.id]) }
+                        .labelStyle(.iconOnly)
+                    Button("Create Virtual Copy", systemImage: "plus.square.on.square") { copyAndOpen() }
                         .labelStyle(.iconOnly)
                     Divider().frame(height: 20)
                     Button { model.setFlag(shown, to: flag == 1 ? 0 : 1) } label: {
@@ -461,6 +466,13 @@ struct EditorView: View {
         } message: {
             Text(live.edit?.saveError ?? "")
         }
+    }
+
+    /// Lightroom's Create Virtual Copy from the editor: saves, makes the copy
+    /// and goes on editing it.
+    private func copyAndOpen() {
+        guard live.save() else { heldMove = nil; saveFailed = true; return }
+        Task { if let copy = await model.createVirtualCopy(of: shown) { current = copy } }
     }
 
     /// Moves `by` photos along the grid's order, saving this one's edit

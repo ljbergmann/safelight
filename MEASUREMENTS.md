@@ -357,3 +357,15 @@ decoder, moved into `rawmakase-decode` on the fork), and kept.
 - **Found on the iPad:** reading a CR3's camera info from its EXIF alone
   found none (the desktop opens a RAW through its decoder), and the empty
   result was kept; an empty record is now read again.
+
+## Virtual copies (2026-11-08)
+
+A photo's menu, and the editor's ⧉, make a virtual copy as the desktop
+does: the same file with its own edit, metadata and name, "Copy N". A
+copy's menu renames it, makes it the master or removes it (after asking;
+its file stays). The editor saves first and goes on with the copy.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| A copy starts with the master's edit, keeps its own, survives Set Copy as Master; a master isn't removed; the file stays | Mac, core test | passes |
+| `-virtual-copy-test` on the test copy | M1 iPad Pro | `AITEST-407A5994.CR3 · Copy 1` of the same file, renamed `· Safelight test`; photos 54 → 55 → 54 |

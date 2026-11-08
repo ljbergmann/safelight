@@ -61,7 +61,7 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [ ] Stacks (M)
 - [x] Metadata (title, caption, creator, copyright), keywords and camera
       info, for one photo or several
-- [ ] Virtual copies (M)
+- [x] Virtual copies: create, rename, set as master, remove
 - [ ] Delete photos, move and rename files and folders (M)
 
 ## Then: the rest of Develop

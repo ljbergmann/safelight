@@ -34,9 +34,12 @@ final class LibraryModel {
     }
     /// What an import in progress has done, for the toolbar.
     private(set) var importing: String?
-    private(set) var error: String?
+    var error: String?
     /// The last import's timings, for measuring.
     private(set) var lastImport: String?
+    /// The virtual copy being renamed or removed, from its menu.
+    var renamingCopy: LibraryPhoto?
+    var removingCopy: LibraryPhoto?
     /// The photos the Info sheet is open for.
     var info: InfoRequest?
     /// What the last import brought in and left out, for the toolbar.

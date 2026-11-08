@@ -651,6 +651,51 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_virtual_copy_has_its_own_edit_of_the_same_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut master = open(&library, id, &path);
+        master.set(Control::Param { index: 2 }, 0.5, true);
+        master.save().unwrap();
+        drop(master);
+
+        let copy = library.create_virtual_copy(id).unwrap();
+        let photos = library.photos().unwrap();
+        let listed = photos.iter().find(|p| p.id == copy).unwrap();
+        assert!(listed.is_copy);
+        assert_eq!(listed.copy_name, "Copy 1");
+        // The same file, as the file system resolves it (/private/var for /var).
+        assert_eq!(
+            Path::new(&listed.path).canonicalize().unwrap(),
+            path.canonicalize().unwrap()
+        );
+        let mut edit = open(&library, copy, &path);
+        assert_eq!(exposure(&edit), 0.5, "starts with the master's edit");
+        edit.set(Control::Param { index: 2 }, -1., true);
+        edit.save().unwrap();
+        drop(edit);
+        assert_eq!(
+            exposure(&open(&library, id, &path)),
+            0.5,
+            "the master's is its own"
+        );
+
+        library.rename_virtual_copy(copy, "Dark".into()).unwrap();
+        library.set_copy_as_master(copy).unwrap();
+        let photos = library.photos().unwrap();
+        assert!(!photos.iter().find(|p| p.id == copy).unwrap().is_copy);
+        assert!(photos.iter().find(|p| p.id == id).unwrap().is_copy);
+        assert!(
+            library.remove_virtual_copy(copy).is_err(),
+            "a master isn't removed"
+        );
+        library.remove_virtual_copy(id).unwrap();
+        assert_eq!(library.photos().unwrap().len(), 1);
+        assert!(path.exists(), "the file stays");
+        assert_eq!(exposure(&open(&library, copy, &path)), -1.);
+    }
+
+    #[test]
     fn the_edit_state_names_its_photo() {
         let dir = tempfile::tempdir().unwrap();
         let (library, id, path) = library(dir.path());
