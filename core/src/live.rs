@@ -726,6 +726,29 @@ impl LiveView {
         });
     }
 
+    /// Duplicates mask `index` as the next mask, as the desktop does: one
+    /// History step. Returns the copy's index; `None` with no room for it.
+    pub fn duplicate_mask(&self, index: u32) -> Option<u32> {
+        let copy = self.shared.edit().as_mut()?.duplicate_mask(index as usize);
+        if copy.is_some() {
+            self.shared.request(|_| {});
+        }
+        copy.map(|i| i as u32)
+    }
+
+    /// Sets mask `index`'s sliders back to a new mask's, keeping its shape
+    /// and Amount, as the desktop's Reset Sliders does: one History step.
+    pub fn reset_mask_sliders(&self, index: u32) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.reset_mask_sliders(index as usize));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
     pub fn set_mask_hidden(&self, index: u32, hidden: bool) {
         self.edit_now(if hidden { "Hide Mask" } else { "Show Mask" }, |r| {
             r.masks.get_mut(index as usize).map(|m| m.hidden = hidden)

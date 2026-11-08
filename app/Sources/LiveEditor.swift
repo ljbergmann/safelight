@@ -61,6 +61,10 @@ final class LiveModel {
     /// a tool is open.
     var tool: PhotoTool = .none { didSet { if tool != .none && compare != .off { compare = .off } } }
     var selectedMask: UInt32?
+    /// The Crop tool's guide overlay (an index of `cropGuides()`, Thirds to
+    /// start, as Lightroom's), `nil` for none, and which way round it is.
+    var cropGuide: UInt32? = 1
+    var cropGuideOrientation: UInt32 = 0
     /// The Point Color swatch whose sliders show.
     var pointColorSelected: UInt32?
     /// Why the last sample made no swatch, or that it is being taken.
@@ -368,6 +372,11 @@ struct LiveEditor: View {
             model.refresh()
             let looks = live.profiles().filter { $0.title.contains("Teal") }.map { "\($0.group)/\($0.title)" }
             print("PROFILES IMPORT \(result.message); failed \(result.failed) \(result.details); profiles \(before) → \(live.profiles().count); \(looks)")
+        }
+        // -crop-guide <n>: the Crop tool open with overlay n of cropGuides().
+        if let i = args.firstIndex(of: "-crop-guide"), i + 1 < args.count, let n = UInt32(args[i + 1]) {
+            model.pane = .crop
+            model.cropGuide = n
         }
         // -wb-loupe: the white balance eyedropper open, to look at.
         if args.contains("-wb-loupe") { model.tool = .whiteBalance }

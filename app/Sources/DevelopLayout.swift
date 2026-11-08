@@ -479,6 +479,44 @@ struct CropPane: View {
     let model: LiveModel
     @State private var showGeometry = false
 
+    /// The guide overlay over the crop, and a turn for those that turn.
+    private var guides: some View {
+        let all = cropGuides()
+        let chosen = all.first { $0.index == model.cropGuide }
+        return HStack {
+            Text("Overlay").foregroundStyle(Theme.secondaryText)
+            Spacer()
+            Menu {
+                Button { model.cropGuide = nil } label: {
+                    if model.cropGuide == nil { Label("None", systemImage: "checkmark") } else { Text("None") }
+                }
+                ForEach(all, id: \.index) { guide in
+                    Button {
+                        model.cropGuide = guide.index
+                        model.cropGuideOrientation = 0
+                    } label: {
+                        if guide.index == model.cropGuide { Label(guide.name, systemImage: "checkmark") } else { Text(guide.name) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(chosen?.name ?? "None")
+                    Image(systemName: "chevron.down").font(.caption)
+                }
+            }
+            if let chosen, chosen.orientations > 1 {
+                Button {
+                    model.cropGuideOrientation = (model.cropGuideOrientation + 1) % chosen.orientations
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath").padding(6)
+                        .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Turn the overlay")
+            }
+        }
+    }
+
     var body: some View {
         let geometry = (model.edit?.sections ?? []).filter { $0.group == "Geometry" }
         VStack(alignment: .leading, spacing: 0) {
@@ -517,6 +555,7 @@ struct CropPane: View {
                     tool("Flip V", "arrow.up.and.down.righttriangle.up.righttriangle.down") { model.orient(.flipVertical) }
                 }
                 ForEach(geometry.first?.sliders ?? [], id: \.label) { SliderRow(slider: $0, model: model) }
+                guides
             }
             .padding(16)
             rule

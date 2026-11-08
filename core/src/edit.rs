@@ -493,6 +493,32 @@ impl OpenEdit {
         }
     }
 
+    /// Duplicates mask `index` as the next mask: one History step. Returns
+    /// the copy's index; `None` when there is no such mask or no room.
+    pub(crate) fn duplicate_mask(&mut self, index: usize) -> Option<usize> {
+        let mut after = self.session.recipe().clone();
+        let copy = rawmakase_model::model::masks::duplicate(&mut after.masks, index)?;
+        self.change("Duplicate Mask", "", |r| *r = after);
+        Some(copy)
+    }
+
+    /// Mask `index`'s sliders back to a new mask's, its shape and Amount
+    /// kept: one History step; false when they already are.
+    pub(crate) fn reset_mask_sliders(&mut self, index: usize) -> bool {
+        let fresh = rawmakase_model::model::masks::LocalAdjust::default();
+        if self
+            .session
+            .recipe()
+            .masks
+            .get(index)
+            .is_none_or(|m| m.adjust == fresh)
+        {
+            return false;
+        }
+        self.change("Reset Mask Sliders", "", |r| r.masks[index].adjust = fresh);
+        true
+    }
+
     /// Adds a Point Color swatch of `source` as one History step ("Point
     /// Color", "Add Swatch", as the desktop names it). Returns its index, or
     /// why it was refused.
@@ -1138,6 +1164,43 @@ pub(crate) mod tests {
             !edit.set_point_color_range(3, 1, Some(0), 0.5, true),
             "no such swatch"
         );
+    }
+
+    #[test]
+    fn a_mask_is_duplicated_after_itself_and_its_sliders_reset_as_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let mut r = edit.recipe().clone();
+        r.masks.push(rawmakase_model::model::masks::MaskGroup {
+            name: "Sky".into(),
+            ..Default::default()
+        });
+        r.masks[0].adjust.exposure = 0.5;
+        r.masks[0].amount = 0.7;
+        edit.change("Test", "", |x| *x = r);
+        let steps = edit.state().steps.len();
+
+        assert_eq!(edit.duplicate_mask(0), Some(1));
+        let masks = &edit.recipe().masks;
+        assert_eq!((masks.len(), masks[1].name.as_str()), (2, "Sky copy"));
+        assert_eq!(masks[1].adjust.exposure, 0.5, "the same adjustment");
+
+        assert!(edit.reset_mask_sliders(1));
+        let copy = &edit.recipe().masks[1];
+        assert_eq!(
+            (copy.adjust.exposure, copy.amount),
+            (0., 0.7),
+            "Amount kept"
+        );
+        assert_eq!(
+            edit.recipe().masks[0].adjust.exposure,
+            0.5,
+            "the original's kept"
+        );
+        assert!(!edit.reset_mask_sliders(1), "already reset");
+        assert_eq!(edit.state().steps.len(), steps + 2);
+        assert_eq!(edit.duplicate_mask(7), None);
     }
 
     #[test]

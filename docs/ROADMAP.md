@@ -77,10 +77,10 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
   done)
 - **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
   Upright and Guided Upright, Constrain Crop, Calibration's process version
-- **Crop:** Auto Straighten and the ruler, overlays (thirds, golden ratio…),
-  a custom ratio
-- **Masks:** brush Density and Auto Mask, duplicate, reset sliders, refining
-  a Subject with taps
+- **Crop:** Auto Straighten and the ruler, a custom ratio (the guide overlays
+  are done)
+- **Masks:** brush Density and Auto Mask, refining a Subject with taps
+  (duplicate and reset sliders are done)
 - **Retouch:** brushed spots, feather and opacity, moving or deleting a spot,
   Visualize Spots, Red Eye and Pet Eye
 - **Presets:** favorites and search, Paste from Previous

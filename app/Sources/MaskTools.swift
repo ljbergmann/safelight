@@ -148,6 +148,23 @@ struct MasksPanel: View {
                         Image(systemName: mask.hidden ? "eye.slash" : "eye")
                     }
                     Button(role: .destructive) { model.deleteMask(mask.index) } label: { Image(systemName: "trash") }
+                    Menu {
+                        Button("Duplicate Mask", systemImage: "plus.square.on.square") {
+                            if let copy = model.live?.duplicateMask(index: mask.index) {
+                                // The copy keeps the original's overlay colour.
+                                model.maskColors[copy] = model.overlayColor(for: mask.index)
+                                model.selectedMask = copy
+                            }
+                            model.refresh()
+                        }
+                        Button("Reset Sliders", systemImage: "arrow.counterclockwise") {
+                            model.live?.resetMaskSliders(index: mask.index)
+                            model.refresh()
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("More for this mask")
                 }
                 HStack(spacing: 10) {
                     Text("Overlay").foregroundStyle(Theme.secondaryText)

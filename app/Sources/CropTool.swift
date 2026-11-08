@@ -57,16 +57,19 @@ struct CropOverlay: View {
                 p.addRect(rect)
             }
             .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
-            // Thirds, as Lightroom's default overlay.
-            Path { p in
-                for i in 1...2 {
-                    let x = rect.minX + rect.width * CGFloat(i) / 3
-                    let y = rect.minY + rect.height * CGFloat(i) / 3
-                    p.move(to: CGPoint(x: x, y: rect.minY)); p.addLine(to: CGPoint(x: x, y: rect.maxY))
-                    p.move(to: CGPoint(x: rect.minX, y: y)); p.addLine(to: CGPoint(x: rect.maxX, y: y))
+            // The guide overlay chosen in the Crop pane, as the desktop draws it.
+            if let guide = model.cropGuide {
+                Path { p in
+                    for line in cropGuideLines(index: guide, orientation: model.cropGuideOrientation,
+                                               width: Float(rect.width), height: Float(rect.height)) {
+                        let points = stride(from: 0, to: line.count - 1, by: 2).map {
+                            CGPoint(x: rect.minX + CGFloat(line[$0]), y: rect.minY + CGFloat(line[$0 + 1]))
+                        }
+                        p.addLines(points)
+                    }
                 }
+                .stroke(Color.white.opacity(0.6), lineWidth: 0.75)
             }
-            .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
             Rectangle().path(in: rect).stroke(Color.white, lineWidth: 1.5)
             ForEach(0..<4, id: \.self) { i in
                 let corner = CGPoint(x: i % 2 == 0 ? rect.minX : rect.maxX, y: i < 2 ? rect.minY : rect.maxY)

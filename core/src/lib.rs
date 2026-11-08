@@ -22,6 +22,7 @@ pub use ai::{AiModel, AiModelInfo, AiSelection, ModelInstall, ai_models};
 pub use controls::{Control, Section, SliderState, Switch, SwitchState};
 pub use export::{ExportChoice, ExportFormat};
 pub use files::{FileChange, FolderInfo};
+mod guides;
 mod import;
 mod library;
 pub use edit::{EditState, Orientation};
@@ -41,6 +42,7 @@ mod snapshots;
 pub use snapshots::SnapshotInfo;
 mod transfer;
 mod wb;
+pub use guides::{CropGuideInfo, crop_guide_lines, crop_guides};
 pub use live::{FrameStats, HistogramData, LiveView, MaskOverlay, Zoom};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
 pub use transfer::{
