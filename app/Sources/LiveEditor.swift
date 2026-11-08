@@ -371,8 +371,17 @@ struct LiveEditor: View {
         }
         // -wb-loupe: the white balance eyedropper open, to look at.
         if args.contains("-wb-loupe") { model.tool = .whiteBalance }
-        // -point-color (with -color-mix): Point Color's eyedropper open.
-        if args.contains("-point-color") { model.tool = .pointColor }
+        // -point-color (with -color-mix): Point Color's eyedropper open;
+        // -point-color-ranges: a swatch sampled at the middle of the photo,
+        // its ranges and Visualize Range shown.
+        if args.contains("-point-color-ranges"), let live = model.live {
+            let at: [Float] = [0.555, 0.49]
+            let added = await Task.detached { Result { try live.addPointColor(at: at) } }.value
+            print("POINT COLOR added \(added); ranges \(live.pointColors().first?.ranges.map { "\($0.label) \($0.points)" } ?? [])")
+            model.refresh()
+        } else if args.contains("-point-color") {
+            model.tool = .pointColor
+        }
         // -show-mask: the Masks pane on the first mask, its Color open.
         if args.contains("-show-mask"), let first = model.edit?.masks.first?.index {
             model.pane = .masks

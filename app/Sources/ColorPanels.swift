@@ -18,7 +18,7 @@ struct ColorMixView: View {
     let sections: [Section]
     let model: LiveModel
     @State private var band = 0
-    @State private var pointColor = ProcessInfo.processInfo.arguments.contains("-point-color")
+    @State private var pointColor = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-point-color") }
 
     private static let channels = ["Hue", "Saturation", "Luminance"]
 
@@ -241,6 +241,8 @@ struct GradingWheel: View {
 /// eyedropper samples through [`SampleLoupe`].
 struct PointColorView: View {
     let model: LiveModel
+    @State private var visualize = ProcessInfo.processInfo.arguments.contains("-point-color-ranges")
+    @State private var showRanges = ProcessInfo.processInfo.arguments.contains("-point-color-ranges")
 
     private static let slots = 8
 
@@ -284,8 +286,35 @@ struct PointColorView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .accessibilityLabel("The sampled colour, and what it becomes")
                 ForEach(chosen.sliders, id: \.label) { SliderRow(slider: $0, model: model) }
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { showRanges.toggle() }
+                } label: {
+                    HStack {
+                        Text("Ranges").font(.callout)
+                        Spacer()
+                        Image(systemName: "chevron.down").rotationEffect(.degrees(showRanges ? 180 : 0))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if showRanges {
+                    ForEach(Array(chosen.ranges.enumerated()), id: \.offset) { which, range in
+                        RangeRail(range: range) { t in
+                            model.live?.nearestRangePoint(swatch: chosen.index, which: UInt32(which), t: t) ?? 0
+                        } move: { point, t, done in
+                            model.live?.setPointColorRange(swatch: chosen.index, which: UInt32(which), point: point, t: t, done: done)
+                            model.refresh()
+                        }
+                    }
+                }
+                SwiftUI.Toggle("Visualize Range", isOn: $visualize).font(.callout)
             }
         }
+        // Visualize Range follows the chosen swatch, and ends with the tab.
+        .onChange(of: visualize ? chosen?.index : nil, initial: true) { _, shown in
+            model.live?.setVisualizePointColor(index: shown)
+        }
+        .onDisappear { model.live?.setVisualizePointColor(index: nil) }
     }
 
     private func swatch(_ s: SwatchInfo, chosen: Bool) -> some View {
@@ -314,6 +343,92 @@ struct PointColorView: View {
 
     private static func color(_ rgb: [Float]) -> Color {
         Color(red: Double(rgb[safe: 0] ?? 0), green: Double(rgb[safe: 1] ?? 0), blue: Double(rgb[safe: 2] ?? 0))
+    }
+}
+
+/// One of a swatch's ranges: a rail in its colours with the outer and inner
+/// points as handles. Dragging moves the nearest handle; a double tap resets
+/// the range.
+struct RangeRail: View {
+    let range: RangeInfo
+    /// The handle a press at a point along the rail (0–1) takes.
+    let nearest: (Float) -> UInt32
+    /// Moves handle `point` (or resets the range, `nil`) to a point along the
+    /// rail; the flag ends the drag.
+    let move: (UInt32?, Float, Bool) -> Void
+    @State private var handle: UInt32?
+    @State private var lastTap: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(range.label).font(.caption).foregroundStyle(Theme.secondaryText)
+            GeometryReader { geometry in
+                let w = geometry.size.width
+                let x = { (t: Float) in CGFloat(t) * w }
+                let p = range.points.count == 4 ? range.points : [0, 0.33, 0.67, 1]
+                ZStack(alignment: .topLeading) {
+                    Capsule().fill(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
+                        .frame(height: 6).offset(y: 9)
+                    Path { path in
+                        path.move(to: CGPoint(x: x(p[0]), y: 18))
+                        path.addLine(to: CGPoint(x: x(p[1]), y: 4))
+                        path.addLine(to: CGPoint(x: x(p[2]), y: 4))
+                        path.addLine(to: CGPoint(x: x(p[3]), y: 18))
+                    }
+                    .stroke(.white.opacity(0.8), lineWidth: 1)
+                    ForEach(0..<4, id: \.self) { k in
+                        Triangle()
+                            .fill(k == 1 || k == 2 ? Color.white : Theme.panel)
+                            .overlay(Triangle().stroke(.white, lineWidth: 1))
+                            .frame(width: 10, height: 8)
+                            .position(x: x(p[k]), y: 24)
+                    }
+                }
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        let t = Float(min(max(drag.location.x / max(w, 1), 0), 1))
+                        if handle == nil { handle = nearest(t) }
+                        if hypot(drag.translation.width, drag.translation.height) > 3 { move(handle, t, false) }
+                    }
+                    .onEnded { drag in
+                        let t = Float(min(max(drag.location.x / max(w, 1), 0), 1))
+                        let tapped = hypot(drag.translation.width, drag.translation.height) <= 3
+                        if tapped, let last = lastTap, Date().timeIntervalSince(last) < 0.45 {
+                            move(nil, 0, true)
+                            lastTap = nil
+                        } else if tapped {
+                            lastTap = Date()
+                        } else {
+                            move(handle, t, true)
+                            lastTap = nil
+                        }
+                        handle = nil
+                    })
+            }
+            .frame(height: 30)
+        }
+        .accessibilityElement()
+        .accessibilityLabel(range.label)
+        .accessibilityValue(range.points.map { "\(Int(($0 * 100).rounded()))" }.joined(separator: ", "))
+    }
+
+    private var colors: [Color] {
+        stride(from: 0, to: range.rail.count - 2, by: 3).map {
+            Color(red: Double(range.rail[$0]), green: Double(range.rail[$0 + 1]), blue: Double(range.rail[$0 + 2]))
+        }
+    }
+}
+
+/// A triangle pointing up, for a range's handles.
+struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { p in
+            p.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            p.closeSubpath()
+        }
     }
 }
 

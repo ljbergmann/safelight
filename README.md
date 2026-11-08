@@ -155,6 +155,7 @@ them after `--`):
 | `-virtual-copy-test` | Makes a virtual copy of the test copy, renames it and removes it |
 | `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
 | `-point-color` (with `-open -color-mix`) | Opens Point Color with its eyedropper's circle |
+| `-point-color-ranges` (with `-open -color-mix`) | Samples a swatch in the middle of the photo and shows its ranges and Visualize Range |
 | `-wb-loupe` (with `-open`) | Opens the white balance eyedropper's sampling circle |
 | `-import-profiles <folder>` (with `-open`) | Imports the profiles in that folder of the app's Documents as Import Profiles does, and lists the photo's profiles again |
 | `-mask-color-test` (with `-open`) | Adds a mask over the whole photo and checks each of its Color sliders changes the live render, then goes back |

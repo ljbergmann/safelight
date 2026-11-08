@@ -72,7 +72,7 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
   Look, per-slider Auto, panel reset
 - **Tone Curve:** saved curves, the parametric graph with split points,
   Levels Black and White point, the targeted adjustment tool
-- **Color:** Point Color's Visualize Range and range handles, targeted HSL and B&W, the mixer's All view, the
+- **Color:** targeted HSL and B&W, the mixer's All view, the
   grading's 3-Way view (the Color Mixer by band and a wheel per region are
   done)
 - **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
