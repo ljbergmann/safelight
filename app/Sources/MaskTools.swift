@@ -266,8 +266,10 @@ struct MaskSettings: View {
     @State private var open: Set<String> = ProcessInfo.processInfo.arguments.contains("-show-mask") ? ["Color"] : ["Light"]
 
     var body: some View {
-        // Read through `model.edit`, which every change refreshes, so the
-        // sliders show the values just set: `live` itself never changes.
+        // Read again whenever the edit or a drag's value changes, so the
+        // values follow the finger: `live` itself never changes, and a mask
+        // slider's drag leaves the rest of the edit's state as it was.
+        let _ = model.dragging?.1
         let sections = model.edit == nil ? [] : (model.live?.maskSections(index: mask) ?? [])
         VStack(alignment: .leading, spacing: 0) {
             ForEach(sections.filter { $0.group == "Mask" }, id: \.title) { section in
