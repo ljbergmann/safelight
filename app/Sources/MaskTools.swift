@@ -17,6 +17,9 @@ enum PhotoTool: Equatable {
     case whiteBalance
     /// Sample a colour for a new Point Color swatch.
     case pointColor
+    /// Tap to add to (or leave out of) part `component` of mask `mask`, a
+    /// Subject selection, which is run again from every tap so far.
+    case refine(mask: UInt32, component: UInt32)
 }
 
 extension LiveModel {
@@ -358,6 +361,8 @@ struct BrushSettings: View {
             LabeledContent("Size") { Slider(value: $model.brushSize, in: 0.005...0.2) }
             LabeledContent("Feather") { Slider(value: $model.brushFeather, in: 0...1) }
             LabeledContent("Flow") { Slider(value: $model.brushFlow, in: 0.05...1) }
+            LabeledContent("Density") { Slider(value: $model.brushDensity, in: 0.05...1) }
+            SwiftUI.Toggle("Auto Mask", isOn: $model.brushAutoMask).disabled(model.brushErase)
             SwiftUI.Toggle("Erase", isOn: $model.brushErase)
             Text("Paint with a finger or the Pencil; the Pencil's pressure sets the flow.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -382,6 +387,7 @@ struct PhotoToolOverlay: UIViewRepresentable {
     func updateUIView(_ view: PaintView, context: Context) {
         view.model = model
         view.photo = model.photoRect(in: size)
+        view.showTaps(model.refineTaps, adds: model.refineAdds)
     }
 }
 
@@ -391,6 +397,8 @@ final class PaintView: UIView {
     private var points: [CGPoint] = []
     private var pressures: [CGFloat] = []
     private let trail = CAShapeLayer()
+    /// Where a Subject refine was tapped: green adds, red leaves out.
+    private let taps = CALayer()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -399,6 +407,21 @@ final class PaintView: UIView {
         trail.lineCap = .round
         trail.lineJoin = .round
         layer.addSublayer(trail)
+        layer.addSublayer(taps)
+    }
+
+    func showTaps(_ points: [Float], adds: [Bool]) {
+        taps.sublayers?.forEach { $0.removeFromSuperlayer() }
+        for (i, add) in adds.enumerated() where 2 * i + 1 < points.count {
+            let dot = CAShapeLayer()
+            let c = CGPoint(x: photo.minX + CGFloat(points[2 * i]) * photo.width,
+                            y: photo.minY + CGFloat(points[2 * i + 1]) * photo.height)
+            dot.path = UIBezierPath(ovalIn: CGRect(x: c.x - 7, y: c.y - 7, width: 14, height: 14)).cgPath
+            dot.fillColor = (add ? UIColor.systemGreen : UIColor.systemRed).cgColor
+            dot.strokeColor = UIColor.white.cgColor
+            dot.lineWidth = 2
+            taps.addSublayer(dot)
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -460,11 +483,14 @@ final class PaintView: UIView {
             let flow = pencil.isEmpty ? model.brushFlow : Float(pencil.reduce(0, +) / CGFloat(pencil.count))
             model.live?.brush(index: index, stroke: Stroke(
                 points: points.flatMap(view), radius: model.brushSize, feather: model.brushFeather,
-                flow: max(0.05, flow), erase: model.brushErase))
+                flow: max(0.05, flow), density: model.brushDensity, erase: model.brushErase,
+                autoMask: model.brushAutoMask && !model.brushErase))
             model.refresh()
         case .heal:
             _ = model.live?.addSpot(at: view(last), radius: model.spotSize, clone: model.cloneSpots)
             model.refresh()
+        case .refine(let mask, let component):
+            model.refineTap(at: view(last), mask: mask, component: component)
         // Sampling tools take their point through `SampleLoupe`.
         case .whiteBalance, .pointColor, .none:
             break
@@ -495,6 +521,10 @@ struct MaskParts: View {
                     } label: {
                         Image(systemName: part.invert ? "circle.lefthalf.filled.inverse" : "circle.lefthalf.filled")
                     }
+                    if part.kind == "Subject" {
+                        Button("Refine") { model.startRefine(mask: mask.index, component: part.index) }
+                            .disabled(model.tool == .refine(mask: mask.index, component: part.index))
+                    }
                     if mask.components.count > 1 {
                         Button(role: .destructive) {
                             model.live?.deleteMaskComponent(mask: mask.index, component: part.index)
@@ -503,6 +533,9 @@ struct MaskParts: View {
                     }
                 }
                 .font(.caption)
+            }
+            if case .refine(let m, _) = model.tool, m == mask.index {
+                RefineControls(model: model)
             }
             HStack {
                 ForEach([MaskOperation.add, .subtract, .intersect], id: \.self) { op in
@@ -622,5 +655,66 @@ struct MaskOnPhoto: View {
                                provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
         else { return nil }
         return UIImage(cgImage: cg)
+    }
+}
+
+/// While a Subject is being refined: whether a tap adds or leaves out, how
+/// many taps so far, and Done.
+struct RefineControls: View {
+    @Bindable var model: LiveModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Tap to", selection: $model.refineAdd) {
+                Text("Add").tag(true)
+                Text("Leave out").tag(false)
+            }
+            .pickerStyle(.segmented)
+            HStack {
+                if model.refining { ProgressView().controlSize(.small) }
+                Text(model.refineNote ?? (model.refineAdds.isEmpty
+                    ? "Tap the photo where the subject should be refined."
+                    : "\(model.refineAdds.count) tap\(model.refineAdds.count == 1 ? "" : "s")"))
+                    .font(.caption).foregroundStyle(Theme.secondaryText)
+                Spacer()
+                Button("Done") { model.tool = .none }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+            }
+        }
+    }
+}
+
+extension LiveModel {
+    func startRefine(mask: UInt32, component: UInt32) {
+        refineTaps = []
+        refineAdds = []
+        refineAdd = true
+        refineNote = nil
+        tool = .refine(mask: mask, component: component)
+    }
+
+    /// Adds a tap and runs the model again from every tap so far. A tap
+    /// while a run is going waits for it, so the runs stay in order.
+    func refineTap(at point: [Float], mask: UInt32, component: UInt32) {
+        guard !refining else { return }
+        refineTaps += point
+        refineAdds.append(refineAdd)
+        refining = true
+        refineNote = "Refining…"
+        let live = live, taps = refineTaps, adds = refineAdds
+        Task {
+            let result = await Task.detached {
+                Result { try live?.refineMask(mask: mask, component: component, taps: taps, adds: adds) }
+            }.value
+            refining = false
+            switch result {
+            case .success:
+                refineNote = nil
+            case .failure(RenderError.Failed(let message)):
+                refineNote = message
+            case .failure(let error):
+                refineNote = "\(error)"
+            }
+            refresh()
+        }
     }
 }

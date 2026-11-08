@@ -512,7 +512,10 @@ mod tests {
         subject.invert = true;
         r.masks.push(MaskGroup {
             name: "Background".into(),
-            components: vec![subject, MaskComponent::new(MaskShape::Brush { strokes: vec![] })],
+            components: vec![
+                subject,
+                MaskComponent::new(MaskShape::Brush { strokes: vec![] }),
+            ],
             ..Default::default()
         });
         let refined = Generated {
@@ -523,7 +526,10 @@ mod tests {
         let part = &r.masks[0].components[0];
         assert_eq!(part.shape, bitmap("new"));
         assert!(part.invert, "still the background");
-        assert!(!replace_part(&mut r, 0, 1, &refined), "a brush isn't a selection");
+        assert!(
+            !replace_part(&mut r, 0, 1, &refined),
+            "a brush isn't a selection"
+        );
         assert!(!replace_part(&mut r, 3, 0, &refined), "no such mask");
     }
 }

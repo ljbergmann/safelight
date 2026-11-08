@@ -1081,6 +1081,13 @@ impl LiveView {
         else {
             return Ok(false);
         };
+        if bitmap.source.as_ref().map(|s| s.feature.as_str())
+            != Some(rawmakase_model::model::masks::FEATURE_SUBJECT)
+        {
+            return Err(RenderError::Failed {
+                message: "Only a Subject or Background selection can be refined".into(),
+            });
+        }
         let points: Vec<([f32; 2], bool)> = taps
             .chunks_exact(2)
             .zip(adds)

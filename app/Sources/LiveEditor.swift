@@ -84,6 +84,16 @@ final class LiveModel {
     var brushFeather: Float = 0.5
     var brushFlow: Float = 1
     var brushErase = false
+    /// What overlapping strokes build up to, as Lightroom's Density.
+    var brushDensity: Float = 1
+    var brushAutoMask = false
+    /// A Subject refine's taps so far (x, y pairs) and whether each adds.
+    var refineTaps: [Float] = []
+    var refineAdds: [Bool] = []
+    /// Whether the next refine tap adds or leaves out.
+    var refineAdd = true
+    var refining = false
+    var refineNote: String?
     var spotSize: Float = 0.02
     var cloneSpots = false
     /// A Select Subject, Sky or Background run in progress, and why the last
@@ -395,7 +405,7 @@ struct LiveEditor: View {
                 }
             }
             if let brush = live.addMask(kind: .brush, from: [0, 0], to: [0, 0]) {
-                live.brush(index: brush, stroke: Stroke(points: [0.2, 0.3, 0.3, 0.35, 0.4, 0.4], radius: 0.03, feather: 0.5, flow: 0.8, erase: false))
+                live.brush(index: brush, stroke: Stroke(points: [0.2, 0.3, 0.3, 0.35, 0.4, 0.4], radius: 0.03, feather: 0.5, flow: 0.8, density: 1, erase: false, autoMask: false))
             }
             let healed = live.addSpot(at: [0.7, 0.7], radius: 0.02, clone: false)
             model.refresh()

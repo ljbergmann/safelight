@@ -169,7 +169,12 @@ fn kind(shape: &MaskShape) -> &'static str {
         MaskShape::Radial { .. } => "Radial Gradient",
         MaskShape::ColorRange { .. } => "Color Range",
         MaskShape::LuminanceRange { .. } => "Luminance Range",
-        MaskShape::Bitmap(_) => "Selection",
+        // Named for what the model selected, as the desktop's parts are.
+        MaskShape::Bitmap(b) => match b.source.as_ref().map(|s| s.feature.as_str()) {
+            Some(rawmakase_model::model::masks::FEATURE_SUBJECT) => "Subject",
+            Some(rawmakase_model::model::masks::FEATURE_SKY) => "Sky",
+            _ => "Selection",
+        },
     }
 }
 
