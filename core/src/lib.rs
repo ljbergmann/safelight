@@ -11,7 +11,9 @@ static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 
 mod controls;
 mod edit;
+mod export;
 pub use controls::{Control, Section, SliderState, Switch, SwitchState};
+pub use export::{ExportChoice, ExportFormat};
 mod library;
 pub use edit::{EditState, Orientation};
 mod live;

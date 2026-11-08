@@ -184,3 +184,14 @@ this. A drag is one History step, named as the desktop names it.
 - **Found by the simulator:** the app went to the background before the
   slider reported the end of the drag; the save finished the drag, unnamed
   ("Edit"). Steps are now named on every frame of a drag.
+
+## Export (2026-11-08)
+
+M1 iPad Pro, `-export <file>`: a full-size JPEG at quality 90 through
+RAWmakase's export job (full-size decode, CPU reference render, metadata,
+sRGB profile).
+
+| Photo | Time | File | Peak memory | After |
+| --- | --- | --- | --- | --- |
+| Canon EOS R5 CR3, 8192×5464 | 11.9 s | 16.8 MB | 3.55 GB | 0.72 GB |
+| Leica Q2 DNG, 8368×5584 | 9.0 s | 12.0 MB | 3.26 GB | 0.09 GB |

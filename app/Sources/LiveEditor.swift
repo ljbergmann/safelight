@@ -22,6 +22,7 @@ final class LiveModel {
     /// Settings were copied in this editor (the catalog may also hold some).
     var copied = false
     var copying = false
+    var exporting = false
     /// What a paste couldn't carry over, shown below the controls.
     var pasteNote: String?
     /// Fit, or 100% around a centre in fractions of the developed photo.
@@ -192,6 +193,10 @@ struct LiveEditor: View {
                 Button("Copy Settings", systemImage: "doc.on.doc") { model.copying = true }
                 Button("Paste Settings", systemImage: "doc.on.clipboard") { model.paste() }
                     .disabled(!(model.copied || (library.hasCopiedSettings())))
+                Button("Export", systemImage: "square.and.arrow.up") {
+                    // The export reads the edit from the catalog.
+                    if model.save() { model.exporting = true }
+                }
                 Spacer()
                 saveStatus
                 Picker("Decode", selection: Bindable(model).size) {
@@ -223,6 +228,7 @@ struct LiveEditor: View {
         }
         .padding()
         .sheet(isPresented: Bindable(model).copying) { CopySettingsSheet(model: model) }
+        .sheet(isPresented: Bindable(model).exporting) { ExportSheet(library: library, ids: [photo.id]) }
         .task { await scripted() }
         .onAppear {
             // -full: decode at full size from the start, for -sweep.

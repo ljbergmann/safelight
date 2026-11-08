@@ -25,6 +25,7 @@ rawmakase-catalog = { path = "../vendor/rawmakase/crates/rawmakase-catalog" }
 rawmakase-decode = { path = "../vendor/rawmakase/crates/rawmakase-decode" }
 rawmakase-edit-session = { path = "../vendor/rawmakase/crates/rawmakase-edit-session" }
 rawmakase-engine = { path = "../vendor/rawmakase/crates/rawmakase-engine" }
+rawmakase-export = { path = "../vendor/rawmakase/crates/rawmakase-export" }
 rawmakase-interop = { path = "../vendor/rawmakase/crates/rawmakase-interop" }
 rawmakase-model = { path = "../vendor/rawmakase/crates/rawmakase-model" }
 rawmakase-protocol = { path = "../vendor/rawmakase/crates/rawmakase-protocol" }

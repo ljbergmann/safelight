@@ -155,6 +155,13 @@ impl Library {
 }
 
 impl Library {
+    /// Where full-size decodes are cached for exports: in Caches, which
+    /// iPadOS may empty, and kept small.
+    pub(crate) fn decode_cache(&self) -> rawmakase_decode::decode_cache::DecodeCache {
+        let dir = self.thumbnails.with_file_name("Decoded");
+        rawmakase_decode::decode_cache::DecodeCache::new(dir, 2 << 30)
+    }
+
     /// The catalog, for the open photo's edit to load and save through the
     /// same connection.
     pub(crate) fn catalog(&self) -> std::sync::MutexGuard<'_, Catalog> {

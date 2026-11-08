@@ -10,6 +10,7 @@ struct LibraryView: View {
     @State private var selecting = false
     @State private var selected: Set<Int64> = []
     @State private var pasteNote: String?
+    @State private var exporting = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -72,6 +73,10 @@ struct LibraryView: View {
                 }
                 if selecting {
                     ToolbarItem(placement: .primaryAction) {
+                        Button("Export", systemImage: "square.and.arrow.up") { exporting = true }
+                            .disabled(selected.isEmpty)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button("Paste Settings", systemImage: "doc.on.clipboard") {
                             let ids = Array(selected)
                             let notes = (try? model.library?.pasteSettings(ids: ids)) ?? []
@@ -81,6 +86,11 @@ struct LibraryView: View {
                         }
                         .disabled(selected.isEmpty || !(model.library?.hasCopiedSettings() ?? false))
                     }
+                }
+            }
+            .sheet(isPresented: $exporting) {
+                if let library = model.library {
+                    ExportSheet(library: library, ids: model.photos.map(\.id).filter(selected.contains))
                 }
             }
             .fileImporter(
@@ -112,6 +122,22 @@ struct LibraryView: View {
                 path = [photo.id]
             }
             if args.contains("-benchmark") { Diagnostics.benchmark() }
+            // -export <file name>: a full-size JPEG of it, timed, for measuring.
+            if let i = args.firstIndex(of: "-export"), i + 1 < args.count,
+               let photo = model.photos.first(where: { $0.filename == args[i + 1] }), let library = model.library {
+                let start = ContinuousClock.now
+                let folder = URL.temporaryDirectory.appending(path: "Export-test").path
+                let outcome = await Task.detached {
+                    Result { try library.exportPhotos(ids: [photo.id], choice: ExportChoice(format: .jpeg, quality: 90, longEdge: 0), folder: folder) }
+                }.value
+                let memory = Memory.footprint()
+                switch outcome {
+                case .success(let files):
+                    let size = (try? FileManager.default.attributesOfItem(atPath: files[0])[.size] as? Int) ?? 0
+                    print("EXPORT \(files[0].split(separator: "/").last ?? "") \(size / 1024) KB in \(start.duration(to: .now)); memory \(Memory.mb(memory.current)), peak \(Memory.mb(memory.peak))")
+                case .failure(let e): print("EXPORT FAILED \(e)")
+                }
+            }
             if args.contains("-allocprobe") { Memory.probeAllocator() }
             if args.contains("-thumbnails") { await measureThumbnails() }
         }
