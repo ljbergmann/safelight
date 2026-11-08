@@ -59,11 +59,13 @@ struct HistoryPanel: View {
     }
 }
 
-/// Above Basic's sliders: Auto, and white balance's menu and eyedropper.
+/// Above Basic's sliders: Profile, Auto, and white balance's menu and
+/// eyedropper.
 struct BasicExtras: View {
     @Bindable var model: LiveModel
 
     var body: some View {
+        ProfileMenu(model: model)
         HStack {
             Button {
                 model.runAuto(.settings)
@@ -224,5 +226,44 @@ struct PointCurveEditor: View {
         }
         .stroke(Color.secondary.opacity(0.3), lineWidth: 0.5)
         .background(Color.secondary.opacity(0.08))
+    }
+}
+
+/// The Profile browser: camera profiles and Adobe's at the top, each group of
+/// looks in a submenu, as on the desktop. Profile Amount is a Basic slider.
+struct ProfileMenu: View {
+    let model: LiveModel
+
+    var body: some View {
+        let profiles = model.edit == nil ? [] : (model.live?.profiles() ?? [])
+        let top = profiles.filter { $0.group.isEmpty }
+        let groups = Array(Set(profiles.map(\.group).filter { !$0.isEmpty }))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        HStack {
+            Text("Profile").font(.callout)
+            Menu {
+                ForEach(top, id: \.title) { item($0) }
+                ForEach(groups, id: \.self) { group in
+                    Menu(group) {
+                        ForEach(profiles.filter { $0.group == group }, id: \.title) { item($0) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(profiles.first(where: \.selected)?.title ?? "—").lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.caption)
+                }
+            }
+            Spacer()
+        }
+    }
+
+    private func item(_ p: ProfileInfo) -> some View {
+        Button {
+            model.live?.setProfile(index: p.index)
+            model.refresh()
+        } label: {
+            if p.selected { Label(p.title, systemImage: "checkmark") } else { Text(p.title) }
+        }
     }
 }

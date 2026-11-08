@@ -31,6 +31,8 @@ pub enum Control {
     /// A mask's adjustment: mask index, and slider index in
     /// [`crate::masks::LOCAL`].
     Mask { mask: u32, index: u32 },
+    /// Lightroom's Profile Amount, for a profile that has one (a look).
+    ProfileAmount,
 }
 
 /// An on/off setting a panel shows above its sliders.
@@ -238,6 +240,16 @@ impl Control {
                     unit: "",
                 })
             }
+            Control::ProfileAmount => Some(Spec {
+                label: "Profile Amount".into(),
+                min: 0.,
+                max: 2.,
+                step: 0.,
+                scale: 100.,
+                decimals: 0,
+                signed: false,
+                unit: "",
+            }),
             Control::Grade { region, channel } => {
                 let (_, step_word) = REGIONS.get(region as usize)?;
                 let label = format!("{step_word} {}", CHANNELS.get(channel as usize)?);
@@ -305,6 +317,7 @@ impl Control {
                 };
                 grade.get(channel as usize).copied()
             }
+            Control::ProfileAmount => Some(r.profile_amount),
         }
     }
 
@@ -337,6 +350,13 @@ impl Control {
                     &mut r.grading[region as usize]
                 };
                 grade[channel as usize] = value;
+            }
+            Control::ProfileAmount => {
+                // A profile without an Amount renders at 100%.
+                if !r.profile.as_ref().is_some_and(|p| p.supports_amount()) {
+                    return None;
+                }
+                r.profile_amount = value;
             }
         }
         let shown = self.get(r, photo)?;
@@ -638,6 +658,12 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
             ]),
         ),
     ]);
+    // Profile Amount, first in Basic, for a profile that has one.
+    if r.profile.as_ref().is_some_and(|p| p.supports_amount())
+        && let Some((_, _, controls)) = layout.iter_mut().find(|(t, _, _)| t == "Basic")
+    {
+        controls.insert(0, Control::ProfileAmount);
+    }
     layout
         .into_iter()
         .map(|(title, toggles, controls)| Section {

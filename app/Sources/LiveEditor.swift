@@ -306,6 +306,13 @@ struct LiveEditor: View {
             let wb = live.editState()?.whiteBalance ?? "?"
             print("DEVELOP steps \(steps); auto \(auto) in \(autoMs) ms; curve \(live.pointCurve(channel: 0)?.points ?? []); after going to step 1: WB \(wb), applied \(live.editState()?.applied ?? 0)")
             live.goToStep(applied: 0)
+            let profiles = live.profiles()
+            if let other = profiles.first(where: { !$0.selected && $0.index != nil && $0.hasAmount }) ?? profiles.first(where: { !$0.selected }) {
+                live.setProfile(index: other.index)
+                let amount = live.editState()?.sections.first { $0.title == "Basic" }?.sliders.first?.label ?? "?"
+                print("PROFILES \(profiles.count) in \(Set(profiles.map(\.group)).count - 1) groups; chose \(other.title); first Basic slider \(amount); last step \(live.editState()?.steps.last ?? "")")
+                live.undo()
+            }
         }
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)

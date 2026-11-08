@@ -26,6 +26,8 @@ mod live;
 mod masks;
 pub use library::{Added, CollectionInfo, Library, LibraryPhoto};
 pub use masks::{MaskInfo, NewMask, Stroke};
+mod profile;
+pub use profile::ProfileInfo;
 mod render;
 mod transfer;
 mod wb;

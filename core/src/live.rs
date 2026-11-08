@@ -445,6 +445,28 @@ impl LiveView {
         self.step(1);
     }
 
+    /// The profiles the open photo can use, as the Profile browser lists them.
+    pub fn profiles(&self) -> Vec<crate::profile::ProfileInfo> {
+        self.shared
+            .edit()
+            .as_ref()
+            .map(OpenEdit::profiles)
+            .unwrap_or_default()
+    }
+
+    /// Chooses profile `index` from [`Self::profiles`] (`None`: the camera
+    /// matrix): one History step.
+    pub fn set_profile(&self, index: Option<u32>) {
+        if self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_profile(index))
+        {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// Point curve `channel` (0 RGB, 1 Red, 2 Green, 3 Blue) as drawn.
     pub fn point_curve(&self, channel: u32) -> Option<crate::curve::CurveState> {
         crate::curve::state(self.shared.edit().as_ref()?.recipe(), channel)

@@ -31,12 +31,12 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 
 ## Now: the Develop gaps a Lightroom user misses most
 
-- [ ] History list, tap a step to go back to it (S; in progress)
-- [ ] White balance presets and the eyedropper (S–M; in progress)
-- [ ] Auto Settings and Auto white balance (M; in progress)
-- [ ] Point curve, RGB and per channel, built-in curves (M; in progress)
-- [ ] Profile browser (camera, Adobe, creative, imported DCP and `.cube`)
-      and Profile Amount (M–L)
+- [x] History list, tap a step to go back to it
+- [x] White balance presets and the eyedropper
+- [x] Auto Settings and Auto white balance
+- [x] Point curve, RGB and per channel, built-in curves
+- [x] Profile browser and Profile Amount
+- [ ] Importing profiles (DCP, XMP looks, `.cube`) from the Files app (M)
 - [ ] Histogram and clipping warnings (S–M)
 - [ ] Mask math (add, subtract, intersect, invert), mask invert and Amount,
       Color and Luminance Range masks (M)

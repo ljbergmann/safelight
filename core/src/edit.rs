@@ -76,6 +76,8 @@ pub(crate) struct OpenEdit {
     pub(crate) export: ExportOptions,
     /// The camera profiles the edit resolves with, for presets and Paste.
     pub(crate) profiles: Vec<Arc<rawmakase_model::camera_profiles::CameraProfile>>,
+    /// Where the Profile browser lists each profile.
+    pub(crate) profile_groups: rawmakase_model::camera_profiles::Groups,
     pub(crate) session: EditSession,
 }
 
@@ -113,9 +115,10 @@ impl OpenEdit {
             library,
             id,
             path,
-            metadata,
             export: resolved.export,
             profiles: profiles.to_vec(),
+            profile_groups: rawmakase_model::camera_profiles::listed(&metadata).groups,
+            metadata,
             session,
         })
     }
@@ -306,6 +309,33 @@ impl OpenEdit {
     }
 
     /// Moves History one step back (`by` −1) or forward (+1).
+    /// The profiles this photo can use, as the Profile browser lists them.
+    pub(crate) fn profiles(&self) -> Vec<crate::profile::ProfileInfo> {
+        crate::profile::list(
+            self.session.recipe(),
+            &self.metadata,
+            &self.profiles,
+            &self.profile_groups,
+        )
+    }
+
+    /// Chooses profile `index` (`None`: the camera matrix), as one History
+    /// step ("Profile" and its title).
+    pub(crate) fn set_profile(&mut self, index: Option<u32>) -> bool {
+        let mut after = self.session.recipe().clone();
+        let Some(title) = crate::profile::choose(
+            &mut after,
+            &self.metadata,
+            &self.profiles,
+            &self.profile_groups,
+            index,
+        ) else {
+            return false;
+        };
+        self.change("Profile", &title, |r| *r = after);
+        true
+    }
+
     /// Sets white balance to As Shot or a named preset, as one History step.
     pub(crate) fn set_white_balance(&mut self, name: &str) -> bool {
         let mut after = self.session.recipe().clone();
@@ -552,6 +582,26 @@ mod tests {
         assert!(!edit.remove_curve_point(0, 0), "an end point stays");
         assert!(edit.set_builtin_curve("Strong Contrast"));
         assert_eq!(crate::curve::state(edit.recipe(), 0).unwrap().name, "Strong Contrast");
+    }
+
+    #[test]
+    fn choosing_a_profile_is_one_step_and_starts_at_full_amount() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let listed = edit.profiles();
+        assert_eq!(listed.iter().filter(|p| p.selected).count(), 1);
+        let other = listed
+            .iter()
+            .find(|p| !p.selected && p.index.is_some())
+            .expect("a second profile for the chart");
+        let title = other.title.clone();
+        assert!(edit.set_profile(other.index));
+        assert_eq!(edit.recipe().profile_amount, 1.);
+        assert_eq!(edit.state().steps, [format!("Profile {title}")]);
+        assert!(edit.profiles().iter().any(|p| p.selected && p.title == title));
+        assert!(!edit.set_profile(other.index), "choosing it again changes nothing");
+        edit.recipe().validate().unwrap();
     }
 
     #[test]
