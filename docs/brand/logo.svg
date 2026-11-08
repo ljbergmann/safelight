@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <title>Safelight</title>
   <rect width="1024" height="1024" fill="#1d1b1b"/>
+  <!-- The lamp, centred: it spans y 140 to 652 before the move. -->
+  <g transform="translate(0 116)">
   <rect x="500" y="140" width="24" height="160" rx="12" fill="#4a4340"/>
   <path d="M262 540 A250 250 0 0 1 762 540 Z" fill="#d6402f"/>
   <path d="M352 482 A182 182 0 0 1 432 386" fill="none" stroke="#e8634c" stroke-width="24" stroke-linecap="round"/>
   <path d="M416 556 A96 96 0 0 0 608 556 Z" fill="#f6c2b2"/>
   <rect x="244" y="528" width="536" height="30" rx="15" fill="#4a4340"/>
-  <path d="M300 730 Q512 680 724 730" fill="none" stroke="#e8634c" stroke-width="38" stroke-linecap="round"/>
-  <path d="M360 812 Q512 776 664 812" fill="none" stroke="#f0937a" stroke-width="32" stroke-linecap="round"/>
-  <path d="M430 884 Q512 862 594 884" fill="none" stroke="#f6c2b2" stroke-width="26" stroke-linecap="round"/>
+  </g>
 </svg>

@@ -31,6 +31,8 @@ func curve(_ x0: CGFloat, _ y0: CGFloat, _ cx: CGFloat, _ cy: CGFloat, _ x1: CGF
 }
 
 fill(CGPath(rect: CGRect(x: 0, y: 0, width: 1024, height: 1024), transform: nil), 0x1d1b1b)
+// The lamp, centred: it spans y 140 to 652 before the move.
+ctx.translateBy(x: 0, y: 116)
 // The cord.
 fill(rounded(500, 140, 24, 160, 12), 0x4a4340)
 // The shade: the upper half of a circle about (512, 540).
@@ -49,10 +51,7 @@ bulb.addArc(center: CGPoint(x: 512, y: 556), radius: 96, startAngle: 0, endAngle
 bulb.closeSubpath()
 fill(bulb, 0xf6c2b2)
 fill(rounded(244, 528, 536, 30, 15), 0x4a4340)
-// The light, fading as it falls.
-stroke(curve(300, 730, 512, 680, 724, 730), 0xe8634c, 38)
-stroke(curve(360, 812, 512, 776, 664, 812), 0xf0937a, 32)
-stroke(curve(430, 884, 512, 862, 594, 884), 0xf6c2b2, 26)
+
 
 let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: out) as CFURL, UTType.png.identifier as CFString, 1, nil)!
 CGImageDestinationAddImage(dest, ctx.makeImage()!, nil)
