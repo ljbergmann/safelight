@@ -2,16 +2,16 @@
 
 *Lightroom's way of working on the iPad, without Lightroom.*
 
-Safelight is [RAWmakase](https://github.com/pch/rawmakase) on the iPad: a
-native app for developing RAW photos, with RAWmakase's own engine (the same
-RAW decoders, colour pipeline, catalog and edits as the desktop app) under a
-touch interface written in SwiftUI. A catalog you edit on the iPad opens in
-RAWmakase on a Mac, Linux or Windows computer, and renders the same there.
-It stays as close to RAWmakase as it can: what isn't about the iPad's screens
-belongs in RAWmakase's crates.
+Safelight is a native iPad app for developing RAW photos, built on
+[RAWmakase](https://github.com/pch/rawmakase)'s engine: the same RAW
+decoders, colour pipeline, catalog and edits as RAWmakase, under a touch
+interface written in SwiftUI. It keeps RAWmakase's catalog format, so a
+library edited on the iPad also opens in RAWmakase on a computer, and
+renders the same there.
 
-It is an independent, personal project, MIT licensed like RAWmakase and not
-affiliated with its maintainer.
+Safelight is an independent, personal project, MIT licensed like RAWmakase.
+It isn't part of RAWmakase or affiliated with its maintainer; it builds on
+their work and tries to stay a good neighbour to it.
 
 > [!WARNING]
 > **Early and in active development.** There is no App Store build: you
@@ -39,7 +39,7 @@ goal is that workflow on your own terms:
 
 ## How
 
-- **RAWmakase's crates, not a rewrite.** The app uses the desktop's own
+- **RAWmakase's crates, not a rewrite.** The app uses RAWmakase's own
   Rust crates (decoding, the renderer, the catalog, edit resolution, export,
   AI) from a fork, kept to the few changes iPadOS needs so RAWmakase's
   updates still merge: a submodule at `vendor/rawmakase` on the fork's

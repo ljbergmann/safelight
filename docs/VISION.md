@@ -30,30 +30,32 @@ The end goal is that same workflow on your own terms:
   masks run where the photo is; photos travel only to your own storage or
   where you share them.
 
-## As close to RAWmakase as it can be
+## Built on RAWmakase
 
-Safelight is RAWmakase on Apple's phones and tablets, not a separate photo
-editor. It is its own project with its own name, but it is coupled to
-RAWmakase on purpose:
+Safelight exists because [RAWmakase](https://github.com/pch/rawmakase) does:
+its engine is the hard part, and it is RAWmakase's work. Safelight is a
+separate, independent project that builds on it, and tries to be a good
+neighbour:
 
-- **One engine.** Decoding, rendering, the catalog, edit resolution, presets,
-  export and AI are RAWmakase's crates, used as they are. A photo renders the
-  same in Safelight and in RAWmakase, and an improvement to RAWmakase's
-  engine is an improvement to Safelight.
-- **One catalog.** Safelight keeps RAWmakase's catalog format. A library
-  edited on the iPad opens in RAWmakase on a computer, and the other way
-  round.
-- **Shared code goes to RAWmakase.** Anything that isn't about the iPad's
-  screens (an edit's rules, AI Denoise's service, import, and in time sync)
-  belongs in RAWmakase's crates, where the desktop can use it too. The fork
-  that Safelight builds from stays a small set of such changes, kept so
-  RAWmakase's updates merge, and offered back to RAWmakase where they fit.
-- **Follow RAWmakase.** When RAWmakase releases, Safelight moves to it.
-  Where the two would differ, RAWmakase's behaviour wins unless a touch
-  screen needs something else.
+- **RAWmakase's engine, as it is.** Decoding, rendering, the catalog, edit
+  resolution, presets, export and AI come from RAWmakase's crates. A photo
+  renders the same in Safelight and in RAWmakase, and Safelight doesn't try
+  to change how RAWmakase renders.
+- **Compatible with RAWmakase.** Safelight keeps RAWmakase's catalog
+  format, so a library edited on the iPad also opens in RAWmakase on a
+  computer.
+- **A small fork.** Safelight builds from a fork of RAWmakase with as few
+  changes as possible, mostly moving code out of the desktop app into
+  crates the iPad can use too, so that RAWmakase's own updates keep
+  merging cleanly. If any of it is ever useful to RAWmakase, it's there to
+  take; nothing is expected.
+- **Following RAWmakase.** Safelight moves to RAWmakase's new releases, and
+  where the two would behave differently, it does what RAWmakase does
+  unless a touch screen needs something else.
 
-The Mac is where this pays off: the aim is for RAWmakase on the Mac to join
-the same synced library, rather than a separate Mac app.
+RAWmakase's direction is its maintainer's to decide; Safelight's plans don't
+depend on it. For the Mac, the simplest way is that the same library opens
+in RAWmakase there, as it already can; how a Mac joins sync is still open.
 
 ## How it gets there
 
@@ -62,21 +64,21 @@ the same synced library, rather than a separate Mac app.
    and a library you can live in.
 2. **Sync.** Each device writes its own change records to the bucket and
    uploads originals by content hash, never the SQLite file; each device
-   merges what the others wrote into its own catalog. Designed so
-   RAWmakase's desktop can take part.
+   merges what the others wrote into its own catalog.
 3. **Smart previews.** Edit a photo whose original isn't on this device,
    from a small proxy, as Lightroom does; download the original only to
    export.
 4. **iPhone.** The same app, laid out for a phone: cull, rate, quick edits,
    share.
-5. **Mac.** RAWmakase on the Mac in the same synced library.
+5. **Mac.** The same library on the Mac; how, is still open.
 6. **Moving in from Lightroom.** Bring a Lightroom library across, with its
    edits.
 
 ## What Safelight isn't
 
-- **Not a fork of RAWmakase's engine.** It doesn't change how photos render;
-  that happens in RAWmakase.
+- **Not a fork of RAWmakase's engine, and not part of RAWmakase.** It
+  doesn't change how photos render, and it isn't affiliated with RAWmakase
+  or its maintainer.
 - **Not a cloud service.** There is no Safelight server or account; sync
   is between your devices and your storage.
 - **Not a Lightroom clone.** It follows Lightroom's way of working and reads

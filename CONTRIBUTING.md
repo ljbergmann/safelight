@@ -79,6 +79,11 @@ hand. Say which you ran, and what you couldn't (no iPad, no Pencil).
 - Open an issue first for anything large, so the approach can be agreed.
 - One concern per pull request; say what changed, why, and how you checked
   it. A change that needs the fork gets a pull request there too.
+- RAWmakase is someone else's project. Problems with Safelight, including
+  ones in the fork, belong in Safelight's issues, not RAWmakase's. A fix
+  that would help RAWmakase on its own merits can go to RAWmakase through
+  its own guide, as any contribution would; don't ask its maintainer to
+  take on Safelight's needs.
 - Commit only the files you changed. Never commit RAW files, photos, Adobe
   profiles, Lightroom catalogs or paths from your own machine.
 - Update the docs a change makes wrong: the roadmap when something lands,
