@@ -122,23 +122,37 @@ struct MasksPanel: View {
             Text("Masks").font(.headline)
         }
 
-        DisclosureGroup("Heal") {
-            VStack(alignment: .leading, spacing: 6) {
-                SwiftUI.Toggle("Heal tool (tap the photo)", isOn: Binding(
-                    get: { model.tool == .heal }, set: { model.tool = $0 ? .heal : .none }
-                ))
-                Picker("Mode", selection: $model.cloneSpots) {
-                    Text("Heal").tag(false)
-                    Text("Clone").tag(true)
-                }
-                .pickerStyle(.segmented)
-                LabeledContent("Size") { Slider(value: $model.spotSize, in: 0.005...0.1) }
-                Text("\(model.edit?.spots ?? 0) spots").font(.caption).foregroundStyle(.secondary)
+    }
+}
+
+/// Heal and Clone: tap the photo to place a spot, which takes its source
+/// from nearby.
+struct HealPane: View {
+    @Bindable var model: LiveModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Heal").font(.title3.weight(.semibold))
+            Picker("Mode", selection: $model.cloneSpots) {
+                Text("Heal").tag(false)
+                Text("Clone").tag(true)
             }
-            .font(.callout)
-            .padding(.top, 4)
+            .pickerStyle(.segmented)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Size").foregroundStyle(Theme.secondaryText)
+                    Spacer()
+                    Text("\(Int((model.spotSize * 1000).rounded()))").monospacedDigit()
+                }
+                ThinSlider(value: model.spotSize, range: 0.005...0.1) { value, _ in model.spotSize = value }
+            }
+            Text("Tap a spot on the photo to \(model.cloneSpots ? "clone over" : "heal") it.")
+                .font(.callout).foregroundStyle(Theme.secondaryText)
+            Text("\(model.edit?.spots ?? 0) spot\(model.edit?.spots == 1 ? "" : "s") on this photo")
+                .font(.caption).foregroundStyle(Theme.secondaryText)
         }
-        .font(.headline)
+        .onAppear { model.tool = .heal }
+        .onDisappear { if model.tool == .heal { model.tool = .none } }
     }
 }
 

@@ -2,13 +2,14 @@ import SwiftUI
 
 /// What the editor's right-hand panel shows, chosen on the tool rail.
 enum DevelopPane: String, CaseIterable {
-    case edit, crop, masks, presets, history
+    case edit, crop, masks, heal, presets, history
 
     var title: String {
         switch self {
         case .edit: "Edit"
         case .crop: "Crop"
-        case .masks: "Masks and Heal"
+        case .masks: "Masks"
+        case .heal: "Heal"
         case .presets: "Presets"
         case .history: "History"
         }
@@ -19,6 +20,7 @@ enum DevelopPane: String, CaseIterable {
         case .edit: "slider.horizontal.3"
         case .crop: "crop.rotate"
         case .masks: "circle.dashed.inset.filled"
+        case .heal: "bandage"
         case .presets: "camera.filters"
         case .history: "clock.arrow.circlepath"
         }
@@ -98,7 +100,8 @@ struct DevelopPanel: View {
                     case .edit: EditPane(model: model)
                     case .crop: CropPane(model: model)
                     case .masks: MasksPanel(model: model).padding(.horizontal, 16).padding(.vertical, 12)
-                    case .presets: PresetsPanel(model: model).padding(.horizontal, 16).padding(.vertical, 12)
+                    case .heal: HealPane(model: model).padding(16)
+                    case .presets: PresetsPanel(model: model).padding(16)
                     case .history:
                         VStack(alignment: .leading, spacing: 12) {
                             SnapshotsPanel(model: model)

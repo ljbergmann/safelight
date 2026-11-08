@@ -28,7 +28,7 @@ final class LiveModel {
         didSet {
             guard pane != oldValue else { return }
             cropping = pane == .crop
-            if pane != .masks { selectedMask = nil; if tool != .whiteBalance { tool = .none } }
+            if pane != .masks { selectedMask = nil; if tool != .whiteBalance && !(pane == .heal && tool == .heal) { tool = .none } }
             if pane != .edit, tool == .whiteBalance { tool = .none }
         }
     }

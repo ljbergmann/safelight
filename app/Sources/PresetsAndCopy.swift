@@ -11,7 +11,6 @@ struct PresetsPanel: View {
     @State private var library: [PresetInfo] = []
     @State private var importing = false
     @State private var creating = false
-    @State private var expanded = true
     @State private var note: String?
     @State private var renaming: PresetInfo?
     @State private var newName = ""
@@ -25,26 +24,67 @@ struct PresetsPanel: View {
             .sorted { $0.0 < $1.0 }
     }
 
+    /// The group open, by name; `nil`, the list of groups.
+    @State private var group: String?
+
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 6) {
-                if let amount = model.edit?.presetAmount { amountSlider(amount) }
-                ForEach(groups, id: \.0) { group, items in
-                    DisclosureGroup(group.isEmpty ? "User Presets" : group) {
-                        ForEach(items, id: \.id) { preset in row(preset) }
-                    }
-                    .font(.callout)
-                }
-                HStack {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Presets").font(.title3.weight(.semibold))
+                Spacer()
+                Menu {
                     Button("Create Preset…", systemImage: "plus") { creating = true }
                     Button("Import Presets…", systemImage: "square.and.arrow.down") { importing = true }
+                } label: {
+                    Image(systemName: "plus").padding(8)
+                        .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
                 }
-                .font(.callout)
-                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
             }
-            .padding(.top, 4)
-        } label: {
-            Text("Presets").font(.headline)
+            .padding(.bottom, 12)
+            if let amount = model.edit?.presetAmount { amountSlider(amount).padding(.bottom, 12) }
+            if let note { Text(note).font(.caption).foregroundStyle(Theme.secondaryText).padding(.bottom, 8) }
+            if let group, let items = groups.first(where: { $0.0 == group })?.1 {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { self.group = nil }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "chevron.left").font(.footnote.weight(.semibold))
+                        Text(Self.name(of: group)).font(.headline)
+                        Spacer()
+                    }
+                    .padding(.vertical, 10).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Rectangle().fill(Theme.line).frame(height: 0.5)
+                TimelineView(.periodic(from: .now, by: 0.3)) { _ in
+                    VStack(spacing: 2) {
+                        ForEach(items, id: \.id) { preset in row(preset) }
+                    }
+                }
+                .padding(.top, 6)
+                .task(id: group) {
+                    model.live?.requestPresetPreviews(ids: items.map(\.id), edge: 128)
+                }
+            } else {
+                ForEach(groups, id: \.0) { name, items in
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) { group = name }
+                    } label: {
+                        HStack(spacing: 12) {
+                            IconTile(systemImage: "camera.filters")
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(Self.name(of: name))
+                                Text("\(items.count) preset\(items.count == 1 ? "" : "s")")
+                                    .font(.caption).foregroundStyle(Theme.secondaryText)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(Theme.secondaryText)
+                        }
+                        .padding(.vertical, 6).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
         .task { await load() }
         .sheet(isPresented: $creating, onDismiss: { Task { await load() } }) {
@@ -86,18 +126,45 @@ struct PresetsPanel: View {
         }
     }
 
+    private static func name(of group: String) -> String { group.isEmpty ? "User Presets" : group }
+
+    /// A preset: its preview on this photo, its name, and for one made here
+    /// or imported, a menu; a tap applies it.
     private func row(_ preset: PresetInfo) -> some View {
-        Button(preset.name) { model.live?.applyPreset(id: preset.id); model.refreshSoon() }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contextMenu {
-                if preset.managed {
+        HStack(spacing: 12) {
+            Button {
+                model.live?.applyPreset(id: preset.id)
+                model.refreshSoon()
+            } label: {
+                HStack(spacing: 12) {
+                    Group {
+                        if let data = model.live?.presetPreview(id: preset.id), let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        } else {
+                            Theme.chosen
+                        }
+                    }
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    Text(preset.name).lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if preset.managed {
+                Menu {
                     Button("Update with Current Settings", systemImage: "arrow.triangle.2.circlepath") {
                         act("Updated \(preset.name)") { try model.live?.updatePreset(id: preset.id) }
                     }
                     Button("Rename…", systemImage: "pencil") { newName = preset.name; renaming = preset }
                     Button("Delete", systemImage: "trash", role: .destructive) { deleting = preset }
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 32, height: 32)
                 }
             }
+        }
+        .padding(.vertical, 3)
     }
 
     private func amountSlider(_ amount: PresetAmountState) -> some View {
@@ -108,20 +175,14 @@ struct PresetsPanel: View {
                 Spacer()
                 Text("\(Int((shown * 100).rounded()))").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
             }
-            Slider(
-                value: Binding(
-                    get: { shown },
-                    set: { value in
-                        dragging = value
-                        model.live?.setPresetAmount(amount: value, done: false)
-                    }
-                ),
-                in: 0...2
-            ) { editing in
-                if !editing {
-                    model.live?.setPresetAmount(amount: shown, done: true)
+            ThinSlider(value: shown, range: 0...2) { value, done in
+                if done {
+                    model.live?.setPresetAmount(amount: value, done: true)
                     dragging = nil
                     model.refresh()
+                } else {
+                    dragging = value
+                    model.live?.setPresetAmount(amount: value, done: false)
                 }
             }
         }

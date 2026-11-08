@@ -44,6 +44,10 @@ struct Requests {
     compare: crate::compare::Compare,
     /// A preset to apply, by id, once the photo is decoded.
     preset: Option<String>,
+    /// Presets to render small previews of, over the edit, between frames.
+    previews: VecDeque<String>,
+    /// The previews' long edge, in pixels.
+    preview_edge: u32,
     /// The drawable's size in pixels.
     size: [u32; 2],
     /// Something changed since the last frame.
@@ -136,6 +140,8 @@ struct Shared {
     ai: Mutex<AiShown>,
     /// The last frame's histogram.
     histogram: Mutex<Histogram>,
+    /// Preset previews rendered so far, as JPEGs, by preset id.
+    previews: Mutex<std::collections::HashMap<String, Vec<u8>>>,
 }
 
 /// AI Denoise for the decoded image on screen, as the desktop's Develop keeps
@@ -209,6 +215,7 @@ impl LiveView {
             image: Mutex::new(None),
             ai: Mutex::new(AiShown::default()),
             histogram: Mutex::new(Histogram::EMPTY),
+            previews: Mutex::default(),
         });
         let worker_shared = shared.clone();
         let worker = std::thread::Builder::new()
@@ -412,6 +419,32 @@ impl LiveView {
         if let Some(edit) = self.shared.edit().as_mut() {
             edit.clear_history();
         }
+    }
+
+    /// Renders small previews of presets `ids` over the edit as it is now,
+    /// `edge` pixels on their long side, one at a time between frames;
+    /// [`Self::preset_preview`] returns each once it is ready. Previews of
+    /// an earlier edit are dropped.
+    pub fn request_preset_previews(&self, ids: Vec<String>, edge: u32) {
+        self.shared
+            .previews
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+        self.shared.request(|r| {
+            r.previews = ids.into();
+            r.preview_edge = edge.clamp(32, 512);
+        });
+    }
+
+    /// Preset `id`'s preview as a JPEG, once rendered.
+    pub fn preset_preview(&self, id: String) -> Option<Vec<u8>> {
+        self.shared
+            .previews
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&id)
+            .cloned()
     }
 
     /// Shows Before alone or beside the edit, or the edit alone.
@@ -1284,6 +1317,87 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             }
             Err(e) => shared.stats(|s| s.error = Some(format!("{e:#}"))),
         }
+        // One preview between frames, so the photo stays responsive; the
+        // next waits for the next turn of the loop.
+        if let Some(p) = photo.as_mut() {
+            render_one_preview(shared, p);
+        }
+    }
+}
+
+/// Preset `id` applied over `recipe`, rendered `edge` pixels on its long
+/// side by `renderer`, as a JPEG: what the Presets panel shows of it.
+pub(crate) fn preset_preview(
+    renderer: &mut PreviewRenderer,
+    image: &CameraImage,
+    recipe: &Recipe,
+    metadata: &rawmakase_model::camera_data::Metadata,
+    profiles: &[Arc<rawmakase_model::camera_profiles::CameraProfile>],
+    id: &str,
+    edge: u32,
+) -> anyhow::Result<Vec<u8>> {
+    let preset = rawmakase_interop::presets::find_preset(id)
+        .ok_or_else(|| anyhow::anyhow!("The preset is gone"))?;
+    let applied = rawmakase_interop::presets::apply_to_photo(
+        &preset,
+        recipe,
+        metadata,
+        profiles,
+        Some(&rawmakase_engine::develop::Measures(image)),
+    )?;
+    let pixels = renderer
+        .render_to(image, &applied.recipe, edge, None, Cancel::NEVER, None)?
+        .pixels();
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80).encode(
+        &pixels.rgb8(),
+        pixels.width,
+        pixels.height,
+        image::ExtendedColorType::Rgb8,
+    )?;
+    Ok(jpeg)
+}
+
+/// Renders the next preset preview asked for, if any, and asks for another
+/// turn while more wait.
+fn render_one_preview(shared: &Shared, p: &mut Photo) {
+    let (id, edge, more) = {
+        let mut r = shared
+            .requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let Some(id) = r.previews.pop_front() else {
+            return;
+        };
+        (id, r.preview_edge, !r.previews.is_empty())
+    };
+    let edit = {
+        let edit = shared.edit();
+        edit.as_ref()
+            .map(|e| (e.recipe().clone(), e.metadata.clone(), e.profiles.clone()))
+    };
+    let made =
+        edit.ok_or_else(|| anyhow::anyhow!("No edit"))
+            .and_then(|(recipe, metadata, profiles)| {
+                preset_preview(
+                    &mut p.renderer,
+                    &p.image,
+                    &recipe,
+                    &metadata,
+                    &profiles,
+                    &id,
+                    edge,
+                )
+            });
+    if let Ok(jpeg) = made {
+        shared
+            .previews
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id, jpeg);
+    }
+    if more {
+        shared.request(|_| {});
     }
 }
 
@@ -1947,5 +2061,55 @@ impl Screen {
         // UI thread).
         self.queue.submit([encoder.finish()]);
         self.queue.present(target);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_preset_preview_is_a_small_jpeg_of_the_preset_over_the_edit() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../vendor/rawmakase/tests/corpus/charts/canon-eos-r100-d65.dng");
+        let raw = rawmakase_decode::photo::open(&path).unwrap();
+        let profiles = rawmakase_decode::camera_look::with_default(
+            &path,
+            &raw.metadata,
+            rawmakase_model::camera_profiles::installed(&raw.metadata).0,
+            Cancel::NEVER,
+        );
+        let metadata = raw.metadata.clone();
+        let image = raw.develop(Decode::Half, Cancel::NEVER).unwrap();
+        let mut renderer = PreviewRenderer::default();
+        let id = crate::transfer::presets()
+            .into_iter()
+            .find(|p| p.id.starts_with("builtin:"))
+            .unwrap()
+            .id;
+        let jpeg = preset_preview(
+            &mut renderer,
+            &image,
+            &Recipe::default(),
+            &metadata,
+            &profiles,
+            &id,
+            96,
+        )
+        .unwrap();
+        let shown = image::load_from_memory(&jpeg).unwrap();
+        assert_eq!(shown.width().max(shown.height()), 96);
+        assert!(
+            preset_preview(
+                &mut renderer,
+                &image,
+                &Recipe::default(),
+                &metadata,
+                &profiles,
+                "gone",
+                96
+            )
+            .is_err()
+        );
     }
 }
