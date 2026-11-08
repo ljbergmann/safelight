@@ -96,6 +96,9 @@ pub struct SliderState {
     pub step: f32,
     /// The value as the desktop shows it.
     pub text: String,
+    /// What a double tap sets it back to: its value in the photo's starting
+    /// settings (Temp and Tint as shot), a new mask's for a mask's slider.
+    pub reset: f32,
 }
 
 #[derive(uniffi::Record)]
@@ -451,13 +454,19 @@ impl Control {
         Some((spec.label.clone(), spec.text(shown)))
     }
 
-    fn state(self, r: &Recipe, photo: &Metadata) -> Option<SliderState> {
+    /// Its slider in `r`, resetting to its value in `defaults` (see
+    /// [`defaults_for`]).
+    fn state(self, r: &Recipe, photo: &Metadata, defaults: &Recipe) -> Option<SliderState> {
         let spec = self.spec(photo)?;
         let value = self.get(r, photo)?;
         Some(SliderState {
             control: self,
             text: spec.text(value),
             label: spec.label,
+            reset: self
+                .get(defaults, photo)
+                .unwrap_or(value)
+                .clamp(spec.min, spec.max),
             value,
             min: spec.min,
             max: spec.max,
@@ -582,7 +591,13 @@ fn params(ids: &[ParameterId]) -> Vec<Control> {
 }
 
 /// Mask `mask`'s adjustment sliders, in Lightroom's order.
-pub(crate) fn mask_sliders(r: &Recipe, photo: &Metadata, mask: u32) -> Vec<SliderState> {
+pub(crate) fn mask_sliders(
+    r: &Recipe,
+    photo: &Metadata,
+    mask: u32,
+    start: &Recipe,
+) -> Vec<SliderState> {
+    let defaults = defaults_for(r, start);
     let Some(group) = r.masks.get(mask as usize) else {
         return vec![];
     };
@@ -604,7 +619,7 @@ pub(crate) fn mask_sliders(r: &Recipe, photo: &Metadata, mask: u32) -> Vec<Slide
         .extend((0..crate::masks::LOCAL.len() as u32).map(|index| Control::Mask { mask, index }));
     controls
         .into_iter()
-        .filter_map(|c| c.state(r, photo))
+        .filter_map(|c| c.state(r, photo, &defaults))
         .map(|mut s| {
             // Luminance Range's first slider is Low.
             if let Control::Range {
@@ -624,13 +639,32 @@ pub(crate) fn mask_sliders(r: &Recipe, photo: &Metadata, mask: u32) -> Vec<Slide
         .collect()
 }
 
+/// What `r`'s sliders reset to: `start`, the photo's starting settings,
+/// with `r`'s masks as new masks of the same shapes, so a mask's sliders
+/// go back to a new mask's values.
+pub(crate) fn defaults_for(r: &Recipe, start: &Recipe) -> Recipe {
+    let fresh = rawmakase_model::model::masks::MaskGroup::default();
+    let mut defaults = start.clone();
+    defaults.masks = r
+        .masks
+        .iter()
+        .map(|m| rawmakase_model::model::masks::MaskGroup {
+            amount: fresh.amount,
+            adjust: fresh.adjust,
+            ..m.clone()
+        })
+        .collect();
+    defaults
+}
+
 /// The panels, grouped as Lightroom for iPad groups its Edit panel, with
 /// their current values: Light (tone, the curve), Color (white balance,
 /// presence of colour, the mixer, grading, calibration), Effects, Detail
 /// (AI Denoise, sharpening, noise reduction), Optics (lens corrections) and
 /// Geometry (crop and transform, for the Crop tool). Every control of the
 /// desktop's panels is in one of them, once.
-pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
+pub(crate) fn sections(r: &Recipe, photo: &Metadata, start: &Recipe) -> Vec<Section> {
+    let defaults = defaults_for(r, start);
     use ParameterId as P;
     let group = |g: &str, title: &str, switches: Vec<Switch>, controls: Vec<Control>| {
         (g.to_string(), title.to_string(), switches, controls)
@@ -825,7 +859,7 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
             switches: toggles.into_iter().filter_map(|t| t.state(r)).collect(),
             sliders: controls
                 .into_iter()
-                .filter_map(|c| c.state(r, photo))
+                .filter_map(|c| c.state(r, photo, &defaults))
                 .collect(),
         })
         .collect()
@@ -931,7 +965,7 @@ mod tests {
     #[test]
     fn the_ipad_groups_hold_every_control_of_the_desktops_panels_once() {
         let r = Recipe::default();
-        let shown: Vec<Section> = sections(&r, &Metadata::default());
+        let shown: Vec<Section> = sections(&r, &Metadata::default(), &r);
         let groups: Vec<&str> = shown.iter().map(|s| s.group.as_str()).collect();
         for g in ["Light", "Color", "Effects", "Detail", "Optics", "Geometry"] {
             assert!(groups.contains(&g), "{g}");

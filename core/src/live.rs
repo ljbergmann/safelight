@@ -701,7 +701,7 @@ impl LiveView {
         let Some(edit) = edit.as_ref() else {
             return vec![];
         };
-        crate::controls::mask_sliders(edit.recipe(), &edit.metadata, index)
+        crate::controls::mask_sliders(edit.recipe(), &edit.metadata, index, &edit.start)
     }
 
     /// A Heal (or Clone) spot at a view point, `radius` a fraction of the

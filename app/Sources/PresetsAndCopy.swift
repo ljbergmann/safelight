@@ -186,6 +186,12 @@ struct PresetsPanel: View {
                 }
             }
         }
+        .contentShape(Rectangle())
+        // A double tap goes back to the preset as applied, 100%.
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            model.live?.setPresetAmount(amount: 1, done: true)
+            model.refresh()
+        })
     }
 
     /// Runs a change to the preset library, says how it went and lists the

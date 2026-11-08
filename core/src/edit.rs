@@ -87,6 +87,9 @@ pub(crate) struct OpenEdit {
     pub(crate) session: EditSession,
     /// The Amount of the preset applied last, while it shows.
     pub(crate) amount: Option<crate::transfer::AmountShown>,
+    /// The photo's starting settings (its raw defaults), which Reset and a
+    /// slider's double tap go back to; resolved once when it opens.
+    pub(crate) start: Recipe,
     /// The settings copied to Before ([`crate::compare`]); `None`, the
     /// photo's starting settings. Not saved, as in Lightroom.
     pub(crate) before: Option<Recipe>,
@@ -122,7 +125,11 @@ impl OpenEdit {
         if let Some(saved) = history {
             session.restore_history(saved);
         }
+        let start = rawmakase_interop::raw_defaults::DevelopDefaults::default()
+            .resolve(&metadata, profiles)
+            .recipe;
         Ok(Self {
+            start,
             library,
             id,
             path,
@@ -415,9 +422,7 @@ impl OpenEdit {
     /// The photo's starting settings: its raw defaults, as a photo opened
     /// with no edit gets them.
     pub(crate) fn starting_settings(&self) -> Recipe {
-        rawmakase_interop::raw_defaults::DevelopDefaults::default()
-            .resolve(&self.metadata, &self.profiles)
-            .recipe
+        self.start.clone()
     }
 
     /// Back to the photo's starting settings, as the desktop's Reset
@@ -504,7 +509,7 @@ impl OpenEdit {
         let (steps, applied) = self.session.history().steps();
         EditState {
             photo: self.id,
-            sections: crate::controls::sections(self.session.recipe(), &self.metadata),
+            sections: crate::controls::sections(self.session.recipe(), &self.metadata, &self.start),
             can_undo: applied > 0,
             can_redo: applied < steps.len(),
             steps: steps
@@ -693,6 +698,26 @@ pub(crate) mod tests {
         assert_eq!(library.photos().unwrap().len(), 1);
         assert!(path.exists(), "the file stays");
         assert_eq!(exposure(&open(&library, copy, &path)), -1.);
+    }
+
+    #[test]
+    fn a_slider_resets_to_the_photos_starting_value_temp_to_as_shot() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let as_shot = slider(&edit, "Temp").value;
+        edit.set(Control::Param { index: 2 }, 1.3, true);
+        let temp = slider(&edit, "Temp");
+        edit.set(temp.control, temp.value + 1500., true);
+        assert_ne!(slider(&edit, "Temp").value, as_shot);
+        assert_eq!(slider(&edit, "Temp").reset, as_shot, "as shot");
+        assert_eq!(slider(&edit, "Exposure").reset, 0.);
+        let temp = slider(&edit, "Temp");
+        edit.set(temp.control, temp.reset, true);
+        assert!(
+            (slider(&edit, "Temp").value - as_shot).abs() < 1.,
+            "back as shot"
+        );
     }
 
     #[test]

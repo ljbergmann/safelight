@@ -60,68 +60,123 @@ extension LiveModel {
     }
 }
 
-/// The Masks and Heal panels: new masks, the list, the selected mask's
-/// sliders, and the retouch tool.
+/// The Masks panel: how to make a mask while none is chosen; the chosen
+/// mask's parts, brush and sliders. The masks themselves are listed over
+/// the photo ([`MaskStrip`]).
 struct MasksPanel: View {
     @Bindable var model: LiveModel
-    @State private var expanded = true
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Button("Brush", systemImage: "paintbrush.pointed") { model.addMask(.brush, from: [0, 0], to: [0, 0]) }
-                    Button("Linear", systemImage: "rectangle.lefthalf.inset.filled") { model.tool = .newGradient(.linear) }
-                    Button("Radial", systemImage: "circle.dashed") { model.tool = .newGradient(.radial) }
-                    Menu {
-                        Button("Color Range", systemImage: "eyedropper") { model.tool = .newGradient(.colorRange) }
-                        Button("Luminance Range", systemImage: "sun.max") { model.tool = .newGradient(.luminanceRange) }
-                    } label: {
-                        Label("Range", systemImage: "slider.horizontal.below.rectangle")
-                    }
-                }
-                .buttonStyle(.bordered).font(.callout)
-                SelectButtons(model: model)
-                switch model.tool {
-                case .newGradient(.colorRange), .newGradient(.luminanceRange),
-                     .newPart(.colorRange, _), .newPart(.luminanceRange, _):
-                    Text("Tap the colour or brightness to select.").font(.caption).foregroundStyle(.secondary)
-                case .newGradient, .newPart:
-                    Text("Drag on the photo to place it.").font(.caption).foregroundStyle(.secondary)
-                default:
-                    EmptyView()
-                }
-                ForEach(model.edit?.masks ?? [], id: \.index) { mask in
-                    HStack {
-                        Button {
-                            model.selectedMask = model.selectedMask == mask.index ? nil : mask.index
-                            model.tool = (model.selectedMask != nil && mask.components.contains { $0.kind == "Brush" }) ? .brush : .none
-                        } label: {
-                            Label("\(mask.name) · \(mask.kind)", systemImage: model.selectedMask == mask.index ? "largecircle.fill.circle" : "circle")
-                        }
-                        Spacer()
-                        Button { model.live?.setMaskHidden(index: mask.index, hidden: !mask.hidden); model.refresh() } label: {
-                            Image(systemName: mask.hidden ? "eye.slash" : "eye")
-                        }
-                        Button(role: .destructive) { model.deleteMask(mask.index) } label: { Image(systemName: "trash") }
-                    }
-                    .font(.callout)
-                }
-                if let index = model.selectedMask, let mask = model.edit?.masks.first(where: { $0.index == index }) {
-                    MaskParts(model: model, mask: mask)
-                    if model.tool == .brush {
-                        BrushSettings(model: model)
-                    }
-                    ForEach(model.live?.maskSliders(index: index) ?? [], id: \.label) { slider in
-                        SliderRow(slider: slider, model: model)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Masks").font(.title3.weight(.semibold))
+            switch model.tool {
+            case .newGradient(.colorRange), .newGradient(.luminanceRange),
+                 .newPart(.colorRange, _), .newPart(.luminanceRange, _):
+                hint("Tap the colour or brightness to select.")
+            case .newGradient, .newPart:
+                hint("Drag on the photo to place it.")
+            default:
+                EmptyView()
             }
-            .padding(.top, 4)
-        } label: {
-            Text("Masks").font(.headline)
+            if let what = model.selecting {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Selecting \(String(describing: what))…")
+                }
+                .font(.caption).foregroundStyle(Theme.secondaryText)
+            } else if let error = model.selectionError {
+                Text(error).font(.caption).foregroundStyle(.orange)
+            }
+            if let index = model.selectedMask, let mask = model.edit?.masks.first(where: { $0.index == index }) {
+                HStack {
+                    Text("\(mask.name) · \(mask.kind)").font(.headline)
+                    Spacer()
+                    Button { model.live?.setMaskHidden(index: mask.index, hidden: !mask.hidden); model.refresh() } label: {
+                        Image(systemName: mask.hidden ? "eye.slash" : "eye")
+                    }
+                    Button(role: .destructive) { model.deleteMask(mask.index) } label: { Image(systemName: "trash") }
+                }
+                MaskParts(model: model, mask: mask)
+                if model.tool == .brush {
+                    BrushSettings(model: model)
+                }
+                ForEach(model.live?.maskSliders(index: index) ?? [], id: \.label) { slider in
+                    SliderRow(slider: slider, model: model)
+                }
+            } else {
+                hint(model.edit?.masks.isEmpty ?? true
+                     ? "Add a mask with + beside the photo: a brush, a gradient, a range, or the subject, sky or background."
+                     : "Choose a mask beside the photo to change it, or add one with +.")
+            }
         }
+    }
 
+    private func hint(_ text: String) -> some View {
+        Text(text).font(.callout).foregroundStyle(Theme.secondaryText)
+    }
+}
+
+/// The photo's masks, in a column over its right edge as Lightroom shows
+/// them: + to add one, then each mask as a tile; tapping one chooses it.
+struct MaskStrip: View {
+    @Bindable var model: LiveModel
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Menu {
+                SwiftUI.Section("Select") {
+                    Button("Subject", systemImage: "person.crop.rectangle") { model.select(.subject) }
+                    Button("Sky", systemImage: "cloud.sun") { model.select(.sky) }
+                    Button("Background", systemImage: "mountain.2") { model.select(.background) }
+                }
+                SwiftUI.Section("Draw") {
+                    Button("Brush", systemImage: "paintbrush.pointed") { model.addMask(.brush, from: [0, 0], to: [0, 0]) }
+                    Button("Linear Gradient", systemImage: "rectangle.lefthalf.inset.filled") { model.tool = .newGradient(.linear) }
+                    Button("Radial Gradient", systemImage: "circle.dashed") { model.tool = .newGradient(.radial) }
+                }
+                SwiftUI.Section("Range") {
+                    Button("Color Range", systemImage: "eyedropper") { model.tool = .newGradient(.colorRange) }
+                    Button("Luminance Range", systemImage: "sun.max") { model.tool = .newGradient(.luminanceRange) }
+                }
+            } label: {
+                Image(systemName: "plus").font(.title3.weight(.semibold)).foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.accent, in: Circle())
+            }
+            .disabled(model.selecting != nil)
+            ForEach(model.edit?.masks ?? [], id: \.index) { mask in
+                Button {
+                    model.selectedMask = model.selectedMask == mask.index ? nil : mask.index
+                    model.tool = (model.selectedMask != nil && mask.components.contains { $0.kind == "Brush" }) ? .brush : .none
+                } label: {
+                    Image(systemName: Self.symbol(mask.kind))
+                        .font(.title3)
+                        .frame(width: 48, height: 48)
+                        .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8)
+                            .stroke(model.selectedMask == mask.index ? Theme.accent : .clear, lineWidth: 2))
+                        .opacity(mask.hidden ? 0.4 : 1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(mask.name), \(mask.kind)")
+            }
+        }
+        .padding(8)
+        .background(Theme.raised.opacity(0.92), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    static func symbol(_ kind: String) -> String {
+        switch kind {
+        case "Brush": "paintbrush.pointed"
+        case "Linear Gradient": "rectangle.lefthalf.inset.filled"
+        case "Radial Gradient": "circle.dashed"
+        case "Color Range": "eyedropper"
+        case "Luminance Range": "sun.max"
+        case "Subject": "person.crop.rectangle"
+        case "Sky": "cloud.sun"
+        case "Background": "mountain.2"
+        default: "circle.dashed.inset.filled"
+        }
     }
 }
 

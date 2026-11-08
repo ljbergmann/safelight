@@ -24,14 +24,30 @@ final class LiveModel {
     }
     /// The right-hand panel's tool. Crop shows the crop's handles; leaving
     /// Masks or Edit lets go of a mask or the eyedropper.
+    /// History's steps applied when a tool's pane opened (Crop, Masks,
+    /// Heal), for its Cancel to go back to.
+    var toolStart: UInt32?
     var pane: DevelopPane = .edit {
         didSet {
             guard pane != oldValue else { return }
+            toolStart = pane.isTool ? edit?.applied : nil
             cropping = pane == .crop
             if pane != .masks { selectedMask = nil; if tool != .whiteBalance && !(pane == .heal && tool == .heal) { tool = .none } }
             if pane != .edit, tool == .whiteBalance { tool = .none }
         }
     }
+    /// A tool's Cancel: back to the edit as it was when the tool opened,
+    /// then to Edit. The steps it took stay in History, as after an Undo,
+    /// until the next change.
+    func cancelTool() {
+        if let start = toolStart { live?.goToStep(applied: start) }
+        refresh()
+        pane = .edit
+    }
+
+    /// A tool's Apply: keeps what it did and goes back to Edit.
+    func applyTool() { pane = .edit }
+
     /// Before/After: Before alone, beside the edit, or split across it.
     var compare: Compare = .off { didSet { live?.setCompare(compare: compare) } }
     var cropAspect: CropAspect = .free
@@ -256,6 +272,11 @@ struct LiveEditor: View {
             }
             .background(Theme.canvas)
             .overlay(alignment: .bottomLeading) { status.padding(12) }
+            .overlay(alignment: .bottomTrailing) {
+                if model.pane == .masks && model.compare == .off {
+                    MaskStrip(model: model).padding(12)
+                }
+            }
             .overlay(alignment: .topLeading) {
                 // Over the photo's corner, as Lightroom shows it while editing.
                 if model.pane == .edit && model.compare == .off {
@@ -307,9 +328,8 @@ struct LiveEditor: View {
         if args.contains("-mask-test"), let live = model.live {
             // A radial mask in the middle at +1 EV, a brush stroke, a Heal spot.
             if let radial = live.addMask(kind: .radial, from: [0.5, 0.5], to: [0.65, 0.6]) {
-                let exposure = live.maskSliders(index: radial).firstIndex { $0.label == "Exposure" }
-                if let exposure {
-                    live.setControl(control: .mask(mask: radial, index: UInt32(exposure)), value: 1, done: true)
+                if let exposure = live.maskSliders(index: radial).first(where: { $0.label == "Exposure" }) {
+                    live.setControl(control: exposure.control, value: 1, done: true)
                 }
             }
             if let brush = live.addMask(kind: .brush, from: [0, 0], to: [0, 0]) {
@@ -671,6 +691,12 @@ struct SliderRow: View {
                 model.set(slider.control, to: snapped(value), done: done)
             }
         }
+        .contentShape(Rectangle())
+        // A double tap goes back to where the photo started: Temp and Tint
+        // as shot, a mask's sliders as a new mask's.
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            model.set(slider.control, to: slider.reset, done: true)
+        })
     }
 
     /// The value being dragged, else the edit's.

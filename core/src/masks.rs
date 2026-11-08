@@ -641,7 +641,7 @@ mod tests {
             [0., 0.],
         )
         .unwrap();
-        let labels: Vec<_> = mask_sliders(&r, &photo, m)
+        let labels: Vec<_> = mask_sliders(&r, &photo, m, &Recipe::default())
             .into_iter()
             .take(5)
             .map(|s| s.label)

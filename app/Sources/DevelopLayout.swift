@@ -15,6 +15,9 @@ enum DevelopPane: String, CaseIterable {
         }
     }
 
+    /// A tool with Cancel and Apply, rather than a panel of settings.
+    var isTool: Bool { self == .crop || self == .masks || self == .heal }
+
     var symbol: String {
         switch self {
         case .edit: "slider.horizontal.3"
@@ -99,7 +102,7 @@ struct DevelopPanel: View {
                     switch model.pane {
                     case .edit: EditPane(model: model)
                     case .crop: CropPane(model: model)
-                    case .masks: MasksPanel(model: model).padding(.horizontal, 16).padding(.vertical, 12)
+                    case .masks: MasksPanel(model: model).padding(16)
                     case .heal: HealPane(model: model).padding(16)
                     case .presets: PresetsPanel(model: model).padding(16)
                     case .history:
@@ -114,6 +117,16 @@ struct DevelopPanel: View {
             }
             if let note = model.pasteNote {
                 Text(note).font(.caption).foregroundStyle(.orange).padding(12)
+            }
+            if model.pane.isTool {
+                Rectangle().fill(Theme.line).frame(height: 0.5)
+                HStack(spacing: 18) {
+                    Spacer()
+                    Button("Cancel") { model.cancelTool() }
+                    Button("Apply") { model.applyTool() }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding(14)
             }
         }
         .frame(width: 340)

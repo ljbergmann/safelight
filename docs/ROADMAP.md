@@ -68,7 +68,7 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 ## Then: the rest of Develop
 
 - **Basic:** Treatment Auto, the HDR switch (HDR display is L), Fit Camera
-  Look, per-slider Auto, panel and slider reset by double tap
+  Look, per-slider Auto, panel reset
 - **Tone Curve:** saved curves, the parametric graph with split points,
   Levels Black and White point, the targeted adjustment tool
 - **Color:** Point Color, targeted HSL and B&W, the mixer's All view,
@@ -106,7 +106,8 @@ and no soft proofing, so they aren't gaps.
       Library and Develop's frame are (photo edge to edge, a panel per tool
       chosen on a rail); Edit's groups (Light, Color, Effects,
       Detail, Optics) and Crop are; Presets (with previews on
-      the photo) and Heal are; the mask list over the photo next
+      the photo) and Heal are; the mask list floats over
+      the photo; Cancel and Apply for tools; a double tap resets a slider
 - [ ] AI Denoise on CoreML (GPU / Neural Engine); measure against the CPU (S–M)
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views
