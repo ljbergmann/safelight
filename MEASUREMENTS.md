@@ -104,3 +104,33 @@ resolution, as the desktop's 100% view does, with no reduced draft first.
 - Pinch: the frame on screen is scaled while the fingers move, then the
   view settles on 100% around the pinch point, or back to Fit. Double tap
   switches between them. Tried in the simulator, not yet by hand on the iPad.
+
+## Freed memory that iPadOS kept counting (2026-11-08)
+
+Apple's malloc keeps large blocks it has freed for reuse, and the footprint
+iPadOS ends apps by still counts them. On the M1 iPad, a 540 MB block
+allocated, filled and freed left the footprint at 553 MB; 2000 freed blocks
+of 256 KB left 1055 MB (`-allocprobe`). On the Mac, with the cache turned
+off (`MallocLargeCache=0`), closing a full-size Leica Q2 left 10 MB instead
+of 2.5 GB: RAWmakase frees everything, the allocator kept it.
+
+Since then the core maps blocks of 16 MB or more directly and unmaps them
+when freed (`core/src/alloc.rs`). The same runs on the iPad:
+
+| Run | Peak before | Peak now | Footprint while editing | Frame rate |
+| --- | --- | --- | --- | --- |
+| Leica Q2, half, Exposure sweep | 1.53 GB | 0.87 GB | 0.69 GB | 60 fps |
+| Leica Q2, full, Exposure sweep | 4.62 GB | 3.24 GB | 2.06 GB | 60 fps |
+| Leica Q2, full, pan at 100% | 5.18 GB | 3.31 GB | 3.07 GB | 45 fps |
+| Canon EOS R5, full, Exposure sweep | 4.49 GB | 3.17 GB | 1.94 GB | 60 fps |
+| Canon EOS R5, full, pan at 100% | 5.00 GB | 3.24 GB | 2.92 GB | 46 fps |
+| Canon EOS R5, half, pan at 100% | 2.01 GB | 1.48 GB | 1.27 GB | 51 fps |
+
+- Every peak is now below the default 5.1 GB limit; the increased-memory
+  entitlement stays as headroom.
+- The first 100% frame of a full-size decode now takes 0.15 s (it took
+  0.2–2.2 s): the GPU upload no longer waits for memory held by the cache.
+- What remains while editing is the photo's working set: the decoded image
+  (540 MB at full size), its highlight-recovered copy, the pyramid the
+  preview renders from and the copy on the GPU. Making that smaller means
+  changing the engine (half-precision pixels) or editing a smart preview.
