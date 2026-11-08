@@ -13,6 +13,8 @@ targets:
     sources:
       - app/Sources
       - app/Generated
+      # The app icon, drawn by scripts/render-icon.swift from docs/brand.
+      - app/Assets.xcassets
     # A full-size decode of a 45 MP RAW and its 100% view need more than the
     # default limit on an 8 GB iPad (MEASUREMENTS.md).
     entitlements:
@@ -35,6 +37,7 @@ targets:
         # the same app and keeps its catalog.
         PRODUCT_BUNDLE_IDENTIFIER: com.ljbergmann.rawmakase-ipad
         INFOPLIST_KEY_CFBundleDisplayName: Safelight
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

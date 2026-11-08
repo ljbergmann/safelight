@@ -1,3 +1,5 @@
+<img src="docs/brand/icon-256.png" alt="" width="128" align="right">
+
 # Safelight
 
 *Lightroom's way of working on the iPad, without Lightroom.*
@@ -128,7 +130,7 @@ xcodebuild -project Safelight.xcodeproj -scheme Safelight -configuration Release
 | `vendor/rawmakase/` | RAWmakase, as a submodule on the fork's `ios/build-crates` branch |
 | `scripts/` | Building the core and ONNX Runtime |
 | `project.yml` | The Xcode project, for XcodeGen |
-| `docs/` | The vision, the roadmap and the original plan |
+| `docs/` | The vision, the roadmap and the original plan; the logo in `docs/brand` (`scripts/render-icon.swift` draws the app icon from it) |
 
 ## Development
 
