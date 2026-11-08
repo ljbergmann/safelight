@@ -65,7 +65,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
 ## What works today
 
 - **Library**: a catalog in the app's storage; import from the Files app (a
-  card, a drive, iCloud Drive); thumbnails; ratings, flags, colour labels,
+  card, a drive, iCloud Drive) and RAW originals from the Photos library;
+  thumbnails; ratings, flags, colour labels,
   filters, collections and the Quick Collection.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount; white balance presets and eyedropper; Auto; the point curve; Crop,
@@ -82,7 +83,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
 - **Export** to JPEG, TIFF or PNG, and the share sheet.
 
 What's missing compared with the desktop, and what comes next (an import
-screen, the Photos library, a loupe, sync…), is in the
+screen, a loupe, sync…), is in the
 [roadmap](docs/ROADMAP.md). Measurements are in
 [MEASUREMENTS.md](MEASUREMENTS.md).
 
@@ -139,6 +140,7 @@ them after `--`):
 | Option | What it does |
 | --- | --- |
 | `-import-documents` | Moves the photos in the app's Documents folder into the catalog |
+| `-photos-import-test` | Imports a copy of a catalog photo the way the Photos picker's originals come in; it must be found already there |
 | `-open <file>` | Opens a photo of the catalog in the editor |
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |
 | `-set-exposure <stops>`, `-save` | Edits and saves, to check edits survive a relaunch |

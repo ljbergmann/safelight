@@ -6,6 +6,7 @@ struct LibraryView: View {
     @State private var model = LibraryModel()
     @State private var path: [LibraryPhoto.ID] = []
     @State private var picking = false
+    @State private var pickingPhotos = false
     /// Select mode: taps choose photos instead of opening them.
     @State private var selecting = false
     @State private var selected: Set<Int64> = []
@@ -51,9 +52,10 @@ struct LibraryView: View {
                     ContentUnavailableView {
                         Label("No photos yet", systemImage: "photo.on.rectangle")
                     } description: {
-                        Text("Import RAW files from the Files app. They're copied into RAWmakase's catalog.")
+                        Text("Import RAW files from the Files app or the Photos library. They're copied into the catalog.")
                     } actions: {
-                        Button("Import Photos…") { picking = true }.buttonStyle(.borderedProminent)
+                        Button("From Files…") { picking = true }.buttonStyle(.borderedProminent)
+                        Button("From Photos…") { pickingPhotos = true }
                     }
                 }
             }
@@ -61,7 +63,12 @@ struct LibraryView: View {
             .toolbar {
                 ToolbarItem(placement: .status) {
                     if let importing = model.importing {
-                        HStack { ProgressView(); Text(importing) }
+                        HStack {
+                            ProgressView(); Text(importing)
+                            if let job = model.importJob { Button("Cancel") { job.cancel() } }
+                        }
+                    } else if let notice = model.notice {
+                        Text(notice).foregroundStyle(.secondary).lineLimit(1)
                     } else if let pasteNote {
                         Text(pasteNote).foregroundStyle(.secondary).lineLimit(1)
                     } else {
@@ -69,8 +76,11 @@ struct LibraryView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Import", systemImage: "square.and.arrow.down") { picking = true }
-                        .disabled(model.library == nil || model.importing != nil)
+                    Menu("Import", systemImage: "square.and.arrow.down") {
+                        Button("From Files…", systemImage: "folder") { picking = true }
+                        Button("From Photos…", systemImage: "photo.on.rectangle") { pickingPhotos = true }
+                    }
+                    .disabled(model.library == nil || model.importing != nil)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button(selecting ? "Done" : "Select") {
@@ -107,6 +117,13 @@ struct LibraryView: View {
             ) { result in
                 if case .success(let files) = result { Task { await model.importFiles(files) } }
             }
+            .sheet(isPresented: $pickingPhotos) {
+                PhotosRawPicker { results in
+                    pickingPhotos = false
+                    Task { await model.importFromPhotos(results) }
+                }
+                .ignoresSafeArea()
+            }
             .alert("Something went wrong", isPresented: .constant(model.error != nil)) {
                 Button("OK") {}
             } message: {
@@ -124,6 +141,7 @@ struct LibraryView: View {
             await model.open()
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-import-documents") { await model.importDocuments() }
+            if args.contains("-photos-import-test") { await model.photosImportTest() }
             model.rateFromArguments()
             // -open <file name>: start in the editor, for -sweep and -pan.
             if let i = args.firstIndex(of: "-open"), i + 1 < args.count,

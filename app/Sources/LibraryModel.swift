@@ -35,6 +35,10 @@ final class LibraryModel {
     private(set) var error: String?
     /// The last import's timings, for measuring.
     private(set) var lastImport: String?
+    /// What the last import brought in and left out, for the toolbar.
+    var notice: String?
+    /// An import that can be cancelled, while it runs.
+    private(set) var importJob: ImportJob?
 
     /// Opens (or creates) the catalog in Application Support.
     func open() async {
@@ -111,6 +115,39 @@ final class LibraryModel {
         case .failure(let error):
             self.error = "\(error)"
         }
+    }
+
+    func setImporting(_ text: String?) {
+        importing = text
+        if text != nil { notice = nil }
+    }
+
+    /// Runs the core's import of `paths` (dated folders, duplicates by
+    /// content left out) with progress in the toolbar and Cancel; returns
+    /// what it did, in words.
+    func runImport(_ paths: [String], mode: ImportMode) async -> [String] {
+        guard let library else { return ["No catalog"] }
+        let job = ImportJob.start(library: library, paths: paths, mode: mode, skipDuplicates: true)
+        importJob = job
+        while !job.finished() {
+            importing = "Importing \(job.done()) of \(job.total())…"
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        importJob = nil
+        importing = nil
+        await reload()
+        var notes = ["\(job.imported()) imported"]
+        if job.skipped() > 0 { notes.append("\(job.skipped()) already in the catalog") }
+        if job.done() < job.total() && job.error() == nil { notes.append("cancelled") }
+        if let error = job.error() { notes.append("stopped: \(error)") }
+        return notes
+    }
+
+    func finishImport(_ note: String) {
+        importing = nil
+        lastImport = note
+        notice = note
+        print("IMPORT \(note)")
     }
 
     /// `-rate <file name> <stars>`: rates a photo without touching the

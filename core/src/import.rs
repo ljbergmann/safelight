@@ -382,8 +382,10 @@ impl ImportJob {
             let target = unused(&folder, &name);
             match mode {
                 ImportMode::Move => {
+                    // Across volumes a rename fails: copied as Copy does,
+                    // so a copy cut short never looks like a photo.
                     if std::fs::rename(source, &target).is_err() {
-                        std::fs::copy(source, &target)?;
+                        copy(source, &target)?;
                         std::fs::remove_file(source)?;
                     }
                 }
@@ -608,6 +610,43 @@ mod tests {
             }
         }
         assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    /// What the Photos import hands over: each original copied out of the
+    /// Photos library into a folder of its own, under the name Photos
+    /// suggests, which two photos can share.
+    #[test]
+    fn originals_from_photos_move_in_under_their_names_and_duplicates_stay_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let charts =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../vendor/rawmakase/tests/corpus/charts");
+        let staged = dir.path().join("staged");
+        let mut paths = Vec::new();
+        for (folder, chart, name) in [
+            ("0", "canon-eos-r100-d65.dng", "IMG_0001.DNG"),
+            ("1", "sony-ilce-7rm5-d65.dng", "IMG_0001.DNG"),
+            // The same photo picked twice, or already in the catalog.
+            ("2", "canon-eos-r100-d65.dng", "IMG_0002.DNG"),
+        ] {
+            let folder = staged.join(folder);
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::copy(charts.join(chart), folder.join(name)).unwrap();
+            paths.push(folder.join(name).display().to_string());
+        }
+        let job = ImportJob::start(library.clone(), paths.clone(), ImportMode::Move, true);
+        wait(&job);
+        assert_eq!(job.error(), None);
+        assert_eq!((job.imported(), job.skipped(), job.done()), (2, 1, 3));
+        let photos = library.photos().unwrap();
+        assert_eq!(photos.len(), 2);
+        assert!(photos.iter().all(|p| p.filename.starts_with("IMG_0001")));
+        assert_ne!(photos[0].path, photos[1].path);
+        assert!(photos.iter().all(|p| Path::new(&p.path).exists()));
+        // Moved, not copied; the duplicate is left for the app to discard
+        // with the rest of what it staged.
+        assert!(!Path::new(&paths[0]).exists() && !Path::new(&paths[1]).exists());
+        assert!(Path::new(&paths[2]).exists());
     }
 
     #[test]

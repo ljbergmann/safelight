@@ -266,3 +266,21 @@ core test.
 - A fitted side renders at its pane's long edge, so Top / Bottom renders a
   portrait photo larger than its half shows, as the single view does for a
   photo narrower than the screen.
+
+## Import from the Photos library (2026-11-08)
+
+Photos' own picker (no access to the library needed) hands over each
+picked photo's RAW original as it is (`preferredAssetRepresentationMode =
+.current`, `loadFileRepresentation` for `public.camera-raw-image`). Each is
+copied into a folder of its own under the app's temporary folder, as two
+originals can share a name, then the core's import moves them into
+`Photos/<year>/<date>/`, leaving out what the catalog has by content; the
+temporary folder goes afterwards. Photos without a RAW original are counted
+and left out.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| Two originals both named `IMG_0001.DNG` and a third that is one of them again | Mac, core test | two imported, one left out, both moved |
+| `-photos-import-test`: a copy of a catalog photo staged as the picker stages one | M1 iPad Pro | `0 imported · 1 already in the catalog; photos 54 -> 54; staging left false` |
+
+Not checked yet: the picker itself, which takes a finger.
