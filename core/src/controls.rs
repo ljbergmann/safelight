@@ -13,6 +13,7 @@ use rawmakase_model::camera_data::Metadata;
 use rawmakase_model::model::edit::change_setting;
 use rawmakase_model::model::panels::{Panel, PanelState};
 use rawmakase_model::model::params::ParameterId;
+use rawmakase_model::model::masks::MaskShape;
 use rawmakase_model::model::recipe::Recipe;
 
 /// One slider: which setting it moves.
@@ -33,6 +34,28 @@ pub enum Control {
     Mask { mask: u32, index: u32 },
     /// Lightroom's Profile Amount, for a profile that has one (a look).
     ProfileAmount,
+    /// A mask's Amount, which scales all its sliders (0–200%).
+    MaskAmount { mask: u32 },
+    /// A range part's setting: Color Range's Refine (`which` 0); Luminance
+    /// Range's low, high, and the falloff below and above (0 to 3).
+    Range { mask: u32, component: u32, which: u32 },
+}
+
+/// The range part `component` of mask `mask`.
+fn range_shape(r: &Recipe, mask: u32, component: u32) -> Option<&MaskShape> {
+    let shape = &r.masks.get(mask as usize)?.components.get(component as usize)?.shape;
+    shape.is_range().then_some(shape)
+}
+
+fn range_value(shape: &mut MaskShape, which: u32) -> Option<&mut f32> {
+    match (shape, which) {
+        (MaskShape::ColorRange { amount, .. }, 0) => Some(amount),
+        (MaskShape::LuminanceRange { low, .. }, 0) => Some(low),
+        (MaskShape::LuminanceRange { high, .. }, 1) => Some(high),
+        (MaskShape::LuminanceRange { falloff, .. }, 2) => Some(&mut falloff[0]),
+        (MaskShape::LuminanceRange { falloff, .. }, 3) => Some(&mut falloff[1]),
+        _ => None,
+    }
 }
 
 /// An on/off setting a panel shows above its sliders.
@@ -240,6 +263,32 @@ impl Control {
                     unit: "",
                 })
             }
+            Control::MaskAmount { .. } => Some(Spec {
+                label: "Amount".into(),
+                min: 0.,
+                max: 2.,
+                step: 0.,
+                scale: 100.,
+                decimals: 0,
+                signed: false,
+                unit: "",
+            }),
+            Control::Range { which, .. } => Some(Spec {
+                label: match which {
+                    0 => "Refine",
+                    1 => "High",
+                    2 => "Falloff Low",
+                    _ => "Falloff High",
+                }
+                .into(),
+                min: 0.,
+                max: 1.,
+                step: 0.,
+                scale: 100.,
+                decimals: 0,
+                signed: false,
+                unit: "",
+            }),
             Control::ProfileAmount => Some(Spec {
                 label: "Profile Amount".into(),
                 min: 0.,
@@ -318,6 +367,15 @@ impl Control {
                 grade.get(channel as usize).copied()
             }
             Control::ProfileAmount => Some(r.profile_amount),
+            Control::MaskAmount { mask } => Some(r.masks.get(mask as usize)?.amount),
+            Control::Range {
+                mask,
+                component,
+                which,
+            } => {
+                let mut shape = range_shape(r, mask, component)?.clone();
+                range_value(&mut shape, which).copied()
+            }
         }
     }
 
@@ -350,6 +408,24 @@ impl Control {
                     &mut r.grading[region as usize]
                 };
                 grade[channel as usize] = value;
+            }
+            Control::MaskAmount { mask } => r.masks.get_mut(mask as usize)?.amount = value,
+            Control::Range {
+                mask,
+                component,
+                which,
+            } => {
+                range_shape(r, mask, component)?;
+                let shape = &mut r.masks[mask as usize].components[component as usize].shape;
+                *range_value(shape, which)? = value;
+                // Low stays at or under High.
+                if let MaskShape::LuminanceRange { low, high, .. } = shape {
+                    if which == 0 {
+                        *high = high.max(*low);
+                    } else if which == 1 {
+                        *low = low.min(*high);
+                    }
+                }
             }
             Control::ProfileAmount => {
                 // A profile without an Amount renders at 100%.
@@ -495,8 +571,39 @@ fn params(ids: &[ParameterId]) -> Vec<Control> {
 
 /// Mask `mask`'s adjustment sliders, in Lightroom's order.
 pub(crate) fn mask_sliders(r: &Recipe, photo: &Metadata, mask: u32) -> Vec<SliderState> {
-    (0..crate::masks::LOCAL.len() as u32)
-        .filter_map(|index| Control::Mask { mask, index }.state(r, photo))
+    let Some(group) = r.masks.get(mask as usize) else {
+        return vec![];
+    };
+    let mut controls = vec![Control::MaskAmount { mask }];
+    for (i, c) in group.components.iter().enumerate() {
+        let component = i as u32;
+        let range = |which| Control::Range {
+            mask,
+            component,
+            which,
+        };
+        match c.shape {
+            MaskShape::ColorRange { .. } => controls.push(range(0)),
+            MaskShape::LuminanceRange { .. } => controls.extend((0..4).map(range)),
+            _ => {}
+        }
+    }
+    controls.extend((0..crate::masks::LOCAL.len() as u32).map(|index| Control::Mask { mask, index }));
+    controls
+        .into_iter()
+        .filter_map(|c| c.state(r, photo))
+        .map(|mut s| {
+            // Luminance Range's first slider is Low.
+            if let Control::Range { which: 0, mask, component } = s.control
+                && matches!(
+                    range_shape(r, mask, component),
+                    Some(MaskShape::LuminanceRange { .. })
+                )
+            {
+                s.label = "Low".into();
+            }
+            s
+        })
         .collect()
 }
 

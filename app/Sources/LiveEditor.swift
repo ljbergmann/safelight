@@ -313,6 +313,17 @@ struct LiveEditor: View {
                 print("PROFILES \(profiles.count) in \(Set(profiles.map(\.group)).count - 1) groups; chose \(other.title); first Basic slider \(amount); last step \(live.editState()?.steps.last ?? "")")
                 live.undo()
             }
+            // The histogram is the last frame's: wait for one.
+            let frames = live.stats().frames
+            for _ in 0..<50 where live.stats().frames == frames { try? await Task.sleep(for: .milliseconds(100)) }
+            let h = live.histogram()
+            if let color = live.addMask(kind: .colorRange, from: [0.3, 0.3], to: [0.3, 0.3]) {
+                _ = live.addMaskComponent(mask: color, kind: .radial, operation: .intersect, from: [0.5, 0.5], to: [0.7, 0.7])
+                live.setMaskInvert(mask: color, component: nil, invert: true)
+            }
+            _ = live.addMask(kind: .luminanceRange, from: [0.6, 0.6], to: [0.6, 0.6])
+            let masks = live.editState()?.masks.map { "\($0.kind)[\($0.components.map { "\($0.operation) \($0.kind)" }.joined(separator: ", "))]\($0.invert ? " inverted" : "")" } ?? []
+            print("MASKS2 \(masks); histogram \(h.green.reduce(0, +)) pixels (frames \(frames) then \(live.stats().frames)), clipped shadows \(h.shadowsClipped) highlights \(h.highlightsClipped); first mask sliders \(live.maskSliders(index: 0).prefix(3).map(\.label))")
         }
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)
@@ -471,6 +482,7 @@ struct DevelopPanels: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                HistogramPanel(model: model)
                 HistoryPanel(model: model)
                 Divider()
                 PresetsPanel(model: model)

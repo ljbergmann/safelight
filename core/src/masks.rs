@@ -11,7 +11,7 @@
 use rawmakase_engine::develop::ViewMapping;
 use rawmakase_engine::develop::retouch::find_source;
 use rawmakase_model::camera_data::CameraImage;
-use rawmakase_model::model::masks::{BrushStroke, MaskComponent, MaskGroup, MaskShape};
+use rawmakase_model::model::masks::{BrushStroke, MaskComponent, MaskGroup, MaskOp, MaskShape};
 use rawmakase_model::model::params::LocalParameterId;
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::model::retouch::{RetouchMode, RetouchOp, RetouchShape};
@@ -25,6 +25,10 @@ pub struct MaskInfo {
     /// "Brush", "Linear Gradient", "Radial Gradient" or another kind.
     pub kind: String,
     pub hidden: bool,
+    /// The whole mask inverted.
+    pub invert: bool,
+    /// Its parts, in the order they combine.
+    pub components: Vec<ComponentInfo>,
 }
 
 /// What a new mask starts as.
@@ -35,6 +39,54 @@ pub enum NewMask {
     Linear,
     /// Centred on the first point, reaching the second.
     Radial,
+    /// The colour at the first point, as the photo is developed.
+    ColorRange,
+    /// The brightness around the first point's.
+    LuminanceRange,
+}
+
+/// How a component combines with the ones before it, as Lightroom's Add,
+/// Subtract and Intersect.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaskOperation {
+    Add,
+    Subtract,
+    Intersect,
+}
+
+impl MaskOperation {
+    fn op(self) -> MaskOp {
+        match self {
+            Self::Add => MaskOp::Add,
+            Self::Subtract => MaskOp::Subtract,
+            Self::Intersect => MaskOp::Intersect,
+        }
+    }
+
+    fn of(op: MaskOp) -> Self {
+        match op {
+            MaskOp::Add => Self::Add,
+            MaskOp::Subtract => Self::Subtract,
+            MaskOp::Intersect => Self::Intersect,
+        }
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Add => "Add",
+            Self::Subtract => "Subtract",
+            Self::Intersect => "Intersect",
+        }
+    }
+}
+
+/// One part of a mask, as the Masks panel lists it.
+#[derive(uniffi::Record)]
+pub struct ComponentInfo {
+    pub index: u32,
+    pub kind: String,
+    pub operation: MaskOperation,
+    pub invert: bool,
 }
 
 /// A brush dab path from the screen: points of the view (0–1), the brush
@@ -85,18 +137,134 @@ pub(crate) fn infos(r: &Recipe) -> Vec<MaskInfo> {
             kind: m
                 .components
                 .first()
-                .map_or("Empty", |c| match c.shape {
-                    MaskShape::Brush { .. } => "Brush",
-                    MaskShape::Linear { .. } => "Linear Gradient",
-                    MaskShape::Radial { .. } => "Radial Gradient",
-                    MaskShape::ColorRange { .. } => "Color Range",
-                    MaskShape::LuminanceRange { .. } => "Luminance Range",
-                    MaskShape::Bitmap(_) => "Selection",
-                })
+                .map_or("Empty", |c| kind(&c.shape))
                 .to_string(),
             hidden: m.hidden,
+            invert: m.invert,
+            components: m
+                .components
+                .iter()
+                .enumerate()
+                .map(|(i, c)| ComponentInfo {
+                    index: i as u32,
+                    kind: kind(&c.shape).into(),
+                    operation: MaskOperation::of(c.op),
+                    invert: c.invert,
+                })
+                .collect(),
         })
         .collect()
+}
+
+fn kind(shape: &MaskShape) -> &'static str {
+    match shape {
+        MaskShape::Brush { .. } => "Brush",
+        MaskShape::Linear { .. } => "Linear Gradient",
+        MaskShape::Radial { .. } => "Radial Gradient",
+        MaskShape::ColorRange { .. } => "Color Range",
+        MaskShape::LuminanceRange { .. } => "Luminance Range",
+        MaskShape::Bitmap(_) => "Selection",
+    }
+}
+
+/// The History step's value for a new mask or component of `kind`.
+pub(crate) fn new_name(kind: NewMask) -> &'static str {
+    match kind {
+        NewMask::Brush => "Brush",
+        NewMask::Linear => "Linear Gradient",
+        NewMask::Radial => "Radial Gradient",
+        NewMask::ColorRange => "Color Range",
+        NewMask::LuminanceRange => "Luminance Range",
+    }
+}
+
+/// The developed colour at view point `at`, in Oklab, as the desktop's range
+/// masks sample it: the photo without its masks or sharpening, averaged over
+/// 3 × 3 pixels. Mirrors `app::develop::tools::mask_tool::developed_lab`.
+fn developed_lab(image: &CameraImage, r: &Recipe, at: [f32; 2]) -> Option<[f32; 3]> {
+    let mut r = r.clone();
+    r.masks.clear();
+    r.sharpening = 0.;
+    let g = rawmakase_engine::develop::Geometry::new(image, &r, 0);
+    let (w, h) = (3.min(g.width), 3.min(g.height));
+    let (u, v) = (at[0].clamp(0., 1.), at[1].clamp(0., 1.));
+    let x = ((u * g.width as f32) as u32)
+        .saturating_sub(1)
+        .min(g.width - w);
+    let y = ((v * g.height as f32) as u32)
+        .saturating_sub(1)
+        .min(g.height - h);
+    let out =
+        rawmakase_engine::develop::render_region(image, &r.checked().ok()?, [x, y, w, h]).ok()?;
+    let n = out.pixels.len() as f32;
+    let mean = out
+        .pixels
+        .iter()
+        .fold([0.; 3], |s, p| std::array::from_fn(|c| s[c] + p[c] / n));
+    Some(rawmakase_engine::develop::masks::oklab(mean))
+}
+
+/// A shape of `kind` from two view points; `None` when a range mask's point
+/// can't be sampled.
+fn shape(
+    image: &CameraImage,
+    r: &Recipe,
+    kind: NewMask,
+    from: [f32; 2],
+    to: [f32; 2],
+) -> Option<MaskShape> {
+    let m = Mapper::new(image, r);
+    Some(match kind {
+        NewMask::Brush => MaskShape::Brush { strokes: vec![] },
+        NewMask::Linear => MaskShape::Linear {
+            from: m.point(from[0], from[1]),
+            to: m.point(to[0], to[1]),
+        },
+        NewMask::Radial => {
+            let c = m.point(from[0], from[1]);
+            let e = m.point(to[0], to[1]);
+            let rx = ((e[0] - c[0]) * m.aspect[0]).abs().max(0.01);
+            let ry = ((e[1] - c[1]) * m.aspect[1]).abs().max(0.01);
+            MaskShape::Radial {
+                center: c,
+                radii: [rx, ry],
+                angle: 0.,
+                feather: 0.5,
+            }
+        }
+        // As the desktop starts them.
+        NewMask::ColorRange => MaskShape::ColorRange {
+            samples: vec![developed_lab(image, r, from)?],
+            amount: 0.5,
+        },
+        NewMask::LuminanceRange => {
+            let l = developed_lab(image, r, from)?[0].clamp(0., 1.);
+            MaskShape::LuminanceRange {
+                low: (l - 0.1).max(0.),
+                high: (l + 0.1).min(1.),
+                falloff: [0.15, 0.15],
+            }
+        }
+    })
+}
+
+/// Adds a part of `kind` to mask `mask`, combined by `operation`; returns its
+/// index.
+pub(crate) fn add_component(
+    image: &CameraImage,
+    r: &mut Recipe,
+    mask: usize,
+    kind: NewMask,
+    operation: MaskOperation,
+    from: [f32; 2],
+    to: [f32; 2],
+) -> Option<u32> {
+    let shape = shape(image, r, kind, from, to)?;
+    let group = r.masks.get_mut(mask)?;
+    let mut component = MaskComponent::new(shape);
+    component.op = operation.op();
+    group.components.push(component);
+    Some((group.components.len() - 1) as u32)
 }
 
 /// Maps the view's points into image space, and sizes into fractions of the
@@ -138,32 +306,13 @@ pub(crate) fn new_mask(
     kind: NewMask,
     from: [f32; 2],
     to: [f32; 2],
-) -> u32 {
-    let m = Mapper::new(image, r);
-    let shape = match kind {
-        NewMask::Brush => MaskShape::Brush { strokes: vec![] },
-        NewMask::Linear => MaskShape::Linear {
-            from: m.point(from[0], from[1]),
-            to: m.point(to[0], to[1]),
-        },
-        NewMask::Radial => {
-            let c = m.point(from[0], from[1]);
-            let e = m.point(to[0], to[1]);
-            let rx = ((e[0] - c[0]) * m.aspect[0]).abs().max(0.01);
-            let ry = ((e[1] - c[1]) * m.aspect[1]).abs().max(0.01);
-            MaskShape::Radial {
-                center: c,
-                radii: [rx, ry],
-                angle: 0.,
-                feather: 0.5,
-            }
-        }
-    };
+) -> Option<u32> {
+    let shape = shape(image, r, kind, from, to)?;
     r.masks.push(MaskGroup {
         components: vec![MaskComponent::new(shape)],
         ..MaskGroup::default()
     });
-    (r.masks.len() - 1) as u32
+    Some((r.masks.len() - 1) as u32)
 }
 
 /// Adds a brush stroke to mask `index` (a brush mask).
@@ -181,10 +330,16 @@ pub(crate) fn add_stroke(
     let m = Mapper::new(image, r);
     let radius = m.length(first, stroke.radius, view_aspect).max(0.001);
     let mapped: Arc<[[f32; 2]]> = points.iter().map(|p| m.point(p[0], p[1])).collect();
+    // Into the mask's last brush part: the one added most recently.
     let Some(MaskShape::Brush { strokes }) = r
         .masks
         .get_mut(index)
-        .and_then(|g| g.components.first_mut())
+        .and_then(|g| {
+            g.components
+                .iter_mut()
+                .rev()
+                .find(|c| matches!(c.shape, MaskShape::Brush { .. }))
+        })
         .map(|c| &mut c.shape)
     else {
         return false;
@@ -258,15 +413,15 @@ mod tests {
         let mut r = Recipe::default();
         assert_eq!(
             new_mask(&image, &mut r, NewMask::Linear, [0.5, 0.2], [0.5, 0.8]),
-            0
+            Some(0)
         );
         assert_eq!(
             new_mask(&image, &mut r, NewMask::Radial, [0.5, 0.5], [0.7, 0.6]),
-            1
+            Some(1)
         );
         assert_eq!(
             new_mask(&image, &mut r, NewMask::Brush, [0., 0.], [0., 0.]),
-            2
+            Some(2)
         );
         r.validate().unwrap();
         let kinds: Vec<_> = infos(&r).into_iter().map(|m| m.kind).collect();
@@ -285,7 +440,7 @@ mod tests {
     fn a_stroke_lands_in_its_brush_mask() {
         let image = chart();
         let mut r = Recipe::default();
-        let i = new_mask(&image, &mut r, NewMask::Brush, [0., 0.], [0., 0.]) as usize;
+        let i = new_mask(&image, &mut r, NewMask::Brush, [0., 0.], [0., 0.]).unwrap() as usize;
         let stroke = Stroke {
             points: vec![0.2, 0.2, 0.3, 0.25, 0.4, 0.3],
             radius: 0.05,
@@ -328,6 +483,61 @@ mod tests {
             (r.masks[0].adjust.exposure, r.masks[1].adjust.exposure),
             (0., 0.8)
         );
+    }
+
+    #[test]
+    fn range_masks_and_parts_combine_as_in_lightroom() {
+        let image = chart();
+        let mut r = Recipe::default();
+        let color = new_mask(&image, &mut r, NewMask::ColorRange, [0.3, 0.3], [0., 0.]).unwrap();
+        let luminance =
+            new_mask(&image, &mut r, NewMask::LuminanceRange, [0.6, 0.6], [0., 0.]).unwrap();
+        let part = add_component(
+            &image,
+            &mut r,
+            color as usize,
+            NewMask::Radial,
+            MaskOperation::Intersect,
+            [0.5, 0.5],
+            [0.6, 0.6],
+        )
+        .unwrap();
+        r.validate().unwrap();
+        let listed = infos(&r);
+        assert_eq!(listed[luminance as usize].kind, "Luminance Range");
+        let parts = &listed[color as usize].components;
+        assert_eq!(parts.len(), 2);
+        assert_eq!(
+            (parts[part as usize].kind.as_str(), parts[part as usize].operation),
+            ("Radial Gradient", MaskOperation::Intersect)
+        );
+        let MaskShape::ColorRange { samples, .. } = &r.masks[0].components[0].shape else {
+            panic!()
+        };
+        assert!(samples[0].iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn range_and_amount_sliders_keep_the_mask_valid() {
+        use crate::controls::{Control, mask_sliders};
+        let image = chart();
+        let photo = rawmakase_model::camera_data::Metadata::default();
+        let mut r = Recipe::default();
+        let m = new_mask(&image, &mut r, NewMask::LuminanceRange, [0.5, 0.5], [0., 0.]).unwrap();
+        let labels: Vec<_> = mask_sliders(&r, &photo, m)
+            .into_iter()
+            .take(5)
+            .map(|s| s.label)
+            .collect();
+        assert_eq!(labels, ["Amount", "Low", "High", "Falloff Low", "Falloff High"]);
+        // Low past High takes High along.
+        Control::Range { mask: m, component: 0, which: 0 }.set(&mut r, &photo, 0.9).unwrap();
+        Control::MaskAmount { mask: m }.set(&mut r, &photo, 1.5).unwrap();
+        let MaskShape::LuminanceRange { low, high, .. } = r.masks[0].components[0].shape else {
+            panic!()
+        };
+        assert_eq!((low, high, r.masks[0].amount), (0.9, 0.9, 1.5));
+        r.validate().unwrap();
     }
 
     #[test]

@@ -25,14 +25,14 @@ pub use edit::{EditState, Orientation};
 mod live;
 mod masks;
 pub use library::{Added, CollectionInfo, Library, LibraryPhoto};
-pub use masks::{MaskInfo, NewMask, Stroke};
+pub use masks::{ComponentInfo, MaskInfo, MaskOperation, NewMask, Stroke};
 mod profile;
 pub use profile::ProfileInfo;
 mod render;
 mod transfer;
 mod wb;
 pub use wb::AutoKind;
-pub use live::{FrameStats, LiveView, Zoom};
+pub use live::{FrameStats, HistogramData, LiveView, Zoom};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
 pub use transfer::{CopyGroup, PresetInfo, copy_groups, import_presets, presets};
 

@@ -4,8 +4,11 @@ import UIKit
 /// What a touch on the photo does while a mask or retouch tool is open.
 enum PhotoTool: Equatable {
     case none
-    /// Draw a new gradient from the touch's start to its end.
+    /// Draw a new gradient from the touch's start to its end; for a range
+    /// mask, tap the colour or brightness to select.
     case newGradient(NewMask)
+    /// The same, as a part of the selected mask, combined by the operation.
+    case newPart(NewMask, MaskOperation)
     /// Paint into the selected brush mask.
     case brush
     /// Tap to place a Heal (or Clone) spot.
@@ -36,6 +39,19 @@ extension LiveModel {
         refresh()
     }
 
+    /// Adds a part to the selected mask: a brush part at once (then paint),
+    /// the others by dragging or tapping on the photo.
+    func addPart(_ kind: NewMask, _ operation: MaskOperation) {
+        guard let mask = selectedMask else { return }
+        if kind == .brush {
+            _ = live?.addMaskComponent(mask: mask, kind: .brush, operation: operation, from: [0, 0], to: [0, 0])
+            tool = .brush
+            refresh()
+        } else {
+            tool = .newPart(kind, operation)
+        }
+    }
+
     func deleteMask(_ index: UInt32) {
         live?.deleteMask(index: index)
         selectedMask = nil
@@ -57,17 +73,29 @@ struct MasksPanel: View {
                     Button("Brush", systemImage: "paintbrush.pointed") { model.addMask(.brush, from: [0, 0], to: [0, 0]) }
                     Button("Linear", systemImage: "rectangle.lefthalf.inset.filled") { model.tool = .newGradient(.linear) }
                     Button("Radial", systemImage: "circle.dashed") { model.tool = .newGradient(.radial) }
+                    Menu {
+                        Button("Color Range", systemImage: "eyedropper") { model.tool = .newGradient(.colorRange) }
+                        Button("Luminance Range", systemImage: "sun.max") { model.tool = .newGradient(.luminanceRange) }
+                    } label: {
+                        Label("Range", systemImage: "slider.horizontal.below.rectangle")
+                    }
                 }
                 .buttonStyle(.bordered).font(.callout)
                 SelectButtons(model: model)
-                if case .newGradient = model.tool {
+                switch model.tool {
+                case .newGradient(.colorRange), .newGradient(.luminanceRange),
+                     .newPart(.colorRange, _), .newPart(.luminanceRange, _):
+                    Text("Tap the colour or brightness to select.").font(.caption).foregroundStyle(.secondary)
+                case .newGradient, .newPart:
                     Text("Drag on the photo to place it.").font(.caption).foregroundStyle(.secondary)
+                default:
+                    EmptyView()
                 }
                 ForEach(model.edit?.masks ?? [], id: \.index) { mask in
                     HStack {
                         Button {
                             model.selectedMask = model.selectedMask == mask.index ? nil : mask.index
-                            model.tool = (model.selectedMask != nil && mask.kind == "Brush") ? .brush : .none
+                            model.tool = (model.selectedMask != nil && mask.components.contains { $0.kind == "Brush" }) ? .brush : .none
                         } label: {
                             Label("\(mask.name) · \(mask.kind)", systemImage: model.selectedMask == mask.index ? "largecircle.fill.circle" : "circle")
                         }
@@ -79,7 +107,8 @@ struct MasksPanel: View {
                     }
                     .font(.callout)
                 }
-                if let index = model.selectedMask, (model.edit?.masks.count ?? 0) > Int(index) {
+                if let index = model.selectedMask, let mask = model.edit?.masks.first(where: { $0.index == index }) {
+                    MaskParts(model: model, mask: mask)
                     if model.tool == .brush {
                         BrushSettings(model: model)
                     }
@@ -210,7 +239,15 @@ final class PaintView: UIView {
         let view = { (p: CGPoint) in model.viewPoint(p, in: self.photo) }
         switch model.tool {
         case .newGradient(let kind):
-            model.addMask(kind, from: view(first), to: view(last))
+            // A range mask samples where the touch ended.
+            let from = kind == .colorRange || kind == .luminanceRange ? view(last) : view(first)
+            model.addMask(kind, from: from, to: view(last))
+        case .newPart(let kind, let op):
+            guard let mask = model.selectedMask else { return }
+            let from = kind == .colorRange || kind == .luminanceRange ? view(last) : view(first)
+            _ = model.live?.addMaskComponent(mask: mask, kind: kind, operation: op, from: from, to: view(last))
+            model.tool = .none
+            model.refresh()
         case .brush:
             guard let index = model.selectedMask else { return }
             let pencil = pressures.filter { $0 >= 0 }
@@ -228,6 +265,62 @@ final class PaintView: UIView {
             model.refresh()
         case .none:
             break
+        }
+    }
+}
+
+/// The selected mask's parts: each with how it combines and Invert, Add,
+/// Subtract and Intersect to add one, and the whole mask's Invert.
+struct MaskParts: View {
+    let model: LiveModel
+    let mask: MaskInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SwiftUI.Toggle("Invert mask", isOn: Binding(
+                get: { mask.invert },
+                set: { model.live?.setMaskInvert(mask: mask.index, component: nil, invert: $0); model.refresh() }
+            ))
+            ForEach(mask.components, id: \.index) { part in
+                HStack {
+                    Text(part.index == 0 ? part.kind : "\(name(part.operation)) \(part.kind)")
+                    Spacer()
+                    Button {
+                        model.live?.setMaskInvert(mask: mask.index, component: part.index, invert: !part.invert)
+                        model.refresh()
+                    } label: {
+                        Image(systemName: part.invert ? "circle.lefthalf.filled.inverse" : "circle.lefthalf.filled")
+                    }
+                    if mask.components.count > 1 {
+                        Button(role: .destructive) {
+                            model.live?.deleteMaskComponent(mask: mask.index, component: part.index)
+                            model.refresh()
+                        } label: { Image(systemName: "minus.circle") }
+                    }
+                }
+                .font(.caption)
+            }
+            HStack {
+                ForEach([MaskOperation.add, .subtract, .intersect], id: \.self) { op in
+                    Menu(name(op)) {
+                        Button("Brush") { model.addPart(.brush, op) }
+                        Button("Linear Gradient") { model.addPart(.linear, op) }
+                        Button("Radial Gradient") { model.addPart(.radial, op) }
+                        Button("Color Range") { model.addPart(.colorRange, op) }
+                        Button("Luminance Range") { model.addPart(.luminanceRange, op) }
+                    }
+                }
+            }
+            .buttonStyle(.bordered).font(.caption)
+        }
+        .font(.callout)
+    }
+
+    private func name(_ op: MaskOperation) -> String {
+        switch op {
+        case .add: "Add"
+        case .subtract: "Subtract"
+        case .intersect: "Intersect"
         }
     }
 }

@@ -267,3 +267,58 @@ struct ProfileMenu: View {
         }
     }
 }
+
+/// The histogram of what the view shows, as on the desktop, with Lightroom's
+/// triangles: lit when shadows or highlights clip, tapped to show them on the
+/// photo (blue and red).
+struct HistogramPanel: View {
+    let model: LiveModel
+    @State private var showShadows = false
+    @State private var showHighlights = false
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            if let h = model.live?.histogram() {
+                ZStack(alignment: .top) {
+                    Canvas { context, size in
+                        let peak = max(1, ([h.red, h.green, h.blue].flatMap { $0.dropFirst().dropLast() }.max() ?? 1))
+                        for (bins, color) in [(h.red, Color.red), (h.green, Color.green), (h.blue, Color.blue)] {
+                            var path = Path()
+                            path.move(to: CGPoint(x: 0, y: size.height))
+                            for (i, n) in bins.enumerated() {
+                                let x = CGFloat(i) / 255 * size.width
+                                let y = size.height * (1 - min(1, CGFloat(n) / CGFloat(peak)))
+                                path.addLine(to: CGPoint(x: x, y: y))
+                            }
+                            path.addLine(to: CGPoint(x: size.width, y: size.height))
+                            context.fill(path, with: .color(color.opacity(0.45)))
+                        }
+                    }
+                    .blendMode(.plusLighter)
+                    .background(Color.black.opacity(0.85))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    HStack {
+                        triangle(lit: h.shadowsClipped, on: $showShadows, systemImage: "arrowtriangle.up.fill", color: .blue)
+                        Spacer()
+                        triangle(lit: h.highlightsClipped, on: $showHighlights, systemImage: "arrowtriangle.up.fill", color: .red)
+                    }
+                    .padding(4)
+                }
+                .frame(height: 90)
+            }
+        }
+        .onChange(of: showShadows) { model.live?.setClipping(shadows: showShadows, highlights: showHighlights) }
+        .onChange(of: showHighlights) { model.live?.setClipping(shadows: showShadows, highlights: showHighlights) }
+    }
+
+    private func triangle(lit: Bool, on: Binding<Bool>, systemImage: String, color: Color) -> some View {
+        Button { on.wrappedValue.toggle() } label: {
+            Image(systemName: systemImage)
+                .font(.caption)
+                .foregroundStyle(on.wrappedValue ? color : (lit ? .white : .gray))
+                .padding(4)
+                .background(on.wrappedValue ? Color.white.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 3))
+        }
+        .buttonStyle(.plain)
+    }
+}

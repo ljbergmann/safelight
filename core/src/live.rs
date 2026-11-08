@@ -22,7 +22,7 @@ use rawmakase_ai::ai_denoise::{Request as AiRequest, State as AiState};
 use rawmakase_engine::develop::{AiSource, Geometry, PreviewRenderer};
 use rawmakase_model::camera_data::{CameraImage, Decode};
 use rawmakase_model::model::recipe::Recipe;
-use rawmakase_model::rendered::ClipOverlay;
+use rawmakase_model::rendered::{ClipOverlay, Histogram};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -38,6 +38,8 @@ struct Requests {
     zoom: Zoom,
     /// The Crop tool is open: the photo is shown uncropped.
     cropping: bool,
+    /// Clipped shadows and highlights shown in blue and red.
+    clipping: ClipOverlay,
     /// A preset to apply, by id, once the photo is decoded.
     preset: Option<String>,
     /// The drawable's size in pixels.
@@ -64,6 +66,16 @@ struct OpenRequest {
     id: i64,
     path: PathBuf,
     decode: DecodeSize,
+}
+
+/// A frame's histogram, for drawing.
+#[derive(uniffi::Record)]
+pub struct HistogramData {
+    pub red: Vec<u32>,
+    pub green: Vec<u32>,
+    pub blue: Vec<u32>,
+    pub shadows_clipped: bool,
+    pub highlights_clipped: bool,
 }
 
 /// What the last frames cost, for the app to show.
@@ -111,6 +123,8 @@ struct Shared {
     image: Mutex<Option<Arc<CameraImage>>>,
     /// AI Denoise's request and result for the open photo.
     ai: Mutex<AiShown>,
+    /// The last frame's histogram.
+    histogram: Mutex<Histogram>,
 }
 
 /// AI Denoise for the decoded image on screen, as the desktop's Develop keeps
@@ -183,6 +197,7 @@ impl LiveView {
             edit: Mutex::new(None),
             image: Mutex::new(None),
             ai: Mutex::new(AiShown::default()),
+            histogram: Mutex::new(Histogram::EMPTY),
         });
         let worker_shared = shared.clone();
         let worker = std::thread::Builder::new()
@@ -301,17 +316,61 @@ impl LiveView {
     ) -> Option<u32> {
         let (from, to) = (point(&from)?, point(&to)?);
         self.with_image(|image, edit| {
-            let mut index = 0;
-            let name = match kind {
-                crate::masks::NewMask::Brush => "Brush",
-                crate::masks::NewMask::Linear => "Linear Gradient",
-                crate::masks::NewMask::Radial => "Radial Gradient",
-            };
-            edit.change("New Mask", name, |r| {
+            let mut index = None;
+            edit.change("New Mask", crate::masks::new_name(kind), |r| {
                 index = crate::masks::new_mask(image, r, kind, from, to)
             });
-            Some(index)
+            index
         })
+    }
+
+    /// Adds a part to mask `mask` (`from` and `to` as for [`Self::add_mask`]),
+    /// combined with the parts before it by `operation`: one History step.
+    /// Returns the part's index.
+    pub fn add_mask_component(
+        &self,
+        mask: u32,
+        kind: crate::masks::NewMask,
+        operation: crate::masks::MaskOperation,
+        from: Vec<f32>,
+        to: Vec<f32>,
+    ) -> Option<u32> {
+        let (from, to) = (point(&from)?, point(&to)?);
+        self.with_image(|image, edit| {
+            let mut index = None;
+            edit.change(operation.name(), crate::masks::new_name(kind), |r| {
+                index = crate::masks::add_component(image, r, mask as usize, kind, operation, from, to)
+            });
+            index
+        })
+    }
+
+    /// Inverts mask `mask`, or its part `component`: one History step.
+    pub fn set_mask_invert(&self, mask: u32, component: Option<u32>, invert: bool) {
+        self.edit_now("Invert Mask", |r| {
+            let group = r.masks.get_mut(mask as usize)?;
+            match component {
+                Some(c) => group.components.get_mut(c as usize)?.invert = invert,
+                None => group.invert = invert,
+            }
+            Some(())
+        });
+    }
+
+    /// Removes part `component` of mask `mask`; the last part takes the mask
+    /// with it. One History step.
+    pub fn delete_mask_component(&self, mask: u32, component: u32) {
+        self.edit_now("Delete Mask", |r| {
+            let group = r.masks.get_mut(mask as usize)?;
+            if component as usize >= group.components.len() {
+                return None;
+            }
+            group.components.remove(component as usize);
+            if group.components.is_empty() {
+                r.masks.remove(mask as usize);
+            }
+            Some(())
+        });
     }
 
     /// Paints a stroke into brush mask `index`: one History step.
@@ -405,6 +464,34 @@ impl LiveView {
         generated.discard_unless_in(edit.recipe());
         self.shared.request(|_| {});
         Ok(index.map(|i| i as u32))
+    }
+
+    /// The last frame's histogram: 256 counts per channel, and whether any
+    /// shadows or highlights clip.
+    pub fn histogram(&self) -> HistogramData {
+        let h = *self
+            .shared
+            .histogram
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        HistogramData {
+            red: h.bins[0].to_vec(),
+            green: h.bins[1].to_vec(),
+            blue: h.bins[2].to_vec(),
+            shadows_clipped: h.clipped.shadows.iter().any(|n| *n > 0),
+            highlights_clipped: h.clipped.highlights.iter().any(|n| *n > 0),
+        }
+    }
+
+    /// Shows clipped shadows (blue) and highlights (red) over the photo, as
+    /// the desktop's clipping warnings do.
+    pub fn set_clipping(&self, shadows: bool, highlights: bool) {
+        self.shared.request(|r| {
+            r.clipping = ClipOverlay {
+                shadows,
+                highlights,
+            }
+        });
     }
 
     /// Renders the photo again: after a model was installed, say, so AI
@@ -808,7 +895,7 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
     loop {
-        let (open, zoom, cropping, preset, size) = {
+        let (open, zoom, cropping, preset, size, clipping) = {
             let mut r = shared
                 .requests
                 .lock()
@@ -820,7 +907,7 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
                 return Ok(());
             }
             r.dirty = false;
-            (r.open.take(), r.zoom, r.cropping, r.preset.take(), r.size)
+            (r.open.take(), r.zoom, r.cropping, r.preset.take(), r.size, r.clipping)
         };
         screen.resize(size);
 
@@ -882,8 +969,12 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
         };
         let ai = ai_denoise(shared, p, &recipe);
         p.renderer.set_ai(ai);
-        match screen.show(p, &recipe, zoom) {
+        match screen.show(p, &recipe, zoom, clipping) {
             Ok(frame) => {
+                *shared
+                    .histogram
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = frame.histogram;
                 times.push_back(frame.render_ms);
                 if times.len() > 30 {
                     times.pop_front();
@@ -987,6 +1078,7 @@ struct Shown {
     zoom: Zoom,
     /// The straightened photo uncropped, as `oriented_width` × `oriented_height`.
     frame: [f32; 2],
+    histogram: Histogram,
 }
 
 /// The device, the surface on the layer, and the pass that draws a preview
@@ -1214,7 +1306,13 @@ impl Screen {
     /// Renders the photo for the drawable's size and draws it: the whole
     /// photo from the pyramid, or at 100% the region the view covers, as the
     /// desktop's Develop does.
-    fn show(&mut self, p: &mut Photo, recipe: &Recipe, zoom: Zoom) -> anyhow::Result<Shown> {
+    fn show(
+        &mut self,
+        p: &mut Photo,
+        recipe: &Recipe,
+        zoom: Zoom,
+        clipping: ClipOverlay,
+    ) -> anyhow::Result<Shown> {
         let t = Instant::now();
         let g = Geometry::new(&p.image, recipe, 0);
         let uncropped = Geometry::new(
@@ -1250,7 +1348,7 @@ impl Screen {
             } else {
                 Slot::Whole
             },
-            clipping: ClipOverlay::NONE,
+            clipping,
             monitor: None,
             navigator: None,
             thumbnail: None,
@@ -1273,9 +1371,12 @@ impl Screen {
         let render_ms = t.elapsed().as_secs_f64() * 1000.;
 
         let t = Instant::now();
-        let (texture, backend) = match out {
-            Output::Frame(frame) => (frame.texture, "GPU"),
-            Output::Pixels(pixels) => (self.upload_pixels(&pixels), "CPU"),
+        let (texture, backend, histogram) = match out {
+            Output::Frame(frame) => (frame.texture, "GPU", *frame.histogram),
+            Output::Pixels(pixels) => {
+                let histogram = pixels.histogram();
+                (self.upload_pixels(&pixels), "CPU", histogram)
+            }
         };
         let (width, height) = (texture.width(), texture.height());
         self.draw(Some((&texture, region.is_some())));
@@ -1288,6 +1389,7 @@ impl Screen {
             full: [g.width, g.height],
             zoom,
             frame: [uncropped.oriented_width, uncropped.oriented_height],
+            histogram,
         })
     }
 

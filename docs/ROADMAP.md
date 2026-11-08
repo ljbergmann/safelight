@@ -37,9 +37,9 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [x] Point curve, RGB and per channel, built-in curves
 - [x] Profile browser and Profile Amount
 - [ ] Importing profiles (DCP, XMP looks, `.cube`) from the Files app (M)
-- [ ] Histogram and clipping warnings (S–M)
-- [ ] Mask math (add, subtract, intersect, invert), mask invert and Amount,
-      Color and Luminance Range masks (M)
+- [x] Histogram and clipping warnings
+- [x] Mask math (add, subtract, intersect, invert), mask invert and Amount,
+      Color and Luminance Range masks
 - [ ] Editing a placed gradient with handles; showing the mask over the
       photo (M)
 - [ ] Saving presets, Update, Rename, Delete; Preset Amount; Snapshots (M)
