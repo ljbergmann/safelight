@@ -82,8 +82,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - **Retouch:** brushed spots, feather and opacity, moving or deleting a spot,
   Visualize Spots, Red Eye and Pet Eye
 - **Presets:** favorites and search, Paste from Previous
-- **View:** zoom levels between Fit and 100%, photo info overlay, Reference
-  View, camera thumbnail
+- **View:** photo info overlay, Reference View, camera thumbnail (zooming
+  to any scale between Fit and 100% is done)
 
 The desktop doesn't evaluate smart collections yet, and has no depth, object or people masks, no content-aware remove
 and no soft proofing, so they aren't gaps.

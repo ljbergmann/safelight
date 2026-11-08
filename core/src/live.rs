@@ -67,6 +67,13 @@ pub enum Zoom {
     /// photo given as fractions of its width and height. With a half-size
     /// decode, a pixel of the half-size image.
     Actual { center_x: f32, center_y: f32 },
+    /// Between Fit and 100%: `scale` screen pixels per photo pixel (below 1),
+    /// centred on a point of the developed photo as for `Actual`.
+    Scaled {
+        scale: f32,
+        center_x: f32,
+        center_y: f32,
+    },
 }
 
 struct OpenRequest {
@@ -1869,6 +1876,9 @@ struct BeforeKey {
 struct Side {
     texture: wgpu::Texture,
     actual: bool,
+    /// For a zoomed-out view, the whole photo at its scale: the point drawn
+    /// at the view's centre, as fractions of the texture.
+    center: Option<[f32; 2]>,
 }
 
 /// A side to draw: its texture, where it is laid out and the part of the
@@ -2183,8 +2193,41 @@ impl Screen {
         before: bool,
     ) -> anyhow::Result<(Side, Zoom, Histogram, &'static str)> {
         let g = Geometry::new(&p.image, recipe, 0);
+        let mut whole = None;
         let (region, zoom) = match zoom {
             Zoom::Fit => (None, Zoom::Fit),
+            // The whole photo at the scale, from the pyramid as the desktop's
+            // zoomed-out views are, drawn 1:1 around the centre, kept so the
+            // photo never leaves a gap where it is larger than the view.
+            Zoom::Scaled {
+                scale,
+                center_x,
+                center_y,
+            } => {
+                let scale = scale.clamp(0.01, 1.);
+                let (tw, th) = (g.width as f32 * scale, g.height as f32 * scale);
+                let keep = |c: f32, view: u32, size: f32| {
+                    let half = view as f32 / 2. / size;
+                    if half >= 0.5 {
+                        0.5
+                    } else {
+                        c.clamp(half, 1. - half)
+                    }
+                };
+                let center = [keep(center_x, width, tw), keep(center_y, height, th)];
+                whole = Some((
+                    (g.width.max(g.height) as f32 * scale).round().max(1.) as u32,
+                    center,
+                ));
+                (
+                    None,
+                    Zoom::Scaled {
+                        scale,
+                        center_x: center[0],
+                        center_y: center[1],
+                    },
+                )
+            }
             Zoom::Actual { center_x, center_y } => {
                 let w = width.min(g.width);
                 let h = height.min(g.height);
@@ -2215,10 +2258,10 @@ impl Screen {
             samples: false,
             drawn: Vec::new(),
         };
-        let max_edge = if region.is_some() {
-            0
-        } else {
-            width.max(height)
+        let max_edge = match (region, whole) {
+            (Some(_), _) => 0,
+            (None, Some((edge, _))) => edge,
+            (None, None) => width.max(height),
         };
         let out = p.renderer.render_to(
             &p.image,
@@ -2241,7 +2284,8 @@ impl Screen {
         };
         let side = Side {
             texture,
-            actual: region.is_some(),
+            actual: region.is_some() || whole.is_some(),
+            center: whole.map(|(_, c)| c),
         };
         Ok((side, zoom, histogram, backend))
     }
@@ -2330,7 +2374,12 @@ impl Screen {
                 } else {
                     (w / tw).min(h / th)
                 };
-                let size = [tw * scale / w, th * scale / h, 0., 0.];
+                let (sx, sy) = (tw * scale / w, th * scale / h);
+                // A zoomed-out view's centre point at the view's centre.
+                let offset = paint.side.center.map_or([0., 0.], |[cx, cy]| {
+                    [(1. - 2. * cx) * sx, (1. - 2. * cy) * sy]
+                });
+                let size = [sx, sy, offset[0], offset[1]];
                 self.queue.write_buffer(fit, 0, bytemuck::cast_slice(&size));
                 self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Live view blit"),

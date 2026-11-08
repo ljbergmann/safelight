@@ -5,7 +5,10 @@
 struct Fit {
     // The fitted image's size as a fraction of the surface's, per axis.
     scale: vec2<f32>,
-    _pad: vec2<f32>,
+    // Where its centre goes, in normalised device coordinates with y down
+    // as the image's rows run (flipped below): zero for an image centred in
+    // the surface.
+    offset: vec2<f32>,
 };
 
 @group(0) @binding(0) var source: texture_2d<f32>;
@@ -21,7 +24,7 @@ struct Varyings {
 @vertex
 fn vs(@builtin(vertex_index) index: u32) -> Varyings {
     let corner = vec2<f32>(f32(index & 1u), f32(index >> 1u));
-    let ndc = (corner * 2.0 - 1.0) * fit.scale;
+    let ndc = (corner * 2.0 - 1.0) * fit.scale + fit.offset;
     var out: Varyings;
     out.position = vec4<f32>(ndc.x, -ndc.y, 0.0, 1.0);
     out.uv = corner;

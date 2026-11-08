@@ -188,6 +188,20 @@ final class LiveModel {
             return (Float(min(max((x - left) / (fw * s), 0), 1)), Float(min(max((y - top) / (fh * s), 0), 1)))
         case .actual(let cx, let cy):
             return (cx + Float((x - w / 2) / fw), cy + Float((y - h / 2) / fh))
+        case .scaled(let z, let cx, let cy):
+            let z = CGFloat(z)
+            return (cx + Float((x - w / 2) / (fw * z)), cy + Float((y - h / 2) / (fh * z)))
+        }
+    }
+
+    /// Screen pixels per photo pixel now: Fit's, 1 at 100%, or the zoom's.
+    func zoomScale(in size: CGSize, scale: CGFloat) -> CGFloat? {
+        guard let stats = live?.stats(), stats.fullWidth > 0 else { return nil }
+        let fit = min(size.width * scale / CGFloat(stats.fullWidth), size.height * scale / CGFloat(stats.fullHeight))
+        switch zoom {
+        case .fit: return fit
+        case .actual: return 1
+        case .scaled(let z, _, _): return CGFloat(z)
         }
     }
 
@@ -201,21 +215,23 @@ final class LiveModel {
         }
     }
 
-    /// Ends a pinch: in from Fit to 100% around its anchor, or out to Fit.
+    /// Ends a pinch at the scale it reached, between Fit and 100%, centred
+    /// on its anchor: past either end it settles there.
     func endPinch(in size: CGSize, scale: CGFloat) {
-        guard !cropping && tool == .none else { pinch = 1; return }
+        defer { pinch = 1 }
+        guard !cropping && tool == .none, let stats = live?.stats(), stats.fullWidth > 0,
+              let now = zoomScale(in: size, scale: scale) else { return }
+        let fit = min(size.width * scale / CGFloat(stats.fullWidth), size.height * scale / CGFloat(stats.fullHeight))
+        let target = now * pinch
         let anchor = CGPoint(x: pinchAnchor.x * size.width, y: pinchAnchor.y * size.height)
-        switch zoom {
-        case .fit where pinch > 1.25:
-            if let (x, y) = photoPoint(at: anchor, in: size, scale: scale) {
-                zoom = .actual(centerX: x, centerY: y)
-            }
-        case .actual where pinch < 0.8:
-            zoom = .fit
-        default:
-            break
+        guard let (x, y) = photoPoint(at: anchor, in: size, scale: scale) else { return }
+        if target <= fit * 1.02 || fit >= 1 {
+            zoom = target >= 1 ? .actual(centerX: x, centerY: y) : .fit
+        } else if target >= 0.98 {
+            zoom = .actual(centerX: x, centerY: y)
+        } else {
+            zoom = .scaled(scale: Float(target), centerX: x, centerY: y)
         }
-        pinch = 1
     }
 
     /// A swipe across the photo at Fit, with no tool open: the previous or
@@ -226,21 +242,34 @@ final class LiveModel {
         onSwipe?(translation.width < 0 ? 1 : -1)
     }
 
-    /// Pans at 100% by `translation` points from where the drag started.
+    /// Pans a zoomed view by `translation` points from where the drag started.
     func drag(by translation: CGSize, scale: CGFloat) {
-        guard !cropping && tool == .none else { return }
-        guard case .actual(let cx, let cy) = zoom, let stats = live?.stats(), stats.fullWidth > 0 else { return }
+        guard !cropping && tool == .none, let stats = live?.stats(), stats.fullWidth > 0 else { return }
+        let (cx, cy, z): (Float, Float, CGFloat)
+        switch zoom {
+        case .fit: return
+        case .actual(let x, let y): (cx, cy, z) = (x, y, 1)
+        case .scaled(let s, let x, let y): (cx, cy, z) = (x, y, CGFloat(s))
+        }
         if dragStart == nil { dragStart = (cx, cy) }
         let (sx, sy) = dragStart!
-        zoom = .actual(
-            centerX: sx - Float(translation.width * scale / CGFloat(stats.fullWidth)),
-            centerY: sy - Float(translation.height * scale / CGFloat(stats.fullHeight)))
+        let x = sx - Float(translation.width * scale / (CGFloat(stats.fullWidth) * z))
+        let y = sy - Float(translation.height * scale / (CGFloat(stats.fullHeight) * z))
+        if case .scaled(let s, _, _) = zoom {
+            zoom = .scaled(scale: s, centerX: x, centerY: y)
+        } else {
+            zoom = .actual(centerX: x, centerY: y)
+        }
     }
 
     /// Ends a drag on the centre the core kept inside the photo.
     func endDrag() {
         dragStart = nil
-        if let kept = live?.stats().zoom, case .actual = kept { zoom = kept }
+        switch live?.stats().zoom {
+        case .some(.actual(let x, let y)): if case .actual = zoom { zoom = .actual(centerX: x, centerY: y) }
+        case .some(.scaled(let s, let x, let y)): if case .scaled = zoom { zoom = .scaled(scale: s, centerX: x, centerY: y) }
+        default: break
+        }
     }
 }
 
@@ -661,7 +690,11 @@ struct LiveEditor: View {
         if s.loading { return "Opening and decoding…" }
         if s.frames == 0 { return "Choose a photo." }
         let memory = Memory.footprint()
-        let zoom = if case .actual = s.zoom { "100%" } else { "Fit" }
+        let zoom = switch s.zoom {
+        case .actual: "100%"
+        case .scaled(let z, _, _): "\(Int((z * 100).rounded()))%"
+        case .fit: "Fit"
+        }
         return """
         \(s.camera) · decode \(Int(s.decodeMs)) ms · \(zoom) · \(s.backend) \(s.width)×\(s.height) of \(s.fullWidth)×\(s.fullHeight) · frames \(s.frames)
         render \(Int(s.renderMs)) ms (mean of 30: \(Int(s.meanRenderMs)) ms) · draw \(String(format: "%.1f", s.presentMs)) ms · memory \(Memory.mb(memory.current)), peak \(Memory.mb(memory.peak)), available \(Memory.mb(Memory.available()))
