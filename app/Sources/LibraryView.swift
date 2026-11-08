@@ -370,39 +370,62 @@ struct EditorView: View {
     let model: LibraryModel
     @State private var live = LiveModel()
     @State private var saveFailed = false
+    /// The move to another photo a failed save held back; `nil`, leaving.
+    @State private var heldMove: Int?
+    /// The photo on screen: the one opened, then wherever a swipe went.
+    @State private var current: LibraryPhoto?
     @Environment(\.dismiss) private var dismiss
 
-    private var rating: Int32 { model.photos.first { $0.id == photo.id }?.rating ?? photo.rating }
-    private var flag: Int32 { model.photos.first { $0.id == photo.id }?.flag ?? photo.flag }
+    private var shown: LibraryPhoto { current ?? photo }
+    private var rating: Int32 { model.photos.first { $0.id == shown.id }?.rating ?? shown.rating }
+    private var flag: Int32 { model.photos.first { $0.id == shown.id }?.flag ?? shown.flag }
+    /// Where the photo is in the grid's order, as the grid's filters and sort
+    /// have it now.
+    private var position: (index: Int, count: Int)? {
+        let order = model.shown
+        return order.firstIndex { $0.id == shown.id }.map { ($0, order.count) }
+    }
 
     var body: some View {
         Group {
             if let library = model.library {
-                LiveEditor(photo: photo, library: library, model: live)
+                LiveEditor(photo: shown, library: library, model: live)
             }
         }
-        .navigationTitle(photo.filename)
+        .navigationTitle(shown.filename)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden()
+        .onAppear { live.onSwipe = { go(by: $0) } }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button("Library", systemImage: "chevron.backward") {
+                    heldMove = nil
                     if live.save() { dismiss() } else { saveFailed = true }
                 }
             }
+            ToolbarItem(placement: .navigation) {
+                HStack(spacing: 2) {
+                    Button("Previous Photo", systemImage: "chevron.left") { go(by: -1) }
+                        .disabled((position?.index ?? 0) == 0)
+                    if let position { Text("\(position.index + 1) of \(position.count)").font(.caption).monospacedDigit() }
+                    Button("Next Photo", systemImage: "chevron.right") { go(by: 1) }
+                        .disabled(position.map { $0.index + 1 >= $0.count } ?? true)
+                }
+                .labelStyle(.iconOnly)
+            }
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 2) {
-                    Button { model.setFlag(photo, to: flag == 1 ? 0 : 1) } label: {
+                    Button { model.setFlag(shown, to: flag == 1 ? 0 : 1) } label: {
                         Image(systemName: flag == 1 ? "flag.fill" : "flag")
                     }
-                    Button { model.setFlag(photo, to: flag == -1 ? 0 : -1) } label: {
+                    Button { model.setFlag(shown, to: flag == -1 ? 0 : -1) } label: {
                         Image(systemName: flag == -1 ? "xmark.circle.fill" : "xmark.circle")
                             .foregroundStyle(flag == -1 ? .red : .secondary)
                     }
                     Divider().frame(height: 20)
                     ForEach(1...5, id: \.self) { n in
                         Button {
-                            model.setRating(photo, to: rating == n ? 0 : Int32(n))
+                            model.setRating(shown, to: rating == n ? 0 : Int32(n))
                         } label: {
                             Image(systemName: n <= rating ? "star.fill" : "star")
                                 .foregroundStyle(n <= rating ? .yellow : .secondary)
@@ -411,10 +434,6 @@ struct EditorView: View {
                 }
             }
         }
-        // Leaving the app may be the last chance: iPadOS can end it in the
-        // background without asking. Resigning active comes first (the app
-        // switcher, a call), then the background; both save. The scene
-        // phase isn't passed on to this view inside the navigation stack.
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             live.save()
         }
@@ -422,10 +441,21 @@ struct EditorView: View {
             live.save()
         }
         .alert("The edit couldn't be saved", isPresented: $saveFailed) {
-            Button("Try Again") { if live.save() { dismiss() } else { saveFailed = true } }
+            Button("Try Again") {
+                if let by = heldMove { go(by: by) } else if live.save() { dismiss() } else { saveFailed = true }
+            }
             Button("Stay", role: .cancel) {}
         } message: {
             Text(live.edit?.saveError ?? "")
         }
+    }
+
+    /// Moves `by` photos along the grid's order, saving this one's edit
+    /// first: a failed save stays here and says so.
+    private func go(by: Int) {
+        guard let position, model.shown.indices.contains(position.index + by) else { return }
+        guard live.save() else { heldMove = by; saveFailed = true; return }
+        heldMove = nil
+        current = model.shown[position.index + by]
     }
 }

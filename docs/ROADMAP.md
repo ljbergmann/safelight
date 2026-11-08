@@ -54,7 +54,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [x] Import from the Photos library, RAW originals
 - [ ] Import a Lightroom Classic catalog (`.lrcat`) or a Lightroom cloud
       library, with edits (the desktop has both; M–L)
-- [ ] Loupe with swipe between photos, compare and survey views (M)
+- [x] Swipe between photos in the editor, in the grid's order
+- [ ] Compare and Survey views (M)
 - [ ] Sort orders, stacks, smart collections (M)
 - [ ] Metadata (title, caption, creator, copyright) and keywords (M)
 - [ ] Virtual copies (M)

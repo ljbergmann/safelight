@@ -63,15 +63,28 @@ final class LiveModel {
 
     private func open() {
         guard let live, let photo, let library else { return }
+        // What belonged to the last photo.
+        edit = nil
+        dragging = nil
+        cropping = false
+        tool = .none
+        selectedMask = nil
+        pasteNote = nil
         zoom = .fit
         live.setCompare(compare: compare)
         live.openPhoto(library: library, id: photo.id, path: photo.path, decode: size)
     }
 
-    /// Reads the edit back from the core.
+    /// Reads the edit back from the core: none while the core still holds
+    /// the last photo's.
     func refresh() {
-        edit = live?.editState()
+        let state = live?.editState()
+        edit = state?.photo == photo?.id ? state : nil
     }
+
+    /// Called with -1 or +1 when a swipe at Fit asks for the previous or
+    /// next photo.
+    var onSwipe: ((Int) -> Void)?
 
     func set(_ control: Control, to value: Float, done: Bool) {
         dragging = done ? nil : (control, value)
@@ -149,6 +162,14 @@ final class LiveModel {
         pinch = 1
     }
 
+    /// A swipe across the photo at Fit, with no tool open: the previous or
+    /// next photo, as Lightroom's loupe.
+    func swipe(by translation: CGSize) {
+        guard !cropping && tool == .none, case .fit = zoom, compare == .off || compare == .beforeOnly else { return }
+        guard abs(translation.width) > 80, abs(translation.width) > 2 * abs(translation.height) else { return }
+        onSwipe?(translation.width < 0 ? 1 : -1)
+    }
+
     /// Pans at 100% by `translation` points from where the drag started.
     func drag(by translation: CGSize, scale: CGFloat) {
         guard !cropping && tool == .none else { return }
@@ -200,7 +221,10 @@ struct LiveEditor: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 4)
                         .onChanged { value in model.drag(by: value.translation, scale: displayScale) }
-                        .onEnded { _ in model.endDrag() }
+                        .onEnded { value in
+                            model.endDrag()
+                            model.swipe(by: value.translation)
+                        }
                 )
                 .onTapGesture(count: 2) { location in
                     model.toggleZoom(at: location, in: geometry.size, scale: displayScale)
@@ -281,6 +305,7 @@ struct LiveEditor: View {
             model.library = library
             model.photo = photo
         }
+        .onChange(of: photo.id) { model.photo = photo }
     }
 
     /// Launch options for checking edits without touching the screen: once
@@ -292,6 +317,9 @@ struct LiveEditor: View {
             try? await Task.sleep(for: .milliseconds(100))
         }
         let args = ProcessInfo.processInfo.arguments
+        // The edit as opened: the tests below go back to it when they're
+        // done, as the app saves whatever is shown when it is ended.
+        let opened = model.edit?.applied ?? 0
         if let i = args.firstIndex(of: "-set-exposure"), i + 1 < args.count, let stops = Float(args[i + 1]) {
             model.set(.param(index: 2), to: stops, done: true)
         }
@@ -357,6 +385,12 @@ struct LiveEditor: View {
             await presetsAndSnapshotsTest(live)
             await beforeAfterTest(live)
         }
+        if args.contains("-develop-test") || args.contains("-mask-test") {
+            model.live?.goToStep(applied: opened)
+            model.refresh()
+            print("TESTS DONE: back to the edit as opened (\(opened) steps applied)")
+        }
+        if args.contains("-loupe-test") { await loupeTest() }
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)
         }
@@ -443,6 +477,25 @@ struct LiveEditor: View {
         let exposure = swapped?.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
         print("COMPARE \(views.joined(separator: "; ")); after Swap exposure \(exposure), last step \(swapped?.steps.last ?? ""), \((swapped?.steps.count ?? 0) - steps) new steps")
         live.goToStep(applied: UInt32(steps))
+    }
+
+    /// `-loupe-test`: swipes to the next photo and back, as a swipe at Fit
+    /// does, waiting each time for that photo's own edit. Prints `LOUPE …`.
+    private func loupeTest() async {
+        var visited: [String] = []
+        for by in [1, -1] {
+            let from = model.photo?.id
+            let start = ContinuousClock.now
+            model.onSwipe?(by)
+            for _ in 0..<200 {
+                model.refresh()
+                if model.photo?.id != from, model.edit?.photo == model.photo?.id { break }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            let ms = (ContinuousClock.now - start).components
+            visited.append("\(model.photo?.filename ?? "?") (edit of \(model.edit?.photo == model.photo?.id ? "it" : "another photo"), \(ms.seconds * 1000 + ms.attoseconds / 1_000_000_000_000_000) ms)")
+        }
+        print("LOUPE \(visited.joined(separator: " then "))")
     }
 
     /// `-ai-test`: installs any missing model, selects the subject and the

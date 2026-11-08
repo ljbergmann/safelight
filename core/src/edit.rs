@@ -23,6 +23,9 @@ use std::sync::Arc;
 /// The edit as the editor shows it.
 #[derive(uniffi::Record)]
 pub struct EditState {
+    /// The photo this is the edit of: while the next photo opens, the view
+    /// still holds the last one's.
+    pub photo: i64,
     /// Every panel's sliders and switches, in the desktop's order.
     pub sections: Vec<Section>,
     pub can_undo: bool,
@@ -466,6 +469,7 @@ impl OpenEdit {
     pub(crate) fn state(&self) -> EditState {
         let (steps, applied) = self.session.history().steps();
         EditState {
+            photo: self.id,
             sections: crate::controls::sections(self.session.recipe(), &self.metadata),
             can_undo: applied > 0,
             can_redo: applied < steps.len(),
@@ -578,6 +582,13 @@ pub(crate) mod tests {
 
     pub(crate) fn exposure(edit: &OpenEdit) -> f32 {
         slider(edit, "Exposure").value
+    }
+
+    #[test]
+    fn the_edit_state_names_its_photo() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        assert_eq!(open(&library, id, &path).state().photo, id);
     }
 
     #[test]

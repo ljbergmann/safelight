@@ -70,7 +70,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
   thumbnails; ratings, flags, colour labels,
   filters, collections and the Quick Collection.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
-  Amount; white balance presets and eyedropper; Auto; the point curve; Crop,
+  Amount; swiping to the next or previous photo; white balance presets and
+  eyedropper; Auto; the point curve; Crop,
   Straighten, Rotate and Flip; Undo, Redo and a History you can step back
   through; Snapshots; Before/After, side by side or split.
 - **Masks and retouching**: brush (with the Pencil's pressure), linear and
@@ -83,8 +84,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
   onto one photo or many.
 - **Export** to JPEG, TIFF or PNG, and the share sheet.
 
-What's missing compared with the desktop, and what comes next (a loupe,
-metadata, sync…), is in the
+What's missing compared with the desktop, and what comes next (Compare
+and Survey, metadata, sync…), is in the
 [roadmap](docs/ROADMAP.md). Measurements are in
 [MEASUREMENTS.md](MEASUREMENTS.md).
 
@@ -146,7 +147,8 @@ them after `--`):
 | `-open <file>` | Opens a photo of the catalog in the editor |
 | `-sweep`, `-pan` (with `-open`, optionally `-full`) | Measures live rendering while a slider moves, or at 100% while panning |
 | `-set-exposure <stops>`, `-save` | Edits and saves, to check edits survive a relaunch |
-| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets, snapshots and Before/After; masks and Heal; the AI models |
+| `-develop-test`, `-mask-test`, `-ai-test` | Exercise white balance, Auto, the curve, History, presets, snapshots and Before/After; masks and Heal; the AI models. The first two go back to the edit as opened, but their steps stay in History; use them on a copy of a photo |
+| `-loupe-test` (with `-open`) | Swipes to the next photo and back, waiting for each one's own edit |
 | `-export <file>` | Exports a photo at full size, timed |
 | `-benchmark`, `-allocprobe`, `-thumbnails`, `-rate <file> <stars>` | Rendering and memory measurements, thumbnails, ratings |
 

@@ -299,3 +299,21 @@ can't be chosen; the new ones start chosen.
 | `-import-screen-test`: the catalog's own photo folder listed as a card | M1 iPad Pro | `54 photos in 5 days, 0 new, 0 chosen; listed in 114 ms; thumbnail 171×256` |
 
 Not checked yet: the screen by hand, and a real card.
+
+## Swiping between photos (2026-11-08)
+
+In the editor, a swipe across the photo at Fit, or the ‹ › buttons, saves
+the edit and opens the previous or next photo in the grid's order (its
+filters and sort as they are). A failed save stays on the photo and says
+so. The core's edit state now says which photo it belongs to, so the panels
+show nothing of the last photo while the next one opens.
+
+| Check | Where | Result |
+| --- | --- | --- |
+| The edit state names its photo | Mac, core test | passes |
+| `-open 407A5994.CR3 -loupe-test` | M1 iPad Pro | `AITEST-407A5994.CR3 (edit of it, 966 ms) then 407A5994.CR3 (edit of it, 746 ms)`: half-size decode and edit loaded |
+
+- **Found on the iPad:** `-develop-test` and `-mask-test` left their steps
+  applied, and ending the app from the Mac saves what is shown, so the
+  tested photo kept the test's edit. Both now go back to the edit as
+  opened when they're done.
