@@ -676,6 +676,8 @@ struct SliderRow: View {
     let slider: SliderState
     let model: LiveModel
     var track: [Color] = []
+    /// Shown in place of the slider's own label ("Hue" for "Red Hue").
+    var label: String?
 
     /// The colours along a slider's track, where they say what it does:
     /// white balance's and saturation's, as Lightroom draws them.
@@ -694,7 +696,7 @@ struct SliderRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(slider.label).font(.callout).foregroundStyle(Theme.secondaryText)
+                Text(label ?? slider.label).font(.callout).foregroundStyle(Theme.secondaryText)
                 Spacer()
                 Text(slider.text).font(.callout.monospacedDigit())
             }

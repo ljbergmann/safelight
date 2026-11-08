@@ -275,6 +275,33 @@ impl LiveView {
         }
     }
 
+    /// Moves Color Grading wheel `region` (0 shadows, 1 midtones, 2
+    /// highlights, 3 global) to the color at `x`, `y`, in wheel radii from
+    /// its centre with y down; `done` ends the drag, one History step.
+    pub fn set_grade_wheel(&self, region: u32, x: f32, y: f32, done: bool) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_grade_wheel(region, Some([x, y]), done));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Takes Color Grading wheel `region`'s color off, hue and saturation,
+    /// as one History step: a double tap on the wheel.
+    pub fn reset_grade_wheel(&self, region: u32) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_grade_wheel(region, None, true));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// Opens or closes the Crop tool: while open, the photo is shown whole,
     /// straightened, for the crop to be drawn over it.
     pub fn set_cropping(&self, on: bool) {

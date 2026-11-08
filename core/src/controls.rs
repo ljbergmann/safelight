@@ -195,7 +195,7 @@ const BANDS: [&str; 8] = [
     "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
 ];
 const CHANNELS: [&str; 3] = ["Hue", "Saturation", "Luminance"];
-const REGIONS: [(&str, &str); 4] = [
+pub(crate) const REGIONS: [(&str, &str); 4] = [
     ("Shadows", "Shadow"),
     ("Midtones", "Midtone"),
     ("Highlights", "Highlight"),

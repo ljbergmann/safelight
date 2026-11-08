@@ -53,8 +53,6 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
       under, those already in the catalog marked, all new chosen to start,
       a day at a time, progress and Cancel
 - [x] Import from the Photos library, RAW originals
-- [ ] Import a Lightroom Classic catalog (`.lrcat`) or a Lightroom cloud
-      library, with edits (the desktop has both; M–L)
 - [x] Swipe between photos in the editor, in the grid's order
 - [x] Compare and Survey: a Select and a Candidate side by side, or the
       chosen photos at once, each with its flag and stars
@@ -73,8 +71,9 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
   Look, per-slider Auto, panel reset
 - **Tone Curve:** saved curves, the parametric graph with split points,
   Levels Black and White point, the targeted adjustment tool
-- **Color:** Point Color, targeted HSL and B&W, the mixer's All view,
-  grading wheels
+- **Color:** Point Color, targeted HSL and B&W, the mixer's All view, the
+  grading's 3-Way view (the Color Mixer by band and a wheel per region are
+  done)
 - **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
   Upright and Guided Upright, Constrain Crop, Calibration's process version
 - **Crop:** Auto Straighten and the ruler, overlays (thirds, golden ratio…),

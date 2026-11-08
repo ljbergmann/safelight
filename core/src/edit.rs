@@ -93,6 +93,9 @@ pub(crate) struct OpenEdit {
     /// The settings copied to Before ([`crate::compare`]); `None`, the
     /// photo's starting settings. Not saved, as in Lightroom.
     pub(crate) before: Option<Recipe>,
+    /// The Color Grading wheel being dragged, and its color when the drag
+    /// began, which History names the change from.
+    pub(crate) wheel: Option<(u32, rawmakase_model::model::grading::HueSat)>,
 }
 
 impl OpenEdit {
@@ -140,6 +143,7 @@ impl OpenEdit {
             session,
             amount: None,
             before: None,
+            wheel: None,
         })
     }
 
@@ -179,6 +183,55 @@ impl OpenEdit {
         self.session
             .change(Some(Step::new(name, value)), |r| *r = after);
         true
+    }
+
+    /// Moves Color Grading wheel `region` (shadows, midtones, highlights,
+    /// global) to the color at `offset`, in wheel radii from its centre with
+    /// y down, or with `None` back to no color, as one editor frame; `done` ends the drag, one History step
+    /// named as the desktop's wheel names it ("Shadow Hue & Saturation").
+    pub(crate) fn set_grade_wheel(
+        &mut self,
+        region: u32,
+        offset: Option<[f32; 2]>,
+        done: bool,
+    ) -> bool {
+        use rawmakase_model::model::grading::{HueSat, wheel_step};
+        let Some((_, word)) = crate::controls::REGIONS.get(region as usize) else {
+            return false;
+        };
+        fn grade(r: &mut Recipe, region: u32) -> &mut [f32; 3] {
+            if region == 3 {
+                &mut r.effects.global_grade
+            } else {
+                &mut r.grading[region as usize]
+            }
+        }
+        let before = HueSat::of(grade(&mut self.session.recipe().clone(), region));
+        let start = match self.wheel {
+            Some((r, start)) if r == region => start,
+            _ => before,
+        };
+        self.wheel = (!done).then_some((region, start));
+        // A double tap's reset, as the desktop's double click: no color and
+        // hue back to 0, not only the saturation.
+        let color = match offset {
+            None => HueSat::NEUTRAL,
+            Some(offset) => HueSat::at(offset, before.hue),
+        };
+        if color == before && done && start == before {
+            self.wheel = None;
+            return false;
+        }
+        let frame = self.session.begin();
+        color.store(grade(self.session.recipe_mut(), region));
+        let (name, value) = wheel_step(word, start, color);
+        self.session.name_next_step(Step::new(name, value));
+        let gesture = if done {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
     }
 
     /// Sets the crop as one editor frame; `done` ends the drag, which becomes
@@ -926,6 +979,55 @@ pub(crate) mod tests {
         assert_eq!(edit.state().steps, ["AI Denoise On"]);
         // Amount is its own section's slider, at the desktop's default.
         assert_eq!((amount.label.as_str(), amount.value), ("Amount", 0.5));
+    }
+
+    #[test]
+    fn a_grading_wheel_drag_is_one_step_named_by_what_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let steps = edit.state().steps.len();
+        // Straight up, then out past the rim: a quarter turn, full saturation.
+        edit.set_grade_wheel(0, Some([0., -0.3]), false);
+        edit.set_grade_wheel(0, Some([0., -0.6]), false);
+        edit.set_grade_wheel(0, Some([0., -1.4]), true);
+        assert_eq!(edit.recipe().grading[0][..2], [0.25, 1.]);
+        let state = edit.state();
+        assert_eq!(state.steps.len(), steps + 1, "one step for the drag");
+        assert!(
+            state
+                .steps
+                .last()
+                .unwrap()
+                .starts_with("Shadow Hue & Saturation")
+        );
+
+        // Out along the same hue changes saturation alone; Global is its own wheel.
+        edit.set_grade_wheel(3, Some([0., -0.5]), true);
+        edit.set_grade_wheel(3, Some([0., -0.2]), true);
+        assert_eq!(edit.recipe().effects.global_grade[..2], [0.25, 0.2]);
+        assert!(
+            edit.state()
+                .steps
+                .last()
+                .unwrap()
+                .starts_with("Global Saturation")
+        );
+        edit.step(-1);
+        assert_eq!(edit.recipe().effects.global_grade[1], 0.5);
+
+        // Reset takes hue and saturation off, keeping luminance; again, nothing.
+        edit.set(
+            Control::Grade {
+                region: 0,
+                channel: 2,
+            },
+            0.3,
+            true,
+        );
+        assert!(edit.set_grade_wheel(0, None, true));
+        assert_eq!(edit.recipe().grading[0], [0., 0., 0.3]);
+        assert!(!edit.set_grade_wheel(0, None, true));
     }
 
     #[test]

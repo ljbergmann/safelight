@@ -139,13 +139,24 @@ struct DevelopPanel: View {
 /// groups Light, Color, Effects, Detail and Optics, each folding.
 struct EditPane: View {
     let model: LiveModel
-    @State private var open: Set<String> = ["Light"]
+    // -color-mix and -grading open those panels, to look at.
+    @State private var open: Set<String> = ProcessInfo.processInfo.arguments.contains("-color-mix") ? ["Color"] : ["Light"]
+    /// Color Grading, opened over the groups as its own pane.
+    @State private var grading = ProcessInfo.processInfo.arguments.contains("-grading")
 
     static let groups = ["Light", "Color", "Effects", "Detail", "Optics"]
 
     var body: some View {
+        if grading {
+            ColorGradingPane(model: model) { grading = false }
+        } else {
+            groups
+        }
+    }
+
+    private var groups: some View {
         let sections = model.edit?.sections ?? []
-        VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Edit").font(.title3.weight(.semibold))
                 Spacer()
@@ -168,6 +179,7 @@ struct EditPane: View {
             ForEach(Self.groups, id: \.self) { name in
                 EditGroup(
                     name: name, sections: sections.filter { $0.group == name }, model: model,
+                    openGrading: { grading = true },
                     isOpen: Binding(
                         get: { open.contains(name) },
                         set: { if $0 { open.insert(name) } else { open.remove(name) } }))
@@ -232,9 +244,10 @@ struct EditGroup: View {
     let name: String
     let sections: [Section]
     let model: LiveModel
+    var openGrading: () -> Void = {}
     @Binding var isOpen: Bool
     /// The families opened from buttons ("Tone Curve", "Color Mixer"…).
-    @State private var shown: Set<String> = []
+    @State private var shown: Set<String> = ProcessInfo.processInfo.arguments.contains("-color-mix") ? ["Color Mixer"] : []
 
     private var main: Section? { sections.first { $0.title == name } ?? sections.first }
     private var rest: [Section] { sections.filter { $0.title != main?.title } }
@@ -291,6 +304,7 @@ struct EditGroup: View {
                     if name == "Color" {
                         ForEach(buttoned, id: \.self) { family in
                             Button {
+                                if family == "Color Grading" { openGrading(); return }
                                 withAnimation(.snappy(duration: 0.2)) {
                                     if shown.contains(family) { shown.remove(family) } else { shown.insert(family) }
                                 }
@@ -299,14 +313,22 @@ struct EditGroup: View {
                                     Image(systemName: Self.symbol(family))
                                     Text(family)
                                     Spacer()
-                                    Image(systemName: "chevron.down").rotationEffect(.degrees(shown.contains(family) ? 180 : 0))
+                                    Image(systemName: family == "Color Grading" ? "chevron.right" : "chevron.down")
+                                        .rotationEffect(.degrees(shown.contains(family) ? 180 : 0))
                                 }
                                 .padding(10)
                                 .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.plain)
                             .padding(.top, 4)
-                            if shown.contains(family) { subsections(family) }
+                            if shown.contains(family) {
+                                if family == "Color Mixer" {
+                                    ColorMixView(sections: rest.filter { Self.family($0.title) == family }, model: model)
+                                        .padding(.top, 6)
+                                } else {
+                                    subsections(family)
+                                }
+                            }
                         }
                     }
                     if buttoned.isEmpty {

@@ -77,7 +77,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
   and folders.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
   Amount; swiping to the next or previous photo; white balance presets and
-  eyedropper; Auto; the point curve; Crop,
+  eyedropper; Auto; the point curve; the Color Mixer a band at a time and
+  Color Grading's wheels; Crop,
   Straighten, Rotate and Flip; Undo, Redo, Reset and a History you can step
   back through or clear; Snapshots; Before/After, side by side or split.
 - **Masks and retouching**: brush (with the Pencil's pressure), linear and
@@ -90,8 +91,8 @@ out is [docs/PLAN.md](docs/PLAN.md).
   onto one photo or many.
 - **Export** to JPEG, TIFF or PNG, and the share sheet.
 
-What's missing compared with the desktop, and what comes next (a
-Lightroom catalog, sync…), is in the
+What's missing compared with the desktop, and what comes next (sync…), is
+in the
 [roadmap](docs/ROADMAP.md). Measurements are in
 [MEASUREMENTS.md](MEASUREMENTS.md).
 
@@ -153,6 +154,7 @@ them after `--`):
 | `-metadata-test` | Sets and reads back a title and a keyword on a test copy, with its camera info, then takes them off |
 | `-virtual-copy-test` | Makes a virtual copy of the test copy, renames it and removes it |
 | `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
+| `-color-mix`, `-grading` (with `-open`) | Opens the Color Mixer, or the Color Grading pane |
 | `-survey`, `-compare` | Opens Survey or Compare on four photos, passing over the test charts |
 | `-stack-test` | Stacks three photos of the test copy's folder, expands and unstacks them (`-keep` leaves the stack) |
 | `-photos-import-test` | Imports a copy of a catalog photo the way the Photos picker's originals come in; it must be found already there |
