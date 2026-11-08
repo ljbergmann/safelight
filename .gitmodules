@@ -1,0 +1,4 @@
+[submodule "vendor/rawmakase"]
+	path = vendor/rawmakase
+	url = https://github.com/ljbergmann/rawmakase.git
+	branch = ios/build-crates

@@ -18,14 +18,14 @@ path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
 uniffi = { version = "0.32", features = ["cli"] }
-# RAWmakase's crates from the fork checkout next to this repository
-# (branch ios/build-crates of ljbergmann/rawmakase).
-rawmakase-cancel = { path = "../../rawmakase-ios/crates/rawmakase-cancel" }
-rawmakase-decode = { path = "../../rawmakase-ios/crates/rawmakase-decode" }
-rawmakase-engine = { path = "../../rawmakase-ios/crates/rawmakase-engine" }
-rawmakase-interop = { path = "../../rawmakase-ios/crates/rawmakase-interop" }
-rawmakase-model = { path = "../../rawmakase-ios/crates/rawmakase-model" }
-rawmakase-protocol = { path = "../../rawmakase-ios/crates/rawmakase-protocol" }
+# RAWmakase's crates, from the fork's ios/build-crates branch, checked out
+# as the vendor/rawmakase submodule at the commit this repository pins.
+rawmakase-cancel = { path = "../vendor/rawmakase/crates/rawmakase-cancel" }
+rawmakase-decode = { path = "../vendor/rawmakase/crates/rawmakase-decode" }
+rawmakase-engine = { path = "../vendor/rawmakase/crates/rawmakase-engine" }
+rawmakase-interop = { path = "../vendor/rawmakase/crates/rawmakase-interop" }
+rawmakase-model = { path = "../vendor/rawmakase/crates/rawmakase-model" }
+rawmakase-protocol = { path = "../vendor/rawmakase/crates/rawmakase-protocol" }
 anyhow = "1"
 bytemuck = "1"
 pollster = "1"
