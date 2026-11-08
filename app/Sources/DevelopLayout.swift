@@ -287,7 +287,10 @@ struct EditGroup: View {
     var openGrading: () -> Void = {}
     @Binding var isOpen: Bool
     /// The families opened from buttons ("Tone Curve", "Color Mixer"…).
-    @State private var shown: Set<String> = ProcessInfo.processInfo.arguments.contains("-color-mix") ? ["Color Mixer"] : []
+    @State private var shown: Set<String> = {
+        let args = ProcessInfo.processInfo.arguments
+        return Set((args.contains("-color-mix") ? ["Color Mixer"] : []) + (args.contains("-tone-curve") ? ["Tone Curve"] : []))
+    }()
 
     private var main: Section? { sections.first { $0.title == name } ?? sections.first }
     private var rest: [Section] { sections.filter { $0.title != main?.title } }
@@ -409,8 +412,11 @@ struct EditGroup: View {
         ForEach(rest.filter { Self.family($0.title) == family }, id: \.title) { section in
             let view = section.title.components(separatedBy: " · ").dropFirst().first
             if let view { Text(view).font(.subheadline.weight(.semibold)).padding(.top, 8) }
-            if section.title == "Tone Curve" { PointCurveEditor(model: model) }
-            controls(section, skipping: [])
+            if section.title == "Tone Curve" {
+                ToneCurveView(model: model, section: section)
+            } else {
+                controls(section, skipping: [])
+            }
         }
     }
 

@@ -70,8 +70,6 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 
 - **Basic:** Treatment Auto, the HDR switch (HDR display is L), Fit Camera
   Look, per-slider Auto, panel reset
-- **Tone Curve:** saved curves, the parametric graph with split points,
-  Levels Black and White point (its targeted adjustment is done)
 - **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
   Upright and Guided Upright, Constrain Crop, Calibration's process version
 - **Masks:** brush Density and Auto Mask, refining a Subject with taps
