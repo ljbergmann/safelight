@@ -216,6 +216,21 @@ impl OpenEdit {
         Some(index as u32)
     }
 
+    /// A change made by dragging (a gradient's handle, say), as one editor
+    /// frame; `done` ends the drag, one History step named `name`.
+    pub(crate) fn drag(&mut self, name: &str, done: bool, change: impl FnOnce(&mut Recipe) -> bool) -> bool {
+        let frame = self.session.begin();
+        let changed = change(self.session.recipe_mut());
+        self.session.name_next_step(Step::new(name, ""));
+        let gesture = if done {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        self.session.finish(frame, gesture);
+        changed
+    }
+
     /// Removes point `index` of curve `channel` (not an end point): one
     /// History step.
     pub(crate) fn remove_curve_point(&mut self, channel: u32, index: u32) -> bool {

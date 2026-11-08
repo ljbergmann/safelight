@@ -40,8 +40,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [x] Histogram and clipping warnings
 - [x] Mask math (add, subtract, intersect, invert), mask invert and Amount,
       Color and Luminance Range masks
-- [ ] Editing a placed gradient with handles; showing the mask over the
-      photo (M)
+- [x] Editing a placed gradient with handles; showing the mask over the
+      photo (at Fit; not yet at 100%)
 - [ ] Saving presets, Update, Rename, Delete; Preset Amount; Snapshots (M)
 - [ ] Before/After: side by side, top and bottom, split (M–L)
 

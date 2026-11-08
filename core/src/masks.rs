@@ -9,6 +9,7 @@
 //! their source with the engine's [`find_source`], as the desktop's tool does.
 
 use rawmakase_engine::develop::ViewMapping;
+use rawmakase_engine::develop::masks::Space;
 use rawmakase_engine::develop::retouch::find_source;
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::masks::{BrushStroke, MaskComponent, MaskGroup, MaskOp, MaskShape};
@@ -265,6 +266,106 @@ pub(crate) fn add_component(
     component.op = operation.op();
     group.components.push(component);
     Some((group.components.len() - 1) as u32)
+}
+
+/// A placed gradient's handles, as view points (x, y, x, y…): a linear
+/// gradient's start, end and middle; a radial one's centre and its two radii.
+/// Mirrors the desktop's `app::develop::tools::mask_tool::handles`.
+pub(crate) fn handles(image: &CameraImage, r: &Recipe, mask: usize, component: usize) -> Vec<f32> {
+    let Some(shape) = r
+        .masks
+        .get(mask)
+        .and_then(|m| m.components.get(component))
+        .map(|c| &c.shape)
+    else {
+        return vec![];
+    };
+    let map = ViewMapping::new(image, r);
+    let space = Space::new(map.frame().aspect());
+    let view = |p: [f32; 2]| map.to_view(p);
+    let points: Vec<[f32; 2]> = match shape {
+        MaskShape::Linear { from, to } => vec![
+            view(*from),
+            view(*to),
+            view([(from[0] + to[0]) / 2., (from[1] + to[1]) / 2.]),
+        ],
+        MaskShape::Radial {
+            center,
+            radii,
+            angle,
+            ..
+        } => {
+            let c = space.to(*center);
+            let (s, co) = angle.to_radians().sin_cos();
+            let edge = |k: usize| {
+                let (x, y) = if k == 0 {
+                    (radii[0] * co, radii[0] * s)
+                } else {
+                    (-radii[1] * s, radii[1] * co)
+                };
+                view(space.from([c[0] + x, c[1] + y]))
+            };
+            vec![view(*center), edge(0), edge(1)]
+        }
+        _ => vec![],
+    };
+    points.into_iter().flatten().collect()
+}
+
+/// Moves handle `handle` (as [`handles`] orders them) of a placed gradient
+/// from view point `from` to `to`: an end moves alone, the middle or centre
+/// moves the whole gradient, and a radius follows the touch's distance and
+/// turns the ellipse. Mirrors the desktop's `mask_tool::move_handle`.
+pub(crate) fn move_handle(
+    image: &CameraImage,
+    r: &mut Recipe,
+    mask: usize,
+    component: usize,
+    handle: u32,
+    from: [f32; 2],
+    to: [f32; 2],
+) -> bool {
+    let map = ViewMapping::new(image, r);
+    let space = Space::new(map.frame().aspect());
+    let (start, at) = (map.to_image(from[0], from[1]), map.to_image(to[0], to[1]));
+    let delta = [at[0] - start[0], at[1] - start[1]];
+    let shift = |p: [f32; 2]| [p[0] + delta[0], p[1] + delta[1]];
+    let Some(shape) = r
+        .masks
+        .get_mut(mask)
+        .and_then(|m| m.components.get_mut(component))
+        .map(|c| &mut c.shape)
+    else {
+        return false;
+    };
+    match shape {
+        MaskShape::Linear { from, to } => match handle {
+            0 => *from = shift(*from),
+            1 => *to = shift(*to),
+            _ => {
+                *from = shift(*from);
+                *to = shift(*to);
+            }
+        },
+        MaskShape::Radial {
+            center,
+            radii,
+            angle,
+            ..
+        } => match handle {
+            k @ (1 | 2) => {
+                let k = k as usize - 1;
+                let (c, p) = (space.to(*center), space.to(at));
+                let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
+                radii[k] = dx.hypot(dy).max(0.005);
+                let turn = dy.atan2(dx).to_degrees() - if k == 0 { 0. } else { 90. };
+                *angle = (turn + 180.).rem_euclid(360.) - 180.;
+            }
+            _ => *center = shift(*center),
+        },
+        _ => return false,
+    }
+    true
 }
 
 /// Maps the view's points into image space, and sizes into fractions of the
@@ -537,6 +638,25 @@ mod tests {
             panic!()
         };
         assert_eq!((low, high, r.masks[0].amount), (0.9, 0.9, 1.5));
+        r.validate().unwrap();
+    }
+
+    #[test]
+    fn a_placed_gradient_moves_by_its_handles() {
+        let image = chart();
+        let mut r = Recipe::default();
+        let m = new_mask(&image, &mut r, NewMask::Radial, [0.5, 0.5], [0.6, 0.6]).unwrap() as usize;
+        let before = handles(&image, &r, m, 0);
+        assert_eq!(before.len(), 6);
+        assert!((before[0] - 0.5).abs() < 0.01 && (before[1] - 0.5).abs() < 0.01);
+        // The centre moves the ellipse; its handles follow.
+        assert!(move_handle(&image, &mut r, m, 0, 0, [0.5, 0.5], [0.4, 0.45]));
+        let after = handles(&image, &r, m, 0);
+        assert!((after[0] - 0.4).abs() < 0.01 && (after[1] - 0.45).abs() < 0.01, "{after:?}");
+        // A radius follows the touch.
+        assert!(move_handle(&image, &mut r, m, 0, 1, [after[2], after[3]], [0.7, 0.45]));
+        let MaskShape::Radial { radii, .. } = r.masks[m].components[0].shape else { panic!() };
+        assert!(radii[0] > 0.2, "{radii:?}");
         r.validate().unwrap();
     }
 

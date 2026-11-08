@@ -277,6 +277,7 @@ struct MaskParts: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            SwiftUI.Toggle("Show overlay", isOn: Bindable(model).showMaskOverlay)
             SwiftUI.Toggle("Invert mask", isOn: Binding(
                 get: { mask.invert },
                 set: { model.live?.setMaskInvert(mask: mask.index, component: nil, invert: $0); model.refresh() }
@@ -322,5 +323,100 @@ struct MaskParts: View {
         case .subtract: "Subtract"
         case .intersect: "Intersect"
         }
+    }
+}
+
+/// Over the photo while a mask is selected (at Fit): its coverage in red, and
+/// a placed gradient's handles, dragged to move or reshape it.
+struct MaskOnPhoto: View {
+    let model: LiveModel
+    let size: CGSize
+    @State private var overlay: UIImage?
+    @State private var last: [Float]?
+
+    var body: some View {
+        let rect = model.photoRect(in: size)
+        ZStack(alignment: .topLeading) {
+            if model.showMaskOverlay, let overlay {
+                Image(uiImage: overlay)
+                    .resizable()
+                    .frame(width: rect.width, height: rect.height)
+                    .offset(x: rect.minX, y: rect.minY)
+                    .allowsHitTesting(false)
+            }
+            if let mask = model.selectedMask {
+                ForEach(gradientParts(mask), id: \.self) { part in
+                    let points = model.live?.gradientHandles(mask: mask, component: part) ?? []
+                    ForEach(0..<points.count / 2, id: \.self) { h in
+                        let p = CGPoint(x: rect.minX + CGFloat(points[2 * h]) * rect.width,
+                                        y: rect.minY + CGFloat(points[2 * h + 1]) * rect.height)
+                        Circle()
+                            .fill(.white)
+                            .stroke(.black.opacity(0.5), lineWidth: 1)
+                            .frame(width: h == 0 ? 16 : 12, height: h == 0 ? 16 : 12)
+                            .padding(10)
+                            .contentShape(Circle())
+                            .position(p)
+                            .gesture(
+                                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                                    .onChanged { drag(mask, part, h, to: $0.location, in: rect, done: false) }
+                                    .onEnded { drag(mask, part, h, to: $0.location, in: rect, done: true) }
+                            )
+                    }
+                }
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .task(id: "\(model.selectedMask ?? 99)-\(model.edit?.applied ?? 0)-\(model.edit?.steps.count ?? 0)-\(model.showMaskOverlay)") {
+            await loadOverlay()
+        }
+    }
+
+    /// The parts of `mask` that are gradients, whose handles show.
+    private func gradientParts(_ mask: UInt32) -> [UInt32] {
+        let parts = model.edit?.masks.first { $0.index == mask }?.components ?? []
+        return parts.filter { $0.kind.hasSuffix("Gradient") }.map(\.index)
+    }
+
+    private func drag(_ mask: UInt32, _ part: UInt32, _ handle: Int, to location: CGPoint, in rect: CGRect, done: Bool) {
+        let at = model.viewPoint(location, in: rect)
+        let from = last ?? at
+        model.live?.dragGradientHandle(mask: mask, component: part, handle: UInt32(handle), from: from, to: at, done: done)
+        last = done ? nil : at
+        if done { model.refresh() }
+    }
+
+    private func loadOverlay() async {
+        guard model.showMaskOverlay, let live = model.live, let mask = model.selectedMask else {
+            overlay = nil
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(150))
+        if Task.isCancelled { return }
+        let made = await Task.detached { live.maskOverlay(index: mask, maxEdge: 640) }.value
+        guard let made, !Task.isCancelled else { return }
+        overlay = Self.image(made)
+    }
+
+    /// The coverage as a red image whose opacity is the mask's, at half
+    /// strength, as the desktop shows it.
+    private static func image(_ o: MaskOverlay) -> UIImage? {
+        let (w, h) = (Int(o.width), Int(o.height))
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        for i in 0..<(w * h) {
+            let a = UInt8(Int(o.alpha[i]) / 2)
+            // Premultiplied red.
+            rgba[4 * i] = UInt8(Int(a) * 230 / 255)
+            rgba[4 * i + 1] = UInt8(Int(a) * 40 / 255)
+            rgba[4 * i + 2] = UInt8(Int(a) * 40 / 255)
+            rgba[4 * i + 3] = a
+        }
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData),
+              let cg = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                               space: CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                               provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return nil }
+        return UIImage(cgImage: cg)
     }
 }

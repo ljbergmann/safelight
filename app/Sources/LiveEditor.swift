@@ -38,6 +38,8 @@ final class LiveModel {
     var selecting: AiSelection?
     /// An Auto estimate running.
     var autoRunning: AutoKind?
+    /// Show the selected mask in red over the photo, as Lightroom's overlay.
+    var showMaskOverlay = true
     var selectionError: String?
     /// The model whose download the install sheet offers.
     var offeredModel: AiModel?
@@ -197,6 +199,8 @@ struct LiveEditor: View {
                         CropOverlay(model: model, size: geometry.size)
                     } else if model.tool != .none {
                         PhotoToolOverlay(model: model, size: geometry.size)
+                    } else if model.selectedMask != nil, case .fit = model.zoom {
+                        MaskOnPhoto(model: model, size: geometry.size)
                     }
                 }
             }
@@ -322,6 +326,16 @@ struct LiveEditor: View {
                 live.setMaskInvert(mask: color, component: nil, invert: true)
             }
             _ = live.addMask(kind: .luminanceRange, from: [0.6, 0.6], to: [0.6, 0.6])
+            if let radial = live.addMask(kind: .radial, from: [0.5, 0.5], to: [0.6, 0.6]) {
+                let before = live.gradientHandles(mask: radial, component: 0)
+                live.dragGradientHandle(mask: radial, component: 0, handle: 0, from: [0.5, 0.5], to: [0.45, 0.5], done: false)
+                live.dragGradientHandle(mask: radial, component: 0, handle: 0, from: [0.45, 0.5], to: [0.4, 0.5], done: true)
+                let after = live.gradientHandles(mask: radial, component: 0)
+                let start = Date()
+                let overlay = await Task.detached { live.maskOverlay(index: radial, maxEdge: 640) }.value
+                let covered = overlay?.alpha.filter { $0 > 128 }.count ?? 0
+                print("GRADIENT centre \(before.prefix(2)) -> \(after.prefix(2)); last step \(live.editState()?.steps.last ?? ""); overlay \(overlay?.width ?? 0)x\(overlay?.height ?? 0), \(covered) px covered, \(Int(Date().timeIntervalSince(start) * 1000)) ms")
+            }
             let masks = live.editState()?.masks.map { "\($0.kind)[\($0.components.map { "\($0.operation) \($0.kind)" }.joined(separator: ", "))]\($0.invert ? " inverted" : "")" } ?? []
             print("MASKS2 \(masks); histogram \(h.green.reduce(0, +)) pixels (frames \(frames) then \(live.stats().frames)), clipped shadows \(h.shadowsClipped) highlights \(h.highlightsClipped); first mask sliders \(live.maskSliders(index: 0).prefix(3).map(\.label))")
         }

@@ -68,6 +68,15 @@ struct OpenRequest {
     decode: DecodeSize,
 }
 
+/// A mask's coverage, for drawing it over the photo.
+#[derive(uniffi::Record)]
+pub struct MaskOverlay {
+    pub width: u32,
+    pub height: u32,
+    /// One byte per pixel, row by row: 255 where the mask applies fully.
+    pub alpha: Vec<u8>,
+}
+
 /// A frame's histogram, for drawing.
 #[derive(uniffi::Record)]
 pub struct HistogramData {
@@ -343,6 +352,75 @@ impl LiveView {
             });
             index
         })
+    }
+
+    /// The handles of a placed gradient (part `component` of mask `mask`), as
+    /// view points x, y, x, y…: a linear gradient's start, end and middle, a
+    /// radial one's centre and radii. Empty for other parts.
+    pub fn gradient_handles(&self, mask: u32, component: u32) -> Vec<f32> {
+        self.with_image(|image, edit| {
+            Some(crate::masks::handles(image, edit.recipe(), mask as usize, component as usize))
+        })
+        .unwrap_or_default()
+    }
+
+    /// Drags handle `handle` of a placed gradient from view point `from` to
+    /// `to` (each frame of a drag moves from the last); `done` ends the drag,
+    /// one History step.
+    pub fn drag_gradient_handle(
+        &self,
+        mask: u32,
+        component: u32,
+        handle: u32,
+        from: Vec<f32>,
+        to: Vec<f32>,
+        done: bool,
+    ) {
+        let (Some(from), Some(to)) = (point(&from), point(&to)) else {
+            return;
+        };
+        self.with_image(|image, edit| {
+            edit.drag("Move Mask", done, |r| {
+                crate::masks::move_handle(image, r, mask as usize, component as usize, handle, from, to)
+            })
+            .then_some(())
+        });
+    }
+
+    /// Mask `index`'s coverage over the photo as shown (Fit, cropped), at
+    /// most `max_edge` pixels: one byte of opacity per pixel, for drawing the
+    /// mask overlay. Renders on the CPU, as the desktop's overlay does: call
+    /// it off the main thread.
+    pub fn mask_overlay(&self, index: u32, max_edge: u32) -> Option<MaskOverlay> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()?;
+        let recipe = self.shared.edit().as_ref()?.recipe().clone();
+        on_core_thread(move || {
+            let out = rawmakase_engine::develop::render(
+                &image,
+                &recipe.checked()?,
+                max_edge,
+                Cancel::NEVER,
+            )?;
+            let weights = rawmakase_engine::develop::masks::overlay_weights(
+                &image,
+                &recipe,
+                index as usize,
+                &out,
+                None,
+            );
+            Ok(weights.map(|w| MaskOverlay {
+                width: out.width,
+                height: out.height,
+                alpha: w.iter().map(|v| (v.clamp(0., 1.) * 255.).round() as u8).collect(),
+            }))
+        })
+        .ok()
+        .flatten()
     }
 
     /// Inverts mask `mask`, or its part `component`: one History step.
