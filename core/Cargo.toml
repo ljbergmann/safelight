@@ -27,6 +27,8 @@ rawmakase-interop = { path = "../../rawmakase-ios/crates/rawmakase-interop" }
 rawmakase-model = { path = "../../rawmakase-ios/crates/rawmakase-model" }
 rawmakase-protocol = { path = "../../rawmakase-ios/crates/rawmakase-protocol" }
 anyhow = "1"
+bytemuck = "1"
+pollster = "1"
 # The GPU renderer's backend: the desktop app turns Metal on through eframe;
 # without a backend wgpu has nothing to start. Same version as the engine's.
 wgpu = { version = "30", default-features = false, features = ["metal", "wgsl"] }

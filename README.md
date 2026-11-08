@@ -55,3 +55,7 @@ neither side reads installed profiles).
 - Stage 2: the app opens, decodes and renders RAWs from its Documents folder
   through the core, on the simulator and on an M1 iPad Pro, with the same
   pixels as the Mac. Timings and memory: [MEASUREMENTS.md](MEASUREMENTS.md).
+- Stage 3: the Rust core draws the preview straight into a `CAMetalLayer` in
+  SwiftUI; an Exposure slider re-renders it live at 60 fps on an M1 iPad Pro.
+  `-open <photo> -sweep [-full]` measures it (with `devicectl`, put the app's
+  arguments after `--`).

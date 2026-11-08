@@ -72,7 +72,7 @@ fn ms(since: Instant) -> f64 {
 /// from its own threads, whose 512 KB stacks the engine overflows (its tone
 /// curves are built on the stack); the desktop runs it on Rust threads
 /// (2 MB) and the command line on the main thread (8 MB), so take the larger.
-const STACK_BYTES: usize = 8 << 20;
+pub(crate) const STACK_BYTES: usize = 8 << 20;
 
 /// Runs `work` on a thread of its own with [`STACK_BYTES`] of stack, and
 /// waits for it. A panic comes back as an error rather than ending the app.

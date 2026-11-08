@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 import os
 
@@ -25,20 +24,6 @@ enum Documents {
             }
         }
         try data.write(to: url.appending(path: name))
-    }
-}
-
-/// RGBA bytes as an image.
-enum Pixels {
-    static func image(rgba: Data, width: Int, height: Int) -> CGImage {
-        let provider = CGDataProvider(data: rgba as CFData)!
-        return CGImage(
-            width: width, height: height,
-            bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
-            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
-        )!
     }
 }
 

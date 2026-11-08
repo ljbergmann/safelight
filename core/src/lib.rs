@@ -5,7 +5,9 @@
 
 uniffi::setup_scaffolding!();
 
+mod live;
 mod render;
+pub use live::{FrameStats, LiveView};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
 
 /// Where RAWmakase's crates put their files on this device.

@@ -50,3 +50,29 @@ device (0.2 s).
 - A one-off render isn't faster on the GPU, as it includes building the
   pyramid and uploading it; the GPU's gain is in re-rendering while a slider
   moves (Stage 3).
+
+## Stage 3: live Exposure in a Metal layer (2026-11-08)
+
+Same iPad, Release build, `-open <photo> -sweep [-full]`: Exposure set 240
+times over 4 s (−2 → +2 → −2, one value every 16 ms), the preview rendered by
+the engine on the GPU into its own texture and drawn into the view's
+`CAMetalLayer` at the layer's size (Fit, about 2028 px on the long edge).
+
+| Photo | Decode | Frames in 4 s | Mean render | Draw | Footprint while editing | Peak (decode) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Leica Q2 | half (0.35 s) | 241, 60 fps | 14 ms | 0.5 ms | 0.7 GB | 1.5 GB |
+| Leica Q2 | full (1.1 s) | 236, 59 fps | 14 ms | 0.6 ms | 2.1 GB | 4.6 GB |
+| Canon EOS R5 | half (0.54 s) | 241, 60 fps | 13 ms | 0.5 ms | 0.7 GB | 1.4 GB |
+| Canon EOS R5 | full (1.2 s) | 236, 59 fps | 13 ms | 0.4 ms | 2.0 GB | 4.5 GB |
+
+- Every slider value got its own frame: the sweep sends 60 values a second,
+  so 60 fps is the sweep's rate. At 13–14 ms a render the core could keep up
+  with about 70 a second, below the display's 120 Hz. Fit renders from the
+  pyramid level nearest the view's size, so a full-size decode costs memory
+  and decode time, not frame time.
+- Memory while editing settles at 0.7 GB (half) or 2 GB (full); the peak is
+  the decode itself, as in Stage 2.
+- In the simulator the device is created with the engine's limits clamped to
+  the adapter's, and the GPU path works there too (9 ms renders, on the Mac).
+- Not measured yet: the latency from finger to frame, and 100% views, which
+  render a region at full resolution and are the expensive case.
