@@ -11,7 +11,7 @@
 //! renders skips the values in between instead of queueing them.
 
 use crate::controls::{Control, Switch};
-use crate::edit::{EditState, OpenEdit};
+use crate::edit::{EditState, OpenEdit, Orientation};
 use crate::library::Library;
 use crate::render::{DecodeSize, RenderError, STACK_BYTES};
 use rawmakase_cancel::Cancel;
@@ -33,6 +33,8 @@ struct Requests {
     /// A photo of the catalog to open, replacing the current one.
     open: Option<OpenRequest>,
     zoom: Zoom,
+    /// The Crop tool is open: the photo is shown uncropped.
+    cropping: bool,
     /// The drawable's size in pixels.
     size: [u32; 2],
     /// Something changed since the last frame.
@@ -78,6 +80,10 @@ pub struct FrameStats {
     /// shows a pixel of.
     pub full_width: u32,
     pub full_height: u32,
+    /// The straightened photo's width and height before cropping, which the
+    /// crop's 0–1 coordinates span.
+    pub frame_width: f32,
+    pub frame_height: f32,
     /// The zoom the last frame showed, with its centre kept inside the photo.
     pub zoom: Zoom,
     /// The open photo, its camera and what opening and decoding it took.
@@ -196,6 +202,42 @@ impl LiveView {
         }
     }
 
+    /// Opens or closes the Crop tool: while open, the photo is shown whole,
+    /// straightened, for the crop to be drawn over it.
+    pub fn set_cropping(&self, on: bool) {
+        self.shared.request(|r| {
+            r.cropping = on;
+            r.zoom = Zoom::Fit;
+        });
+    }
+
+    /// Sets the crop, `[left, top, right, bottom]`; `done` ends the drag.
+    pub fn set_crop(&self, crop: Vec<f32>, done: bool) {
+        let Ok(crop) = <[f32; 4]>::try_from(crop) else {
+            return;
+        };
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.set_crop(crop, done));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Rotates or flips the photo as shown, as one History step.
+    pub fn orient(&self, orientation: Orientation) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.orient(orientation));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// Turns a panel or option on or off, as one History step.
     pub fn set_switch(&self, which: Switch, on: bool) {
         let changed = self
@@ -291,7 +333,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
     loop {
-        let (open, zoom, size) = {
+        let (open, zoom, cropping, size) = {
             let mut r = shared
                 .requests
                 .lock()
@@ -303,7 +345,7 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
                 return Ok(());
             }
             r.dirty = false;
-            (r.open.take(), r.zoom, r.size)
+            (r.open.take(), r.zoom, r.cropping, r.size)
         };
         screen.resize(size);
 
@@ -315,7 +357,15 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
 
         // The edit as it is now; changes made while this renders ask for the
         // next frame.
-        let recipe = shared.edit().as_ref().map(|e| e.recipe().clone());
+        let recipe = shared.edit().as_ref().map(|e| {
+            let mut r = e.recipe().clone();
+            if cropping {
+                // As the desktop's Crop tool: the whole straightened photo.
+                r.crop = [0., 0., 1., 1.];
+                r.constrain_crop = false;
+            }
+            r
+        });
         let (Some(p), Some(recipe)) = (photo.as_mut(), recipe) else {
             screen.clear();
             continue;
@@ -338,6 +388,8 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
                     s.full_width = frame.full[0];
                     s.full_height = frame.full[1];
                     s.zoom = frame.zoom;
+                    s.frame_width = frame.frame[0];
+                    s.frame_height = frame.frame[1];
                 });
             }
             Err(e) => shared.stats(|s| s.error = Some(format!("{e:#}"))),
@@ -406,6 +458,8 @@ struct Shown {
     height: u32,
     full: [u32; 2],
     zoom: Zoom,
+    /// The straightened photo uncropped, as `oriented_width` × `oriented_height`.
+    frame: [f32; 2],
 }
 
 /// The device, the surface on the layer, and the pass that draws a preview
@@ -634,6 +688,15 @@ impl Screen {
     fn show(&mut self, p: &mut Photo, recipe: &Recipe, zoom: Zoom) -> anyhow::Result<Shown> {
         let t = Instant::now();
         let g = Geometry::new(&p.image, recipe, 0);
+        let uncropped = Geometry::new(
+            &p.image,
+            &Recipe {
+                crop: [0., 0., 1., 1.],
+                constrain_crop: false,
+                ..recipe.clone()
+            },
+            0,
+        );
         let (region, zoom) = match zoom {
             Zoom::Fit => (None, Zoom::Fit),
             Zoom::Actual { center_x, center_y } => {
@@ -695,6 +758,7 @@ impl Screen {
             height,
             full: [g.width, g.height],
             zoom,
+            frame: [uncropped.oriented_width, uncropped.oriented_height],
         })
     }
 

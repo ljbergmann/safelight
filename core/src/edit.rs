@@ -30,10 +30,31 @@ pub struct EditState {
     /// History, oldest first, as "Exposure +0.35"; `applied` of them are applied.
     pub steps: Vec<String>,
     pub applied: u32,
+    /// The crop, `[left, top, right, bottom]` as fractions of the photo as
+    /// shown, straightened (docs/transform.md in RAWmakase).
+    pub crop: Vec<f32>,
     /// Changes not saved to the catalog yet.
     pub needs_save: bool,
     /// Why the last save failed; the edit stays unsaved.
     pub save_error: Option<String>,
+}
+
+/// Rotate and Flip.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Orientation {
+    RotateLeft,
+    RotateRight,
+    FlipHorizontal,
+    FlipVertical,
+}
+
+/// A span narrower than the crop's 0.01 minimum, widened about its centre
+/// and kept within 0..1: a little over 0.01, as exactly 0.01 can come out
+/// a rounding error under it.
+fn clamp_span(a: f32, b: f32) -> (f32, f32) {
+    const HALF: f32 = 0.00505;
+    let centre = ((a + b) / 2.).clamp(HALF, 1. - HALF);
+    (centre - HALF, centre + HALF)
 }
 
 /// The open photo's edit: which photo, what it is, and its session.
@@ -124,6 +145,49 @@ impl OpenEdit {
         true
     }
 
+    /// Sets the crop as one editor frame; `done` ends the drag, which becomes
+    /// one History step ("Crop"). Kept within the photo and at least 0.01 of
+    /// it each way, as `Recipe::validate` asks.
+    pub(crate) fn set_crop(&mut self, crop: [f32; 4], done: bool) -> bool {
+        let [mut l, mut t, mut r, mut b] = crop.map(|v| v.clamp(0., 1.));
+        if r - l < 0.01 {
+            (l, r) = clamp_span(l, r);
+        }
+        if b - t < 0.01 {
+            (t, b) = clamp_span(t, b);
+        }
+        let frame = self.session.begin();
+        self.session.recipe_mut().crop = [l, t, r, b];
+        self.session.name_next_step(Step::new("Crop", ""));
+        let gesture = if done {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+    }
+
+    /// Rotates or flips the photo as shown, keeping the crop on the same part
+    /// of it, as the desktop's Rotate and Flip do: one History step.
+    pub(crate) fn orient(&mut self, orientation: Orientation) -> bool {
+        use rawmakase_engine::develop::{Mirror, QuarterTurn, mirror, turn};
+        self.session.finish_gesture();
+        let name = match orientation {
+            Orientation::RotateLeft => "Rotate Left",
+            Orientation::RotateRight => "Rotate Right",
+            Orientation::FlipHorizontal => "Flip Horizontal",
+            Orientation::FlipVertical => "Flip Vertical",
+        };
+        self.session
+            .change(Some(Step::new(name, "")), |r| match orientation {
+                Orientation::RotateLeft => turn(r, QuarterTurn::Left),
+                Orientation::RotateRight => turn(r, QuarterTurn::Right),
+                Orientation::FlipHorizontal => mirror(r, Mirror::Horizontal),
+                Orientation::FlipVertical => mirror(r, Mirror::Vertical),
+            });
+        true
+    }
+
     /// Moves History one step back (`by` −1) or forward (+1).
     pub(crate) fn step(&mut self, by: i32) -> bool {
         self.session.finish_gesture();
@@ -145,6 +209,7 @@ impl OpenEdit {
                 .map(|s| format!("{} {}", s.name, s.value).trim().to_string())
                 .collect(),
             applied: applied as u32,
+            crop: self.session.recipe().crop.to_vec(),
             needs_save: self.session.save_state().needs_save(),
             save_error: self.session.save_state().message().map(str::to_string),
         }
@@ -326,6 +391,33 @@ mod tests {
         assert!(!titles.iter().any(|t| t.starts_with("Color Mixer")));
         // Setting it as it is changes nothing.
         assert!(!edit.switch(Switch::Monochrome, true));
+    }
+
+    #[test]
+    fn a_crop_drag_is_one_step_and_stays_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        edit.set_crop([0.1, 0.1, 0.9, 0.9], false);
+        edit.set_crop([0.2, 0.15, 0.8, 0.85], true);
+        assert_eq!(edit.state().steps, ["Crop"]);
+        assert_eq!(edit.recipe().crop, [0.2, 0.15, 0.8, 0.85]);
+        // Outside the photo, or too small: kept valid.
+        edit.set_crop([-0.5, 0.5, 0.5, 0.5], true);
+        edit.recipe().validate().unwrap();
+    }
+
+    #[test]
+    fn rotating_keeps_the_crop_on_the_same_part_of_the_photo() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        edit.set_crop([0., 0., 0.5, 0.5], true);
+        edit.orient(Orientation::RotateRight);
+        assert_eq!(edit.recipe().rotation, 1);
+        // The top-left quarter, turned clockwise, is the top-right one.
+        assert_eq!(edit.recipe().crop, [0.5, 0., 1., 0.5]);
+        assert_eq!(edit.state().steps.last().unwrap(), "Rotate Right");
     }
 
     #[test]

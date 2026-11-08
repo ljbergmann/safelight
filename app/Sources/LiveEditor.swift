@@ -14,6 +14,11 @@ final class LiveModel {
     /// A slider being dragged, and its value: shown instead of the core's
     /// until the drag ends.
     var dragging: (Control, Float)?
+    /// The Crop tool is open; zoom and pan wait while it is.
+    var cropping = false { didSet { live?.setCropping(on: cropping); zoom = .fit } }
+    var cropAspect: CropAspect = .free
+    /// The chosen ratio turned to portrait (the crop bar's Swap).
+    var cropPortrait = false
     /// Fit, or 100% around a centre in fractions of the developed photo.
     var zoom: Zoom = .fit { didSet { live?.setZoom(zoom: zoom) } }
     /// A pinch in progress, shown by scaling the last frame until it ends.
@@ -82,6 +87,7 @@ final class LiveModel {
 
     /// Fit ↔ 100% at `location`.
     func toggleZoom(at location: CGPoint, in size: CGSize, scale: CGFloat) {
+        guard !cropping else { return }
         if case .fit = zoom, let (x, y) = photoPoint(at: location, in: size, scale: scale) {
             zoom = .actual(centerX: x, centerY: y)
         } else {
@@ -91,6 +97,7 @@ final class LiveModel {
 
     /// Ends a pinch: in from Fit to 100% around its anchor, or out to Fit.
     func endPinch(in size: CGSize, scale: CGFloat) {
+        guard !cropping else { pinch = 1; return }
         let anchor = CGPoint(x: pinchAnchor.x * size.width, y: pinchAnchor.y * size.height)
         switch zoom {
         case .fit where pinch > 1.25:
@@ -107,6 +114,7 @@ final class LiveModel {
 
     /// Pans at 100% by `translation` points from where the drag started.
     func drag(by translation: CGSize, scale: CGFloat) {
+        guard !cropping else { return }
         guard case .actual(let cx, let cy) = zoom, let stats = live?.stats(), stats.fullWidth > 0 else { return }
         if dragStart == nil { dragStart = (cx, cy) }
         let (sx, sy) = dragStart!
@@ -160,25 +168,34 @@ struct LiveEditor: View {
                 .onTapGesture(count: 2) { location in
                     model.toggleZoom(at: location, in: geometry.size, scale: displayScale)
                 }
+                .overlay {
+                    if model.cropping { CropOverlay(model: model, size: geometry.size) }
+                }
             }
             .background(Color(white: 0.11))
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            HStack(spacing: 16) {
+            if model.cropping { CropBar(model: model) }
+
+            HStack(spacing: 18) {
+                Button("Crop", systemImage: "crop") { model.cropping.toggle() }
+                    .foregroundStyle(model.cropping ? Color.accentColor : .primary)
                 Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
                     .disabled(!(model.edit?.canUndo ?? false))
                 Button("Redo", systemImage: "arrow.uturn.forward") { model.redo() }
                     .disabled(!(model.edit?.canRedo ?? false))
-                Text(historyText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 saveStatus
                 Picker("Decode", selection: Bindable(model).size) {
-                    Text("Half").tag(DecodeSize.half)
-                    Text("Full").tag(DecodeSize.full)
+                    Text("Half size").tag(DecodeSize.half)
+                    Text("Full size").tag(DecodeSize.full)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 140)
+                .pickerStyle(.menu)
             }
+            .labelStyle(.iconOnly)
+            .font(.title3)
+            Text(historyText).font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
                 // Picks up the edit once it has loaded.
@@ -230,11 +247,11 @@ struct LiveEditor: View {
     @ViewBuilder private var saveStatus: some View {
         if let error = model.edit?.saveError {
             Label("Not saved: \(error)", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.red).font(.caption).lineLimit(1)
+                .labelStyle(.titleAndIcon).foregroundStyle(.red).font(.caption).lineLimit(1)
         } else if model.edit?.needsSave ?? false {
-            Label("Unsaved", systemImage: "circle.dotted").font(.caption).foregroundStyle(.secondary)
+            Label("Unsaved", systemImage: "circle.dotted").labelStyle(.titleAndIcon).font(.caption).foregroundStyle(.secondary)
         } else if model.edit != nil {
-            Label("Saved", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
+            Label("Saved", systemImage: "checkmark.circle").labelStyle(.titleAndIcon).font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -323,7 +340,7 @@ extension LiveEditor {
 extension FrameStats {
     static let empty = FrameStats(
         frames: 0, renderMs: 0, presentMs: 0, meanRenderMs: 0, backend: "", width: 0, height: 0,
-        fullWidth: 0, fullHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
+        fullWidth: 0, fullHeight: 0, frameWidth: 0, frameHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
 }
 
 /// Every Develop panel the core describes, in the desktop's order: each a

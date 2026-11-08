@@ -13,7 +13,7 @@ mod controls;
 mod edit;
 pub use controls::{Control, Section, SliderState, Switch, SwitchState};
 mod library;
-pub use edit::EditState;
+pub use edit::{EditState, Orientation};
 mod live;
 pub use library::{Added, Library, LibraryPhoto};
 mod render;

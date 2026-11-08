@@ -75,7 +75,7 @@ pub struct Section {
 
 /// The develop parameters the panels show, in one list so a [`Control`] can
 /// name one by index.
-pub const PARAMS: [ParameterId; 56] = [
+pub const PARAMS: [ParameterId; 57] = [
     // Basic
     ParameterId::Temperature,
     ParameterId::Tint,
@@ -140,6 +140,8 @@ pub const PARAMS: [ParameterId; 56] = [
     ParameterId::GreenPrimarySaturation,
     ParameterId::BluePrimaryHue,
     ParameterId::BluePrimarySaturation,
+    // Crop & Straighten (appended, so the indices above stay as they are)
+    ParameterId::Straighten,
 ];
 
 const BANDS: [&str; 8] = [
@@ -437,6 +439,7 @@ fn params(ids: &[ParameterId]) -> Vec<Control> {
 pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
     use ParameterId as P;
     let mut layout: Vec<(String, Vec<Switch>, Vec<Control>)> = vec![
+        ("Crop & Straighten".into(), vec![], params(&[P::Straighten])),
         (
             "Basic".into(),
             vec![Switch::Monochrome],
