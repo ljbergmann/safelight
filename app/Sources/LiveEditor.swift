@@ -256,6 +256,12 @@ struct LiveEditor: View {
             }
             .background(Theme.canvas)
             .overlay(alignment: .bottomLeading) { status.padding(12) }
+            .overlay(alignment: .topLeading) {
+                // Over the photo's corner, as Lightroom shows it while editing.
+                if model.pane == .edit && model.compare == .off {
+                    HistogramPanel(model: model).frame(width: 230).padding(12)
+                }
+            }
             DevelopPanel(model: model)
             ToolRail(model: model, rating: rating, flag: flag, setRating: setRating, setFlag: setFlag, showInfo: showInfo)
         }
@@ -330,8 +336,8 @@ struct LiveEditor: View {
             let profiles = live.profiles()
             if let other = profiles.first(where: { !$0.selected && $0.index != nil && $0.hasAmount }) ?? profiles.first(where: { !$0.selected }) {
                 live.setProfile(index: other.index)
-                let amount = live.editState()?.sections.first { $0.title == "Basic" }?.sliders.first?.label ?? "?"
-                print("PROFILES \(profiles.count) in \(Set(profiles.map(\.group)).count - 1) groups; chose \(other.title); first Basic slider \(amount); last step \(live.editState()?.steps.last ?? "")")
+                let amount = live.editState()?.sections.first { $0.group == "Profile" }?.sliders.first?.label ?? "none"
+                print("PROFILES \(profiles.count) in \(Set(profiles.map(\.group)).count - 1) groups; chose \(other.title); Profile Amount slider \(amount); last step \(live.editState()?.steps.last ?? "")")
                 live.undo()
             }
             // The histogram is the last frame's: wait for one.
@@ -623,49 +629,6 @@ extension FrameStats {
         fullWidth: 0, fullHeight: 0, frameWidth: 0, frameHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
 }
 
-struct PanelSection: View {
-    let section: Section
-    let model: LiveModel
-    @Binding var isOpen: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.snappy(duration: 0.2)) { isOpen.toggle() }
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .rotationEffect(.degrees(isOpen ? 90 : 0))
-                    Text(section.title).font(.headline)
-                    Spacer()
-                }
-                .padding(.horizontal, 16).padding(.vertical, 14)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if isOpen {
-                VStack(alignment: .leading, spacing: 6) {
-                    if section.title == "Basic" {
-                        BasicExtras(model: model)
-                    }
-                    if section.title == "Tone Curve" {
-                        PointCurveEditor(model: model)
-                    }
-                    ForEach(section.switches, id: \.label) { item in
-                        SwitchRow(item: item, model: model)
-                    }
-                    ForEach(section.sliders, id: \.label) { slider in
-                        SliderRow(slider: slider, model: model)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.bottom, 14)
-            }
-            Rectangle().fill(Theme.line).frame(height: 0.5)
-        }
-    }
-}
-
 struct SwitchRow: View {
     let item: SwitchState
     let model: LiveModel
@@ -683,6 +646,19 @@ struct SwitchRow: View {
 struct SliderRow: View {
     let slider: SliderState
     let model: LiveModel
+    var track: [Color] = []
+
+    /// The colours along a slider's track, where they say what it does:
+    /// white balance's and saturation's, as Lightroom draws them.
+    static func track(for label: String, in section: String) -> [Color] {
+        guard section == "Color" else { return [] }
+        switch label {
+        case "Temp": return [Color(red: 0.25, green: 0.45, blue: 0.95), Color(red: 0.95, green: 0.85, blue: 0.3)]
+        case "Tint": return [Color(red: 0.3, green: 0.75, blue: 0.3), Color(red: 0.85, green: 0.3, blue: 0.8)]
+        case "Vibrance", "Saturation": return [Color(white: 0.5), Color(red: 0.9, green: 0.35, blue: 0.2)]
+        default: return []
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -691,7 +667,7 @@ struct SliderRow: View {
                 Spacer()
                 Text(slider.text).font(.callout.monospacedDigit())
             }
-            ThinSlider(value: shown, range: slider.min...slider.max) { value, done in
+            ThinSlider(value: shown, range: slider.min...slider.max, track: track) { value, done in
                 model.set(slider.control, to: snapped(value), done: done)
             }
         }

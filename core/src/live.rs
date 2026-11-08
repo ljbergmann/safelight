@@ -1910,9 +1910,11 @@ impl Screen {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.11,
-                            g: 0.11,
-                            b: 0.12,
+                            // The app's canvas (Theme.canvas), so the photo
+                            // sits on the same black as the editor around it.
+                            r: 0.043,
+                            g: 0.043,
+                            b: 0.043,
                             a: 1.,
                         }),
                         store: wgpu::StoreOp::Store,

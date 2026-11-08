@@ -108,6 +108,9 @@ pub struct SwitchState {
 /// A panel, or one view of it (the Color Mixer's Hue, say).
 #[derive(uniffi::Record)]
 pub struct Section {
+    /// The group it shows in: Profile, Light, Color, Effects, Detail, Optics
+    /// or Geometry (the Crop tool's).
+    pub group: String,
     pub title: String,
     pub switches: Vec<SwitchState>,
     pub sliders: Vec<SliderState>,
@@ -621,32 +624,44 @@ pub(crate) fn mask_sliders(r: &Recipe, photo: &Metadata, mask: u32) -> Vec<Slide
         .collect()
 }
 
-/// The panels, in the desktop's order, with their current values.
+/// The panels, grouped as Lightroom for iPad groups its Edit panel, with
+/// their current values: Light (tone, the curve), Color (white balance,
+/// presence of colour, the mixer, grading, calibration), Effects, Detail
+/// (AI Denoise, sharpening, noise reduction), Optics (lens corrections) and
+/// Geometry (crop and transform, for the Crop tool). Every control of the
+/// desktop's panels is in one of them, once.
 pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
     use ParameterId as P;
-    let mut layout: Vec<(String, Vec<Switch>, Vec<Control>)> = vec![
-        ("Crop & Straighten".into(), vec![], params(&[P::Straighten])),
-        (
-            "Basic".into(),
-            vec![Switch::Monochrome],
+    let group = |g: &str, title: &str, switches: Vec<Switch>, controls: Vec<Control>| {
+        (g.to_string(), title.to_string(), switches, controls)
+    };
+    let mut layout: Vec<(String, String, Vec<Switch>, Vec<Control>)> = Vec::new();
+    // Profile Amount, beside the profile, for a profile that has one.
+    if r.profile.as_ref().is_some_and(|p| p.supports_amount()) {
+        layout.push(group(
+            "Profile",
+            "Profile",
+            vec![],
+            vec![Control::ProfileAmount],
+        ));
+    }
+    layout.extend([
+        group(
+            "Light",
+            "Light",
+            vec![],
             params(&[
-                P::Temperature,
-                P::Tint,
                 P::Exposure,
                 P::Contrast,
                 P::Highlights,
                 P::Shadows,
                 P::Whites,
                 P::Blacks,
-                P::Texture,
-                P::Clarity,
-                P::Dehaze,
-                P::Vibrance,
-                P::Saturation,
             ]),
         ),
-        (
-            "Tone Curve".into(),
+        group(
+            "Light",
+            "Tone Curve",
             vec![panel_switch(Panel::ToneCurve)],
             params(&[
                 P::ParametricHighlights,
@@ -657,17 +672,25 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
                 P::CurveSaturation,
             ]),
         ),
-    ];
+        group(
+            "Color",
+            "Color",
+            vec![Switch::Monochrome],
+            params(&[P::Temperature, P::Tint, P::Vibrance, P::Saturation]),
+        ),
+    ]);
     if r.effects.monochrome {
-        layout.push((
-            "B&W Mix".into(),
+        layout.push(group(
+            "Color",
+            "B&W Mix",
             vec![panel_switch(Panel::BlackWhiteMix)],
             (0..8).map(|band| Control::Gray { band }).collect(),
         ));
     } else {
         for (channel, name) in CHANNELS.iter().enumerate() {
-            layout.push((
-                format!("Color Mixer · {name}"),
+            layout.push(group(
+                "Color",
+                &format!("Color Mixer · {name}"),
                 if channel == 0 {
                     vec![panel_switch(Panel::ColorMixer)]
                 } else {
@@ -683,8 +706,9 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
         }
     }
     for (region, (title, _)) in REGIONS.iter().enumerate() {
-        layout.push((
-            format!("Color Grading · {title}"),
+        layout.push(group(
+            "Color",
+            &format!("Color Grading · {title}"),
             if region == 0 {
                 vec![panel_switch(Panel::ColorGrading)]
             } else {
@@ -699,18 +723,54 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
         ));
     }
     layout.extend([
-        (
-            "Color Grading · Blending".into(),
+        group(
+            "Color",
+            "Color Grading · Blending",
             vec![],
             params(&[P::GradingBlending, P::GradingBalance]),
         ),
-        (
-            "AI Denoise".into(),
+        group(
+            "Color",
+            "Calibration",
+            vec![panel_switch(Panel::Calibration)],
+            params(&[
+                P::ShadowTint,
+                P::RedPrimaryHue,
+                P::RedPrimarySaturation,
+                P::GreenPrimaryHue,
+                P::GreenPrimarySaturation,
+                P::BluePrimaryHue,
+                P::BluePrimarySaturation,
+            ]),
+        ),
+        group(
+            "Effects",
+            "Effects",
+            vec![],
+            params(&[P::Texture, P::Clarity, P::Dehaze]),
+        ),
+        group(
+            "Effects",
+            "Vignette and Grain",
+            vec![panel_switch(Panel::Effects)],
+            params(&[
+                P::VignetteAmount,
+                P::VignetteMidpoint,
+                P::VignetteFeather,
+                P::GrainAmount,
+                P::GrainSize,
+                P::GrainRoughness,
+            ]),
+        ),
+        group(
+            "Detail",
+            "AI Denoise",
             vec![Switch::AiDenoise],
             params(&[P::AiDenoiseAmount]),
         ),
-        (
-            "Detail".into(),
+        group(
+            "Detail",
+            "Detail",
             vec![panel_switch(Panel::Detail)],
             params(&[
                 P::SharpeningAmount,
@@ -725,8 +785,9 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
                 P::ColorNoiseSmoothness,
             ]),
         ),
-        (
-            "Lens Corrections".into(),
+        group(
+            "Optics",
+            "Optics",
             vec![
                 panel_switch(Panel::LensCorrections),
                 Switch::LensProfile,
@@ -740,8 +801,10 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
                 P::LensVignetteMidpoint,
             ]),
         ),
-        (
-            "Transform".into(),
+        group("Geometry", "Straighten", vec![], params(&[P::Straighten])),
+        group(
+            "Geometry",
+            "Transform",
             vec![panel_switch(Panel::Transform)],
             params(&[
                 P::TransformVertical,
@@ -753,41 +816,11 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata) -> Vec<Section> {
                 P::TransformOffsetY,
             ]),
         ),
-        (
-            "Effects".into(),
-            vec![panel_switch(Panel::Effects)],
-            params(&[
-                P::VignetteAmount,
-                P::VignetteMidpoint,
-                P::VignetteFeather,
-                P::GrainAmount,
-                P::GrainSize,
-                P::GrainRoughness,
-            ]),
-        ),
-        (
-            "Calibration".into(),
-            vec![panel_switch(Panel::Calibration)],
-            params(&[
-                P::ShadowTint,
-                P::RedPrimaryHue,
-                P::RedPrimarySaturation,
-                P::GreenPrimaryHue,
-                P::GreenPrimarySaturation,
-                P::BluePrimaryHue,
-                P::BluePrimarySaturation,
-            ]),
-        ),
     ]);
-    // Profile Amount, first in Basic, for a profile that has one.
-    if r.profile.as_ref().is_some_and(|p| p.supports_amount())
-        && let Some((_, _, controls)) = layout.iter_mut().find(|(t, _, _)| t == "Basic")
-    {
-        controls.insert(0, Control::ProfileAmount);
-    }
     layout
         .into_iter()
-        .map(|(title, toggles, controls)| Section {
+        .map(|(group, title, toggles, controls)| Section {
+            group,
             title,
             switches: toggles.into_iter().filter_map(|t| t.state(r)).collect(),
             sliders: controls
@@ -893,5 +926,40 @@ mod tests {
         assert_eq!(r.effects.global_grade[0], 0.5);
         assert_eq!(r.effects.gray_mix[4], 0.4);
         r.validate().unwrap();
+    }
+
+    #[test]
+    fn the_ipad_groups_hold_every_control_of_the_desktops_panels_once() {
+        let r = Recipe::default();
+        let shown: Vec<Section> = sections(&r, &Metadata::default());
+        let groups: Vec<&str> = shown.iter().map(|s| s.group.as_str()).collect();
+        for g in ["Light", "Color", "Effects", "Detail", "Optics", "Geometry"] {
+            assert!(groups.contains(&g), "{g}");
+        }
+        let mut seen: Vec<Control> = Vec::new();
+        for s in &shown {
+            for c in &s.sliders {
+                assert!(!seen.contains(&c.control), "{}/{} twice", s.title, c.label);
+                seen.push(c.control);
+            }
+        }
+        let count = |title: &str| {
+            shown
+                .iter()
+                .find(|s| s.title == title)
+                .unwrap()
+                .sliders
+                .len()
+        };
+        assert_eq!(count("Light"), 6);
+        assert_eq!(count("Color"), 4);
+        assert_eq!(count("Effects"), 3);
+        // Every parameter the panels name is shown somewhere.
+        let params: usize = shown
+            .iter()
+            .flat_map(|s| &s.sliders)
+            .filter(|c| matches!(c.control, Control::Param { .. }))
+            .count();
+        assert!(params >= 50, "{params}");
     }
 }

@@ -361,10 +361,10 @@ struct EditorView: View {
             }
             ToolbarItem(placement: .navigation) {
                 HStack(spacing: 2) {
-                    Button("Previous Photo", systemImage: "chevron.left") { go(by: -1) }
+                    Button("Previous Photo", systemImage: "arrow.left") { go(by: -1) }
                         .disabled((position?.index ?? 0) == 0)
                     if let position { Text("\(position.index + 1) of \(position.count)").font(.caption).monospacedDigit() }
-                    Button("Next Photo", systemImage: "chevron.right") { go(by: 1) }
+                    Button("Next Photo", systemImage: "arrow.right") { go(by: 1) }
                         .disabled(position.map { $0.index + 1 >= $0.count } ?? true)
                 }
                 .labelStyle(.iconOnly)
