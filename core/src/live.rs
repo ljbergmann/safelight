@@ -1040,6 +1040,94 @@ impl LiveView {
         Ok(index.map(|i| i as u32))
     }
 
+    /// Refines part `component` of mask `mask`, a Subject (or Background)
+    /// selection, from taps on the photo: `taps` are x, y pairs (fractions
+    /// across the photo as shown), each adding what is there or, where
+    /// `adds` is false, leaving it out. Send every tap so far each time, as
+    /// each run starts from all of them. One History step ("Refine Subject").
+    /// Running the model takes seconds: call it off the main thread.
+    pub fn refine_mask(
+        &self,
+        mask: u32,
+        component: u32,
+        taps: Vec<f32>,
+        adds: Vec<bool>,
+    ) -> Result<bool, RenderError> {
+        let none_open = || RenderError::Failed {
+            message: "No photo is open".into(),
+        };
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(none_open)?;
+        let (library, recipe, id) = {
+            let edit = self.shared.edit();
+            let edit = edit.as_ref().ok_or_else(none_open)?;
+            (edit.library.clone(), edit.recipe().clone(), edit.id)
+        };
+        let part = recipe
+            .masks
+            .get(mask as usize)
+            .and_then(|m| m.components.get(component as usize))
+            .cloned();
+        let Some(rawmakase_model::model::masks::MaskComponent {
+            shape: rawmakase_model::model::masks::MaskShape::Bitmap(bitmap),
+            invert,
+            ..
+        }) = part
+        else {
+            return Ok(false);
+        };
+        let points: Vec<([f32; 2], bool)> = taps
+            .chunks_exact(2)
+            .zip(adds)
+            .map(|(p, add)| {
+                (
+                    crate::masks::view_to_image(&image, &recipe, p[0], p[1]),
+                    add,
+                )
+            })
+            .collect();
+        if points.is_empty() {
+            return Ok(false);
+        }
+        // Leaving out alone means nothing without something to leave it out
+        // of: the selection's own extent, as on the desktop.
+        let bounds = points
+            .iter()
+            .all(|(_, add)| !add)
+            .then(|| rawmakase_model::storage::mask_assets::raster_extent(&bitmap.id))
+            .flatten();
+        let masks = recipe.masks.clone();
+        let generated =
+            on_core_thread(move || crate::ai::refine(&library, &image, &recipe, &points, bounds))?;
+        let mut edit = self.shared.edit();
+        let Some(edit) = edit.as_mut().filter(|e| e.id == id) else {
+            return Ok(false);
+        };
+        if edit.recipe().masks != masks {
+            generated.discard_unless_in(edit.recipe());
+            return Err(RenderError::Failed {
+                message: "The masks changed while refining; nothing was changed".into(),
+            });
+        }
+        let mut replaced = false;
+        let name = if invert {
+            "Refine Background"
+        } else {
+            "Refine Subject"
+        };
+        edit.change(name, "", |r| {
+            replaced = crate::ai::replace_part(r, mask as usize, component as usize, &generated);
+        });
+        generated.discard_unless_in(edit.recipe());
+        self.shared.request(|_| {});
+        Ok(replaced)
+    }
+
     /// The last frame's histogram: 256 counts per channel, and whether any
     /// shadows or highlights clip.
     pub fn histogram(&self) -> HistogramData {

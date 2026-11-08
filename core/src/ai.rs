@@ -356,6 +356,111 @@ pub(crate) fn select(
     Ok(Generated { shape, id })
 }
 
+/// Refines a Subject selection with taps, as the desktop's refining does:
+/// `points` in image space, each adding (`true`) or leaving out (`false`)
+/// what is there; `bounds` (image space) is where to look when every tap
+/// leaves something out. The model segments the photo again from them.
+pub(crate) fn refine(
+    library: &Library,
+    image: &CameraImage,
+    recipe: &Recipe,
+    points: &[([f32; 2], bool)],
+    bounds: Option<[f32; 4]>,
+) -> Result<Generated, RenderError> {
+    let pack = AiSelection::Subject.pack();
+    if !pack.is_installed() {
+        return Err(failed(
+            "Install the Subject model to refine the selection.".into(),
+        ));
+    }
+    let input = rawmakase_engine::develop::masks::selection_input(
+        image,
+        recipe,
+        selection::INPUT_EDGE,
+        Cancel::NEVER,
+    )?;
+    let rgb = RgbImage {
+        width: input.width as usize,
+        height: input.height as usize,
+        data: input.rgb8(),
+    };
+    let model = AiSelection::Subject.model();
+    let key = selection::input_key(&rgb, model);
+    let prompt = Prompt {
+        points: points
+            .iter()
+            .take(rawmakase_inference::process::MAX_POINTS)
+            .map(|([x, y], positive)| rawmakase_inference::Point {
+                x: *x,
+                y: *y,
+                positive: *positive,
+            })
+            .collect(),
+        bounds,
+    };
+    let mut subject = library
+        .ai
+        .subject
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if subject.is_none() {
+        *subject = Some(
+            Subject::load_with(&pack.installed_dir(), &selection::load_options())
+                .map_err(inference)?,
+        );
+    }
+    let session = subject.as_mut().expect("loaded above");
+    let analysis = session.analyze(&rgb, Cancel::NEVER).map_err(inference)?;
+    let coverage = session
+        .segment(analysis.embedding(), &prompt, Cancel::NEVER)
+        .map_err(inference)?;
+    if coverage.data.iter().all(|v| *v == 0) {
+        return Err(failed("Nothing was found there".into()));
+    }
+    let (width, height) = (coverage.width as u32, coverage.height as u32);
+    let id = mask_assets::register(Bitmap {
+        width,
+        height,
+        channels: 1,
+        depth: 1,
+        data: coverage.data,
+    })?;
+    let shape = MaskShape::Bitmap(BitmapMask {
+        id: id.clone(),
+        width,
+        height,
+        sampling: BITMAP_SAMPLING,
+        source: Some(BitmapSource {
+            feature: FEATURE_SUBJECT.into(),
+            model: model.provenance(),
+            input: selection::prompt_key(&key, "click", &prompt),
+        }),
+    });
+    Ok(Generated { shape, id })
+}
+
+/// Gives part `component` of mask `mask`, a selection, the refined
+/// `generated` in its place; false when it is no longer there.
+pub(crate) fn replace_part(
+    r: &mut Recipe,
+    mask: usize,
+    component: usize,
+    generated: &Generated,
+) -> bool {
+    let Some(c) = r
+        .masks
+        .get_mut(mask)
+        .and_then(|m| m.components.get_mut(component))
+    else {
+        return false;
+    };
+    if !matches!(c.shape, MaskShape::Bitmap(_)) {
+        return false;
+    }
+    c.shape = generated.shape.clone();
+    true
+}
+
 /// Adds `generated` to `recipe` as a new mask named for what was selected;
 /// returns its index, or `None` with no room for another mask.
 pub(crate) fn add_mask(r: &mut Recipe, what: AiSelection, generated: &Generated) -> Option<usize> {
@@ -383,4 +488,42 @@ fn failed(message: String) -> RenderError {
 
 fn inference(e: rawmakase_inference::InferenceError) -> RenderError {
     failed(e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rawmakase_model::model::masks::{MaskComponent, MaskGroup, MaskShape};
+
+    fn bitmap(id: &str) -> MaskShape {
+        MaskShape::Bitmap(BitmapMask {
+            id: id.into(),
+            width: 4,
+            height: 4,
+            sampling: BITMAP_SAMPLING,
+            source: None,
+        })
+    }
+
+    #[test]
+    fn a_refinement_replaces_only_the_selection_it_refines() {
+        let mut r = Recipe::default();
+        let mut subject = MaskComponent::new(bitmap("old"));
+        subject.invert = true;
+        r.masks.push(MaskGroup {
+            name: "Background".into(),
+            components: vec![subject, MaskComponent::new(MaskShape::Brush { strokes: vec![] })],
+            ..Default::default()
+        });
+        let refined = Generated {
+            shape: bitmap("new"),
+            id: "new".into(),
+        };
+        assert!(replace_part(&mut r, 0, 0, &refined));
+        let part = &r.masks[0].components[0];
+        assert_eq!(part.shape, bitmap("new"));
+        assert!(part.invert, "still the background");
+        assert!(!replace_part(&mut r, 0, 1, &refined), "a brush isn't a selection");
+        assert!(!replace_part(&mut r, 3, 0, &refined), "no such mask");
+    }
 }

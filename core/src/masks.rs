@@ -100,7 +100,12 @@ pub struct Stroke {
     pub feather: f32,
     /// How much each dab adds, 0–1 (a Pencil's pressure, say).
     pub flow: f32,
+    /// What overlapping dabs build up to, 0–1, as Lightroom's Density.
+    pub density: f32,
     pub erase: bool,
+    /// Lightroom's Auto Mask: the stroke keeps to edges like the one it
+    /// starts on. Erasing ignores it, as on the desktop.
+    pub auto_mask: bool,
 }
 
 /// The mask sliders, in Lightroom's order.
@@ -400,6 +405,12 @@ impl<'a> Mapper<'a> {
     }
 }
 
+/// View point (`x`, `y`, fractions across the photo as shown) in image
+/// space, where masks and the selection models work.
+pub(crate) fn view_to_image(image: &CameraImage, r: &Recipe, x: f32, y: f32) -> [f32; 2] {
+    Mapper::new(image, r).point(x, y)
+}
+
 /// A new mask from two view points (a gradient's ends, or nothing for a brush).
 pub(crate) fn new_mask(
     image: &CameraImage,
@@ -450,9 +461,9 @@ pub(crate) fn add_stroke(
         radius,
         feather: stroke.feather.clamp(0., 1.),
         flow: stroke.flow.clamp(0.05, 1.),
-        density: 1.,
+        density: stroke.density.clamp(0.05, 1.),
         erase: stroke.erase,
-        auto_mask: false,
+        auto_mask: stroke.auto_mask && !stroke.erase,
     });
     true
 }
@@ -547,7 +558,9 @@ mod tests {
             radius: 0.05,
             feather: 0.5,
             flow: 0.7,
+            density: 0.6,
             erase: false,
+            auto_mask: true,
         };
         assert!(add_stroke(&image, &mut r, i, &stroke, [1., 0.75]));
         let MaskShape::Brush { strokes } = &r.masks[i].components[0].shape else {
@@ -560,6 +573,17 @@ mod tests {
             "{}",
             strokes[0].radius
         );
+        assert_eq!((strokes[0].density, strokes[0].auto_mask), (0.6, true));
+        // Erasing ignores Auto Mask, as on the desktop.
+        let erase = Stroke {
+            erase: true,
+            ..stroke
+        };
+        assert!(add_stroke(&image, &mut r, i, &erase, [1., 0.75]));
+        let MaskShape::Brush { strokes } = &r.masks[i].components[0].shape else {
+            panic!()
+        };
+        assert!(!strokes[1].auto_mask);
         r.validate().unwrap();
     }
 
