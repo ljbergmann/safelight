@@ -33,6 +33,11 @@ pub struct LibraryPhoto {
     pub copy_name: String,
     /// A virtual copy: the same file as its master, with its own edit.
     pub is_copy: bool,
+    /// It has an edit made in RAWmakase or Safelight.
+    pub edited: bool,
+    /// Width over height as shown; 0 until its file's info is read
+    /// ([`Library::fill_photo_info`]).
+    pub aspect: f32,
 }
 
 /// A collection and its photos.
@@ -133,12 +138,14 @@ impl Library {
 
     /// Every photo, oldest capture first.
     pub fn photos(&self) -> Result<Vec<LibraryPhoto>, RenderError> {
-        let mut photos: Vec<LibraryPhoto> = self
-            .catalog()
-            .photos()?
+        let catalog = self.catalog();
+        let edited = catalog.edit_times()?;
+        let aspects = catalog.aspect_ratios()?;
+        let listed = catalog.photos()?;
+        drop(catalog);
+        let mut photos: Vec<LibraryPhoto> = listed
             .into_iter()
             .map(|p| LibraryPhoto {
-                id: p.id.0,
                 path: p.path.display().to_string(),
                 filename: p.filename,
                 captured: p.captured,
@@ -147,10 +154,42 @@ impl Library {
                 label: p.label,
                 copy_name: p.copy_name,
                 is_copy: p.master.is_some(),
+                edited: edited.contains_key(&p.id),
+                aspect: aspects.get(&p.id).copied().unwrap_or(0.),
+                id: p.id.0,
             })
             .collect();
         photos.sort_by(|a, b| (&a.captured, &a.filename).cmp(&(&b.captured, &b.filename)));
         Ok(photos)
+    }
+
+    /// Reads the camera info and size of photos that have none yet, as the
+    /// desktop does in the background after adding photos, up to `limit` of
+    /// them; returns how many it read. A file that can't be read now is
+    /// tried again next time.
+    pub fn fill_photo_info(&self, limit: u32) -> Result<u32, RenderError> {
+        let todo: Vec<(PhotoId, PathBuf)> = {
+            let catalog = self.catalog();
+            let missing: std::collections::HashSet<PhotoId> =
+                catalog.photos_to_read_info()?.into_iter().collect();
+            catalog
+                .photos()?
+                .into_iter()
+                .filter(|p| missing.contains(&p.id))
+                .take(limit as usize)
+                .map(|p| (p.id, p.path))
+                .collect()
+        };
+        let read = on_core_thread(move || {
+            Ok(todo
+                .into_iter()
+                .filter_map(|(id, path)| {
+                    Some((id, rawmakase_decode::photo_info::read_info(&path)?))
+                })
+                .collect::<Vec<_>>())
+        })?;
+        self.catalog().fill_photo_info(&read)?;
+        Ok(read.len() as u32)
     }
 
     /// Reads the capture time of every photo that has none yet, as the
@@ -435,6 +474,23 @@ mod tests {
         assert_eq!(photos.len(), 1);
         assert_eq!(photos[0].rating, 3);
         assert!(Path::new(&photos[0].path).exists(), "{}", photos[0].path);
+    }
+
+    #[test]
+    fn photos_say_whether_they_are_edited_and_their_shape_once_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = open(dir.path());
+        let day = Path::new(&library.photos_folder()).join("d");
+        std::fs::create_dir_all(&day).unwrap();
+        std::fs::copy(&charts()[0], day.join("a.dng")).unwrap();
+        library.add_new_photos().unwrap();
+        let photo = &library.photos().unwrap()[0];
+        assert!(!photo.edited);
+        assert_eq!(photo.aspect, 0.);
+        assert_eq!(library.fill_photo_info(10).unwrap(), 1);
+        assert_eq!(library.fill_photo_info(10).unwrap(), 0, "read once");
+        let photo = &library.photos().unwrap()[0];
+        assert!(photo.aspect > 0.5 && photo.aspect < 2., "{}", photo.aspect);
     }
 
     #[test]

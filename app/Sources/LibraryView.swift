@@ -18,40 +18,23 @@ struct LibraryView: View {
     @State private var pasteNote: String?
     @State private var exporting = false
     /// The catalog sidebar, hidden while a photo is open in the editor.
-    @State private var columns: NavigationSplitViewVisibility = .automatic
+    @State private var columns: NavigationSplitViewVisibility = .all
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             LibrarySidebar(model: model)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 340)
         } detail: {
         NavigationStack(path: $path) {
-            ScrollView {
-                FilterBar(model: model)
-                    .padding(.horizontal)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-                    ForEach(model.shown, id: \.id) { photo in
-                        if selecting {
-                            Button {
-                                if selected.contains(photo.id) { selected.remove(photo.id) } else { selected.insert(photo.id) }
-                            } label: {
-                                ThumbnailCell(photo: photo, model: model)
-                                    .overlay(alignment: .topTrailing) {
-                                        Image(systemName: selected.contains(photo.id) ? "checkmark.circle.fill" : "circle")
-                                            .font(.title2).foregroundStyle(.white, Color.accentColor).padding(6)
-                                    }
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            NavigationLink(value: photo.id) {
-                                ThumbnailCell(photo: photo, model: model)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu { PhotoMenu(photo: photo, model: model) }
-                        }
-                    }
+            GeometryReader { geometry in
+                ScrollView {
+                    MosaicGrid(model: model, selecting: selecting, selected: $selected, width: geometry.size.width)
+                        .padding(.bottom, 90)
                 }
-                .padding()
+                .scrollContentBackground(.hidden)
             }
+            .background(Theme.canvas)
+            .overlay(alignment: .bottom) { bottomPill.padding(.bottom, 18) }
             .overlay {
                 if model.photos.isEmpty && model.importing == nil {
                     ContentUnavailableView {
@@ -65,35 +48,13 @@ struct LibraryView: View {
                     }
                 }
             }
-            .navigationTitle("Library")
+            .navigationTitle(model.source.title(in: model))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.canvas, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .status) {
-                    if let importing = model.importing {
-                        HStack {
-                            ProgressView(); Text(importing)
-                            if let job = model.importJob { Button("Cancel") { job.cancel() } }
-                        }
-                    } else if let notice = model.notice {
-                        Text(notice).foregroundStyle(.secondary).lineLimit(1)
-                    } else if let pasteNote {
-                        Text(pasteNote).foregroundStyle(.secondary).lineLimit(1)
-                    } else {
-                        Text("\(model.photos.count) photos").foregroundStyle(.secondary).fixedSize()
-                    }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Menu("Import", systemImage: "square.and.arrow.down") {
-                        Button("From a Card or Folder…", systemImage: "sdcard") { pickFolder = true; picking = true }
-                        Button("From Files…", systemImage: "doc") { pickFolder = false; picking = true }
-                        Button("From Photos…", systemImage: "photo.on.rectangle") { pickingPhotos = true }
-                    }
-                    .disabled(model.library == nil || model.importing != nil)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(selecting ? "Done" : "Select") {
-                        selecting.toggle()
-                        selected = []
-                    }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    FilterMenu(model: model)
+                    SortMenu(model: model)
                 }
                 if selecting {
                     ToolbarItem(placement: .primaryAction) {
@@ -162,10 +123,11 @@ struct LibraryView: View {
             }
         }
         }
+        .navigationSplitViewStyle(.balanced)
         .sheet(item: Bindable(model).info) { request in InfoSheet(model: model, ids: request.ids) }
         .modifier(FileAlerts(model: model))
         .modifier(CopyAlerts(model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy))
-        .onChange(of: path) { _, open in columns = open.isEmpty ? .automatic : .detailOnly }
+        .onChange(of: path) { _, open in columns = open.isEmpty ? .all : .detailOnly }
         .task {
             await model.open()
             let args = ProcessInfo.processInfo.arguments
@@ -202,6 +164,39 @@ struct LibraryView: View {
             if args.contains("-allocprobe") { Memory.probeAllocator() }
             if args.contains("-thumbnails") { await measureThumbnails() }
         }
+    }
+
+    /// Floating over the grid: import, select, and what is going on.
+    @ViewBuilder private var bottomPill: some View {
+        HStack(spacing: 14) {
+            if let importing = model.importing {
+                ProgressView().tint(.white)
+                Text(importing).lineLimit(1)
+                if let job = model.importJob { Button("Cancel") { job.cancel() } }
+            } else {
+                Menu {
+                    Button("From a Card or Folder…", systemImage: "sdcard") { pickFolder = true; picking = true }
+                    Button("From Files…", systemImage: "doc") { pickFolder = false; picking = true }
+                    Button("From Photos…", systemImage: "photo.on.rectangle") { pickingPhotos = true }
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+                .disabled(model.library == nil)
+                Divider().frame(height: 18)
+                Button(selecting ? "Done" : "Select", systemImage: selecting ? "checkmark.circle" : "checkmark.circle") {
+                    selecting.toggle()
+                    selected = []
+                }
+                if let note = model.notice ?? pasteNote {
+                    Divider().frame(height: 18)
+                    Text(note).foregroundStyle(Theme.secondaryText).lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+        .background(Theme.raised, in: Capsule())
+        .overlay(Capsule().stroke(Theme.line, lineWidth: 0.5))
+        .frame(maxWidth: 560)
     }
 
     /// Makes every thumbnail, four at a time, and prints how long it took:
@@ -321,78 +316,6 @@ func labelColor(_ label: String) -> Color {
 }
 
 /// All Photographs, the Quick Collection and the catalog's collections.
-struct LibrarySidebar: View {
-    let model: LibraryModel
-
-    private var selection: Binding<Int64?> {
-        Binding(
-            get: { model.collection ?? -1 },
-            set: { model.collection = ($0 == nil || $0 == -1) ? nil : $0 }
-        )
-    }
-
-    var body: some View {
-        List(selection: selection) {
-            Label("All Photographs", systemImage: "photo.on.rectangle").tag(Int64?.some(-1))
-            SwiftUI.Section("Collections") {
-                ForEach(model.collections, id: \.id) { c in
-                    CollectionRow(collection: c).tag(Int64?.some(c.id))
-                }
-            }
-            if model.deletedFiles > 0 {
-                SwiftUI.Section {
-                    HStack {
-                        Label("Recently Deleted (\(model.deletedFiles))", systemImage: "trash")
-                        Spacer()
-                        Button("Empty") { model.fileRequest = .emptyDeleted }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Catalog")
-    }
-}
-
-struct CollectionRow: View {
-    let collection: CollectionInfo
-    var body: some View {
-        Label(
-            "\(collection.name) (\(collection.photos.count))",
-            systemImage: collection.quick ? "circle.inset.filled" : "rectangle.stack")
-    }
-}
-
-/// Lightroom's Library Filter: rating, flag and label, and the order.
-struct FilterBar: View {
-    @Bindable var model: LibraryModel
-    var body: some View {
-        HStack(spacing: 16) {
-            Picker("Rating", selection: $model.minRating) {
-                Text("Any rating").tag(Int32(0))
-                ForEach(1...5, id: \.self) { n in Text("≥ " + String(repeating: "★", count: n)).tag(Int32(n)) }
-            }
-            Picker("Flag", selection: $model.flagFilter) {
-                Text("Any flag").tag(Int32?.none)
-                Text("Picked").tag(Int32?.some(1))
-                Text("Unflagged").tag(Int32?.some(0))
-                Text("Rejected").tag(Int32?.some(-1))
-            }
-            Picker("Label", selection: $model.labelFilter) {
-                Text("Any label").tag(String?.none)
-                ForEach(labels, id: \.self) { Text($0).tag(String?.some($0)) }
-            }
-            Spacer()
-            Picker("Sort", selection: $model.sort) {
-                ForEach(sortOrders(), id: \.index) { Text($0.name).tag($0.index) }
-            }
-            Button(model.reverse ? "Descending" : "Ascending",
-                   systemImage: model.reverse ? "arrow.down" : "arrow.up") { model.reverse.toggle() }
-                .labelStyle(.iconOnly)
-        }
-        .pickerStyle(.menu)
-    }
-}
-
 /// The live editor for one photo of the catalog, with its rating. Leaving
 /// saves the edit first; if that fails, the editor stays and says why.
 struct EditorView: View {

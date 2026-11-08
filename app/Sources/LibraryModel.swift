@@ -9,8 +9,9 @@ final class LibraryModel {
     private(set) var photos: [LibraryPhoto] = []
     private(set) var collections: [CollectionInfo] = []
 
+    /// What the grid shows: the sidebar's choice.
+    var source: LibrarySource = .all
     // The grid's filters, as Lightroom's Library Filter bar has them.
-    var collection: Int64?
     var minRating: Int32 = 0
     /// 1 picked, -1 rejected, 0 unflagged; nil for any.
     var flagFilter: Int32?
@@ -23,9 +24,11 @@ final class LibraryModel {
 
     /// The photos the filters let through, in the chosen order.
     var shown: [LibraryPhoto] {
-        let members = collection.flatMap { id in collections.first { $0.id == id }.map { Set($0.photos) } }
+        let members: Set<Int64>? = if case .collection(let id) = source {
+            collections.first { $0.id == id }.map { Set($0.photos) } ?? []
+        } else { nil }
         let kept = photos.filter { p in
-            (members?.contains(p.id) ?? true)
+            source.admits(p, members: members)
                 && p.rating >= minRating
                 && (flagFilter.map { p.flag == $0 } ?? true)
                 && (labelFilter.map { p.label == $0 } ?? true)
@@ -62,6 +65,7 @@ final class LibraryModel {
             let opened = try await Task.detached { try Library.open(data: data.path, caches: caches.path) }.value
             library = opened
             await reload()
+            Task { await fillPhotoInfo() }
             // Dates for photos imported before they were read.
             Task {
                 let found = (try? await Task.detached { try opened.fillCaptureTimes() }.value) ?? 0
@@ -164,6 +168,20 @@ final class LibraryModel {
         notice = note
         print("IMPORT \(note)")
     }
+
+    /// Reads the size and camera info of photos that have none, a batch at a
+    /// time in the background, so the grid can lay them out at their shape.
+    func fillPhotoInfo() async {
+        guard let library else { return }
+        while true {
+            let read = (try? await Task.detached(priority: .utility) { try library.fillPhotoInfo(limit: 24) }.value) ?? 0
+            if read == 0 { return }
+            await reload()
+        }
+    }
+
+    /// The sidebar's counts.
+    var editedCount: Int { photos.filter(\.edited).count }
 
     /// `-rate <file name> <stars>`: rates a photo without touching the
     /// screen, for checking that ratings survive a relaunch.
@@ -306,4 +324,39 @@ actor ThumbnailGate {
             waiting.removeFirst().resume()
         }
     }
+}
+
+/// What the library grid shows, chosen in the sidebar.
+enum LibrarySource: Hashable {
+    case all
+    case edited
+    case unedited
+    case collection(Int64)
+    /// A folder of the photo folder, by its path in it ("2026/2026-11-08"),
+    /// with the folders inside it.
+    case folder(String)
+
+    /// Whether `photo` is shown; `members` are a collection's photos.
+    func admits(_ photo: LibraryPhoto, members: Set<Int64>?) -> Bool {
+        switch self {
+        case .all: true
+        case .edited: photo.edited
+        case .unedited: !photo.edited
+        case .collection: members?.contains(photo.id) ?? false
+        case .folder(let folder): photo.folderPath.hasPrefix(folder + "/") || photo.folderPath == folder
+        }
+    }
+}
+
+extension LibraryPhoto {
+    /// Its folder's path in the photo folder ("2026/2026-11-08"), as
+    /// [`Library::folders`] lists folders.
+    var folderPath: String {
+        let folder = (path as NSString).deletingLastPathComponent
+        guard let range = folder.range(of: "/Photos/", options: .backwards) else { return "" }
+        return String(folder[range.upperBound...])
+    }
+
+    /// "2023-04", the month it was taken, or empty.
+    var month: String { captured.count >= 7 ? String(captured.prefix(7)) : "" }
 }
