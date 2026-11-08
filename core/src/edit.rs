@@ -7,6 +7,7 @@
 //! named as the desktop names it. The edit and its History load from the
 //! catalog the way the desktop resolves them, and save back in one transaction.
 
+use crate::controls::{Control, Section, Switch};
 use crate::library::Library;
 use crate::render::RenderError;
 use rawmakase_catalog::catalog::{HistoryUpdate, PhotoId};
@@ -14,68 +15,16 @@ use rawmakase_edit_session::history::Step;
 use rawmakase_edit_session::{EditSession, Gesture};
 use rawmakase_interop::export_settings::ExportOptions;
 use rawmakase_model::camera_data::Metadata;
-use rawmakase_model::model::edit::change_setting;
-use rawmakase_model::model::params::ParameterId;
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::storage::Identity;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// The Basic sliders the iPad shows.
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Param {
-    Exposure,
-    Contrast,
-    Highlights,
-    Shadows,
-    Temperature,
-    Tint,
-}
-
-impl Param {
-    pub const ALL: [Param; 6] = [
-        Param::Exposure,
-        Param::Contrast,
-        Param::Highlights,
-        Param::Shadows,
-        Param::Temperature,
-        Param::Tint,
-    ];
-
-    /// The model's setting for this photo: a rendered file's Temp and Tint
-    /// are relative, a RAW's in Kelvin and tint units.
-    fn id(self, photo: &Metadata) -> ParameterId {
-        match self {
-            Param::Exposure => ParameterId::Exposure,
-            Param::Contrast => ParameterId::Contrast,
-            Param::Highlights => ParameterId::Highlights,
-            Param::Shadows => ParameterId::Shadows,
-            Param::Temperature => ParameterId::Temperature,
-            Param::Tint => ParameterId::Tint,
-        }
-        .for_photo(Some(photo))
-    }
-}
-
-/// A slider as the model describes it, with its current value.
-#[derive(uniffi::Record)]
-pub struct ParamValue {
-    pub param: Param,
-    pub label: String,
-    /// In the recipe's units, within `min`..`max` (the slider's range).
-    pub value: f32,
-    pub min: f32,
-    pub max: f32,
-    /// What dragging snaps to (0.05 EV for Exposure); 0 moves freely.
-    pub step: f32,
-    /// The value as the desktop shows it ("+0.35", "5200").
-    pub text: String,
-}
-
 /// The edit as the editor shows it.
 #[derive(uniffi::Record)]
 pub struct EditState {
-    pub values: Vec<ParamValue>,
+    /// Every panel's sliders and switches, in the desktop's order.
+    pub sections: Vec<Section>,
     pub can_undo: bool,
     pub can_redo: bool,
     /// History, oldest first, as "Exposure +0.35"; `applied` of them are applied.
@@ -141,21 +90,16 @@ impl OpenEdit {
         self.session.recipe()
     }
 
-    /// Sets `param` to `value`, clamped to its slider's range, as one editor
-    /// frame; `done` ends the drag, which becomes one History step.
-    pub(crate) fn set(&mut self, param: Param, value: f32, done: bool) -> bool {
-        let id = param.id(&self.metadata);
-        let d = id.descriptor();
-        let value = value.clamp(*d.interactive.start(), *d.interactive.end());
+    /// Sets `control` to `value`, clamped to its slider's range, as one
+    /// editor frame; `done` ends the drag, which becomes one History step.
+    pub(crate) fn set(&mut self, control: Control, value: f32, done: bool) -> bool {
         let frame = self.session.begin();
-        change_setting(self.session.recipe_mut(), id, Some(&self.metadata), |r| {
-            *id.value_mut(r) = value;
-        });
+        let named = control.set(self.session.recipe_mut(), &self.metadata, value);
         // Named on every frame, not only the last: a drag a save has to finish
         // (the app leaving mid-drag) keeps the name the slider gives it.
-        let shown = *id.value_mut(self.session.recipe_mut());
-        self.session
-            .name_next_step(Step::new(d.label, id.text(shown)));
+        if let Some((label, text)) = named {
+            self.session.name_next_step(Step::new(label, text));
+        }
         let gesture = if done {
             Gesture::Released
         } else {
@@ -163,6 +107,21 @@ impl OpenEdit {
         };
         let outcome = self.session.finish(frame, gesture);
         outcome == rawmakase_edit_session::FrameOutcome::Edited
+    }
+
+    /// Turns a panel switch or option on or off, as one History step.
+    pub(crate) fn switch(&mut self, switch: Switch, on: bool) -> bool {
+        self.session.finish_gesture();
+        let mut after = self.session.recipe().clone();
+        let Some((name, value)) = switch.set(&mut after, on) else {
+            return false;
+        };
+        if after == *self.session.recipe() {
+            return false;
+        }
+        self.session
+            .change(Some(Step::new(name, value)), |r| *r = after);
+        true
     }
 
     /// Moves History one step back (`by` −1) or forward (+1).
@@ -176,27 +135,9 @@ impl OpenEdit {
     }
 
     pub(crate) fn state(&self) -> EditState {
-        let mut recipe = self.session.recipe().clone();
-        let values = Param::ALL
-            .into_iter()
-            .map(|param| {
-                let id = param.id(&self.metadata);
-                let d = id.descriptor();
-                let value = *id.value_mut(&mut recipe);
-                ParamValue {
-                    param,
-                    label: d.label.to_string(),
-                    value,
-                    min: *d.interactive.start(),
-                    max: *d.interactive.end(),
-                    step: d.drag_step.unwrap_or(0.),
-                    text: id.text(value),
-                }
-            })
-            .collect();
         let (steps, applied) = self.session.history().steps();
         EditState {
-            values,
+            sections: crate::controls::sections(self.session.recipe(), &self.metadata),
             can_undo: applied > 0,
             can_redo: applied < steps.len(),
             steps: steps
@@ -247,6 +188,7 @@ impl OpenEdit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controls::{Control, Switch};
     use rawmakase_cancel::Cancel;
     use std::path::Path;
 
@@ -286,8 +228,17 @@ mod tests {
         .unwrap()
     }
 
+    fn slider(edit: &OpenEdit, label: &str) -> crate::controls::SliderState {
+        edit.state()
+            .sections
+            .into_iter()
+            .flat_map(|s| s.sliders)
+            .find(|s| s.label == label)
+            .unwrap()
+    }
+
     fn exposure(edit: &OpenEdit) -> f32 {
-        edit.state().values[0].value
+        slider(edit, "Exposure").value
     }
 
     #[test]
@@ -297,9 +248,9 @@ mod tests {
         let mut edit = open(&library, id, &path);
         assert_eq!(edit.state().steps.len(), 0);
 
-        edit.set(Param::Exposure, 0.3, false);
-        edit.set(Param::Exposure, 0.4, false);
-        edit.set(Param::Exposure, 0.5, true);
+        edit.set(Control::Param { index: 2 }, 0.3, false);
+        edit.set(Control::Param { index: 2 }, 0.4, false);
+        edit.set(Control::Param { index: 2 }, 0.5, true);
         let state = edit.state();
         assert_eq!(state.steps, ["Exposure +0.50"]);
         assert_eq!(state.applied, 1);
@@ -321,8 +272,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (library, id, path) = library(dir.path());
         let mut edit = open(&library, id, &path);
-        edit.set(Param::Exposure, 0.3, false);
-        edit.set(Param::Exposure, 0.4, false);
+        edit.set(Control::Param { index: 2 }, 0.3, false);
+        edit.set(Control::Param { index: 2 }, 0.4, false);
         // The app leaves before the slider says the drag ended.
         edit.save().unwrap();
         drop(edit);
@@ -336,8 +287,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (library, id, path) = library(dir.path());
         let mut edit = open(&library, id, &path);
-        edit.set(Param::Contrast, 0.2, true);
-        edit.set(Param::Exposure, 1.0, true);
+        edit.set(Control::Param { index: 3 }, 0.2, true);
+        edit.set(Control::Param { index: 2 }, 1.0, true);
         assert!(edit.step(-1));
         assert_eq!(exposure(&edit), 0.);
         edit.save().unwrap();
@@ -357,8 +308,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (library, id, path) = library(dir.path());
         let mut edit = open(&library, id, &path);
-        edit.set(Param::Exposure, 12., true);
-        assert_eq!(exposure(&edit), edit.state().values[0].max);
+        edit.set(Control::Param { index: 2 }, 12., true);
+        assert_eq!(exposure(&edit), slider(&edit, "Exposure").max);
+    }
+
+    #[test]
+    fn a_switch_is_one_named_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        assert!(edit.switch(Switch::Monochrome, true));
+        assert!(edit.recipe().effects.monochrome);
+        assert_eq!(edit.state().steps, ["Treatment Black & White"]);
+        // Turned on, the B&W Mix replaces the Color Mixer.
+        let titles: Vec<_> = edit.state().sections.into_iter().map(|s| s.title).collect();
+        assert!(titles.contains(&"B&W Mix".to_string()));
+        assert!(!titles.iter().any(|t| t.starts_with("Color Mixer")));
+        // Setting it as it is changes nothing.
+        assert!(!edit.switch(Switch::Monochrome, true));
     }
 
     #[test]
@@ -366,7 +333,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (library, id, path) = library(dir.path());
         let mut edit = open(&library, id, &path);
-        edit.set(Param::Exposure, 0.5, true);
+        edit.set(Control::Param { index: 2 }, 0.5, true);
         // The file is gone: its identity, which the edit is saved for, can't be read.
         std::fs::remove_file(&path).unwrap();
         assert!(edit.save().is_err());
@@ -383,8 +350,8 @@ mod tests {
         let (library, id, path) = library(dir.path());
         let mut edit = open(&library, id, &path);
         let before = edit.recipe().clone();
-        let temp = edit.state().values[4].value;
-        edit.set(Param::Temperature, temp + 500., true);
+        let temp = slider(&edit, "Temp").value;
+        edit.set(Control::Param { index: 0 }, temp + 500., true);
         assert_ne!(edit.recipe().wb, before.wb, "the multipliers follow Temp");
     }
 }

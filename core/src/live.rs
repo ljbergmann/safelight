@@ -10,7 +10,8 @@
 //! whatever was asked for meanwhile, so a slider dragged faster than the GPU
 //! renders skips the values in between instead of queueing them.
 
-use crate::edit::{EditState, OpenEdit, Param};
+use crate::controls::{Control, Switch};
+use crate::edit::{EditState, OpenEdit};
 use crate::library::Library;
 use crate::render::{DecodeSize, RenderError, STACK_BYTES};
 use rawmakase_cancel::Cancel;
@@ -182,14 +183,26 @@ impl LiveView {
         });
     }
 
-    /// Sets a Basic slider; `done` ends the drag, which becomes one History
-    /// step. Does nothing until the photo's edit has loaded.
-    pub fn set_parameter(&self, param: Param, value: f32, done: bool) {
+    /// Sets a slider; `done` ends the drag, which becomes one History step.
+    /// Does nothing until the photo's edit has loaded.
+    pub fn set_control(&self, control: Control, value: f32, done: bool) {
         let changed = self
             .shared
             .edit()
             .as_mut()
-            .is_some_and(|e| e.set(param, value, done));
+            .is_some_and(|e| e.set(control, value, done));
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
+    /// Turns a panel or option on or off, as one History step.
+    pub fn set_switch(&self, which: Switch, on: bool) {
+        let changed = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.switch(which, on));
         if changed {
             self.shared.request(|_| {});
         }

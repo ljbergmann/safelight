@@ -13,7 +13,7 @@ final class LiveModel {
     private(set) var edit: EditState?
     /// A slider being dragged, and its value: shown instead of the core's
     /// until the drag ends.
-    var dragging: (Param, Float)?
+    var dragging: (Control, Float)?
     /// Fit, or 100% around a centre in fractions of the developed photo.
     var zoom: Zoom = .fit { didSet { live?.setZoom(zoom: zoom) } }
     /// A pinch in progress, shown by scaling the last frame until it ends.
@@ -33,9 +33,14 @@ final class LiveModel {
         edit = live?.editState()
     }
 
-    func set(_ param: Param, to value: Float, done: Bool) {
-        dragging = done ? nil : (param, value)
-        live?.setParameter(param: param, value: value, done: done)
+    func set(_ control: Control, to value: Float, done: Bool) {
+        dragging = done ? nil : (control, value)
+        live?.setControl(control: control, value: value, done: done)
+        refresh()
+    }
+
+    func setSwitch(_ which: Switch, on: Bool) {
+        live?.setSwitch(which: which, on: on)
         refresh()
     }
 
@@ -124,8 +129,14 @@ struct LiveEditor: View {
     let model: LiveModel
     @Environment(\.displayScale) private var displayScale
 
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
     var body: some View {
-        VStack(spacing: 12) {
+        let layout = sizeClass == .regular
+            ? AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+            : AnyLayout(VStackLayout(spacing: 12))
+        layout {
+            VStack(spacing: 12) {
             GeometryReader { geometry in
                 LiveViewRepresentable { [model] made in
                     model.live = made
@@ -153,8 +164,6 @@ struct LiveEditor: View {
             .background(Color(white: 0.11))
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            BasicSliders(model: model)
-
             HStack(spacing: 16) {
                 Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
                     .disabled(!(model.edit?.canUndo ?? false))
@@ -179,6 +188,10 @@ struct LiveEditor: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            }
+            DevelopPanels(model: model)
+                .frame(width: sizeClass == .regular ? 360 : nil)
+                .frame(maxHeight: sizeClass == .regular ? .infinity : 360)
         }
         .padding()
         .task { await scripted() }
@@ -200,11 +213,12 @@ struct LiveEditor: View {
         }
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-set-exposure"), i + 1 < args.count, let stops = Float(args[i + 1]) {
-            model.set(.exposure, to: stops, done: true)
+            model.set(.param(index: 2), to: stops, done: true)
         }
         if args.contains("-save") { model.save() }
         if let edit = model.edit {
-            print("EDIT exposure \(edit.values[0].text); steps \(edit.steps); applied \(edit.applied); unsaved \(edit.needsSave)")
+            let exposure = edit.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
+            print("EDIT exposure \(exposure); steps \(edit.steps); applied \(edit.applied); unsaved \(edit.needsSave)")
         }
     }
 
@@ -250,7 +264,7 @@ struct LiveEditor: View {
             for i in 0..<steps {
                 let phase = Double(i) / Double(steps)
                 let value = Float(phase < 0.5 ? -2 + 8 * phase : 6 - 8 * phase)
-                live.setParameter(param: .exposure, value: value, done: i == steps - 1)
+                live.setControl(control: .param(index: 2), value: value, done: i == steps - 1)
                 try? await Task.sleep(for: .milliseconds(16))
             }
             try? await Task.sleep(for: .milliseconds(500))
@@ -312,40 +326,101 @@ extension FrameStats {
         fullWidth: 0, fullHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
 }
 
-/// The Basic sliders the core describes, in its order.
-struct BasicSliders: View {
+/// Every Develop panel the core describes, in the desktop's order: each a
+/// section that folds, with its switches and sliders.
+struct DevelopPanels: View {
+    let model: LiveModel
+    @State private var open: Set<String> = ["Basic"]
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+                ForEach(model.edit?.sections ?? [], id: \.title) { section in
+                    PanelSection(section: section, model: model, isOpen: isOpen(section.title))
+                    Divider()
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private func isOpen(_ title: String) -> Binding<Bool> {
+        Binding(
+            get: { open.contains(title) },
+            set: { shown in
+                if shown { open.insert(title) } else { open.remove(title) }
+            }
+        )
+    }
+}
+
+struct PanelSection: View {
+    let section: Section
+    let model: LiveModel
+    @Binding var isOpen: Bool
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isOpen) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(section.switches, id: \.label) { item in
+                    SwitchRow(item: item, model: model)
+                }
+                ForEach(section.sliders, id: \.label) { slider in
+                    SliderRow(slider: slider, model: model)
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            Text(section.title).font(.headline)
+        }
+    }
+}
+
+struct SwitchRow: View {
+    let item: SwitchState
     let model: LiveModel
 
     var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-            ForEach(model.edit?.values ?? [], id: \.label) { slider in
-                GridRow {
-                    Text(slider.label).frame(width: 90, alignment: .leading)
-                    Slider(
-                        value: Binding(
-                            get: { shown(slider) },
-                            set: { model.set(slider.param, to: snapped($0, slider), done: false) }
-                        ),
-                        in: slider.min...slider.max
-                    ) { editing in
-                        if !editing { model.set(slider.param, to: shown(slider), done: true) }
-                    }
-                    Text(slider.text)
-                        .font(.body.monospacedDigit())
-                        .frame(width: 64, alignment: .trailing)
-                }
+        SwiftUI.Toggle(item.label, isOn: Binding(
+            get: { item.on },
+            set: { model.setSwitch(item.id, on: $0) }
+        ))
+        .font(.callout)
+    }
+}
+
+/// One slider: label, track and value, as the desktop's.
+struct SliderRow: View {
+    let slider: SliderState
+    let model: LiveModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(slider.label).font(.callout)
+                Spacer()
+                Text(slider.text).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            Slider(
+                value: Binding(
+                    get: { shown },
+                    set: { model.set(slider.control, to: snapped($0), done: false) }
+                ),
+                in: slider.min...slider.max
+            ) { editing in
+                if !editing { model.set(slider.control, to: shown, done: true) }
             }
         }
     }
 
     /// The value being dragged, else the edit's.
-    private func shown(_ slider: ParamValue) -> Float {
-        if let (param, value) = model.dragging, param == slider.param { return value }
+    private var shown: Float {
+        if let (control, value) = model.dragging, control == slider.control { return value }
         return slider.value
     }
 
     /// Snapped to the model's drag step (0.05 EV for Exposure), if it has one.
-    private func snapped(_ value: Float, _ slider: ParamValue) -> Float {
+    private func snapped(_ value: Float) -> Float {
         guard slider.step > 0 else { return value }
         return (value / slider.step).rounded() * slider.step
     }
