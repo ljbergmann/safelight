@@ -21,6 +21,7 @@ uniffi = { version = "0.32", features = ["cli"] }
 # RAWmakase's crates, from the fork's ios/build-crates branch, checked out
 # as the vendor/rawmakase submodule at the commit this repository pins.
 rawmakase-cancel = { path = "../vendor/rawmakase/crates/rawmakase-cancel" }
+rawmakase-catalog = { path = "../vendor/rawmakase/crates/rawmakase-catalog" }
 rawmakase-decode = { path = "../vendor/rawmakase/crates/rawmakase-decode" }
 rawmakase-engine = { path = "../vendor/rawmakase/crates/rawmakase-engine" }
 rawmakase-interop = { path = "../vendor/rawmakase/crates/rawmakase-interop" }
@@ -30,11 +31,16 @@ anyhow = "1"
 # mmap and munmap for image-sized blocks (src/alloc.rs).
 libc = "0.2"
 bytemuck = "1"
+# Thumbnails: resized and encoded as JPEG, at the version the decoder uses.
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 pollster = "1"
 # The GPU renderer's backend: the desktop app turns Metal on through eframe;
 # without a backend wgpu has nothing to start. Same version as the engine's.
 wgpu = { version = "30", default-features = false, features = ["metal", "wgsl"] }
 thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 lto = "thin"

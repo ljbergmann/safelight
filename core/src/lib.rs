@@ -9,7 +9,9 @@ mod alloc;
 #[global_allocator]
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 
+mod library;
 mod live;
+pub use library::{Added, Library, LibraryPhoto};
 mod render;
 pub use live::{FrameStats, LiveView, Zoom};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
