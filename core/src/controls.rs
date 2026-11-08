@@ -28,6 +28,9 @@ pub enum Control {
     /// Color Grading: region 0..4 (shadows, midtones, highlights, global),
     /// channel 0..3 (hue, saturation, luminance).
     Grade { region: u32, channel: u32 },
+    /// A mask's adjustment: mask index, and slider index in
+    /// [`crate::masks::LOCAL`].
+    Mask { mask: u32, index: u32 },
 }
 
 /// An on/off setting a panel shows above its sliders.
@@ -218,6 +221,19 @@ impl Control {
                 signed: true,
                 unit: "",
             }),
+            Control::Mask { index, .. } => {
+                let d = crate::masks::LOCAL.get(index as usize)?.descriptor();
+                Some(Spec {
+                    label: d.label.to_string(),
+                    min: *d.interactive.start(),
+                    max: *d.interactive.end(),
+                    step: d.drag_step.unwrap_or(0.),
+                    scale: d.display.scale,
+                    decimals: d.display.decimals,
+                    signed: d.display.signed,
+                    unit: "",
+                })
+            }
             Control::Grade { region, channel } => {
                 let (_, step_word) = REGIONS.get(region as usize)?;
                 let label = format!("{step_word} {}", CHANNELS.get(channel as usize)?);
@@ -269,6 +285,14 @@ impl Control {
                 r.hsl.get(band as usize)?.get(channel as usize).copied()
             }
             Control::Gray { band } => r.effects.gray_mix.get(band as usize).copied(),
+            Control::Mask { mask, index } => {
+                let mut adjust = r.masks.get(mask as usize)?.adjust;
+                Some(
+                    *crate::masks::LOCAL
+                        .get(index as usize)?
+                        .value_mut(&mut adjust),
+                )
+            }
             Control::Grade { region, channel } => {
                 let grade = if region == 3 {
                     &r.effects.global_grade
@@ -298,6 +322,10 @@ impl Control {
             }
             Control::Hsl { band, channel } => r.hsl[band as usize][channel as usize] = value,
             Control::Gray { band } => r.effects.gray_mix[band as usize] = value,
+            Control::Mask { mask, index } => {
+                let id = *crate::masks::LOCAL.get(index as usize)?;
+                *id.value_mut(&mut r.masks.get_mut(mask as usize)?.adjust) = value;
+            }
             Control::Grade { region, channel } => {
                 let grade = if region == 3 {
                     &mut r.effects.global_grade
@@ -432,6 +460,13 @@ fn params(ids: &[ParameterId]) -> Vec<Control> {
     ids.iter()
         .filter_map(|id| index_of(*id))
         .map(|index| Control::Param { index })
+        .collect()
+}
+
+/// Mask `mask`'s adjustment sliders, in Lightroom's order.
+pub(crate) fn mask_sliders(r: &Recipe, photo: &Metadata, mask: u32) -> Vec<SliderState> {
+    (0..crate::masks::LOCAL.len() as u32)
+        .filter_map(|index| Control::Mask { mask, index }.state(r, photo))
         .collect()
 }
 

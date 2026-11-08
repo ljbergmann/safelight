@@ -30,6 +30,10 @@ pub struct EditState {
     /// History, oldest first, as "Exposure +0.35"; `applied` of them are applied.
     pub steps: Vec<String>,
     pub applied: u32,
+    /// The masks, in the recipe's order.
+    pub masks: Vec<crate::masks::MaskInfo>,
+    /// Heal and Clone spots.
+    pub spots: u32,
     /// The crop, `[left, top, right, bottom]` as fractions of the photo as
     /// shown, straightened (docs/transform.md in RAWmakase).
     pub crop: Vec<f32>,
@@ -228,6 +232,18 @@ impl OpenEdit {
         Some(notes)
     }
 
+    /// A change made outside a drag (a new mask, a stroke, a spot), as one
+    /// History step named `name` `value`, kept only if the result is valid.
+    pub(crate) fn change(&mut self, name: &str, value: &str, change: impl FnOnce(&mut Recipe)) {
+        self.session.finish_gesture();
+        let mut after = self.session.recipe().clone();
+        change(&mut after);
+        if after != *self.session.recipe() && after.validate().is_ok() {
+            self.session
+                .change(Some(Step::new(name, value)), |r| *r = after);
+        }
+    }
+
     /// Moves History one step back (`by` −1) or forward (+1).
     pub(crate) fn step(&mut self, by: i32) -> bool {
         self.session.finish_gesture();
@@ -249,6 +265,8 @@ impl OpenEdit {
                 .map(|s| format!("{} {}", s.name, s.value).trim().to_string())
                 .collect(),
             applied: applied as u32,
+            masks: crate::masks::infos(self.session.recipe()),
+            spots: self.session.recipe().retouch.len() as u32,
             crop: self.session.recipe().crop.to_vec(),
             needs_save: self.session.save_state().needs_save(),
             save_error: self.session.save_state().message().map(str::to_string),

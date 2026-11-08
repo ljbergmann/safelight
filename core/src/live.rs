@@ -103,6 +103,9 @@ struct Shared {
     stats: Mutex<FrameStats>,
     /// The open photo's edit, once it has loaded.
     edit: Mutex<Option<OpenEdit>>,
+    /// The decoded photo the worker renders, shared for turning points on
+    /// screen into image space (masks, Heal).
+    image: Mutex<Option<Arc<CameraImage>>>,
 }
 
 impl Shared {
@@ -145,6 +148,7 @@ impl LiveView {
             wake: Condvar::new(),
             stats: Mutex::new(FrameStats::default()),
             edit: Mutex::new(None),
+            image: Mutex::new(None),
         });
         let worker_shared = shared.clone();
         let worker = std::thread::Builder::new()
@@ -252,6 +256,82 @@ impl LiveView {
         notes.unwrap_or_default()
     }
 
+    /// A new mask from two points of the view (0–1 across the photo as
+    /// shown): a gradient's ends, or nothing for a brush. One History step;
+    /// returns its index.
+    pub fn add_mask(
+        &self,
+        kind: crate::masks::NewMask,
+        from: Vec<f32>,
+        to: Vec<f32>,
+    ) -> Option<u32> {
+        let (from, to) = (point(&from)?, point(&to)?);
+        self.with_image(|image, edit| {
+            let mut index = 0;
+            let name = match kind {
+                crate::masks::NewMask::Brush => "Brush",
+                crate::masks::NewMask::Linear => "Linear Gradient",
+                crate::masks::NewMask::Radial => "Radial Gradient",
+            };
+            edit.change("New Mask", name, |r| {
+                index = crate::masks::new_mask(image, r, kind, from, to)
+            });
+            Some(index)
+        })
+    }
+
+    /// Paints a stroke into brush mask `index`: one History step.
+    pub fn brush(&self, index: u32, stroke: crate::masks::Stroke) {
+        self.with_image(|image, edit| {
+            let aspect = view_aspect(image, edit.recipe());
+            let mut painted = false;
+            edit.change("Brush", "", |r| {
+                painted = crate::masks::add_stroke(image, r, index as usize, &stroke, aspect)
+            });
+            painted.then_some(())
+        });
+    }
+
+    /// Removes mask `index`, or shows or hides it: one History step.
+    pub fn delete_mask(&self, index: u32) {
+        self.edit_now("Delete Mask", |r| {
+            ((index as usize) < r.masks.len()).then(|| {
+                r.masks.remove(index as usize);
+            })
+        });
+    }
+
+    pub fn set_mask_hidden(&self, index: u32, hidden: bool) {
+        self.edit_now(if hidden { "Hide Mask" } else { "Show Mask" }, |r| {
+            r.masks.get_mut(index as usize).map(|m| m.hidden = hidden)
+        });
+    }
+
+    /// The sliders of mask `index`'s adjustment.
+    pub fn mask_sliders(&self, index: u32) -> Vec<crate::controls::SliderState> {
+        let edit = self.shared.edit();
+        let Some(edit) = edit.as_ref() else {
+            return vec![];
+        };
+        crate::controls::mask_sliders(edit.recipe(), &edit.metadata, index)
+    }
+
+    /// A Heal (or Clone) spot at a view point, `radius` a fraction of the
+    /// view's long edge; the source is found as the desktop finds it. One
+    /// History step; false when no source fits.
+    pub fn add_spot(&self, at: Vec<f32>, radius: f32, clone: bool) -> bool {
+        let Some(at) = point(&at) else { return false };
+        self.with_image(|image, edit| {
+            let aspect = view_aspect(image, edit.recipe());
+            let mut added = false;
+            edit.change(if clone { "Clone" } else { "Heal" }, "", |r| {
+                added = crate::masks::add_spot(image, r, at, radius, aspect, clone)
+            });
+            added.then_some(())
+        })
+        .is_some()
+    }
+
     /// Rotates or flips the photo as shown, as one History step.
     pub fn orient(&self, orientation: Orientation) {
         let changed = self
@@ -339,6 +419,43 @@ impl LiveView {
     }
 }
 
+impl LiveView {
+    /// Runs `work` with the decoded photo and the edit, then asks for a frame.
+    fn with_image<T>(
+        &self,
+        work: impl FnOnce(&CameraImage, &mut OpenEdit) -> Option<T>,
+    ) -> Option<T> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()?;
+        let out = {
+            let mut edit = self.shared.edit();
+            work(&image, edit.as_mut()?)
+        };
+        if out.is_some() {
+            self.shared.request(|_| {});
+        }
+        out
+    }
+
+    /// A change to the recipe as one History step, when `change` makes one.
+    fn edit_now(&self, step: &str, change: impl FnOnce(&mut Recipe) -> Option<()>) {
+        let changed = self.shared.edit().as_mut().is_some_and(|e| {
+            let mut after = e.recipe().clone();
+            change(&mut after).is_some() && {
+                e.change(step, "", |r| *r = after);
+                true
+            }
+        });
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+}
+
 impl Drop for LiveView {
     /// Only asks the worker to stop: it holds the surface and its own
     /// reference to the layer, so it may finish on its own time.
@@ -350,7 +467,7 @@ impl Drop for LiveView {
 /// The open photo's decoded image and what renders it.
 struct Photo {
     id: i64,
-    image: CameraImage,
+    image: Arc<CameraImage>,
     renderer: PreviewRenderer,
 }
 
@@ -437,6 +554,18 @@ fn run(shared: &Shared, layer: usize) -> anyhow::Result<()> {
     }
 }
 
+/// Two floats as a point.
+fn point(v: &[f32]) -> Option<[f32; 2]> {
+    Some([*v.first()?, *v.get(1)?])
+}
+
+/// The photo as shown, cropped: its width and height over its long edge.
+fn view_aspect(image: &CameraImage, r: &Recipe) -> [f32; 2] {
+    let g = Geometry::new(image, r, 0);
+    let long = g.width.max(g.height).max(1) as f32;
+    [g.width as f32 / long, g.height as f32 / long]
+}
+
 /// Opens `request`'s photo: saves the open edit first when it is another
 /// photo's (and stays on it if that fails), lets go of the previous decode
 /// before making the next, and loads the photo's edit when it isn't open yet.
@@ -453,6 +582,7 @@ fn open_photo(shared: &Shared, screen: &Screen, photo: &mut Option<Photo>, reque
     // Let go of the previous photo, its pyramid and its GPU copies before
     // decoding the next one.
     *photo = None;
+    *shared.image.lock().unwrap_or_else(PoisonError::into_inner) = None;
     let opened = screen.open(&request.path, request.decode).and_then(
         |(p, metadata, profiles, decode_ms)| {
             if !same {
@@ -471,6 +601,7 @@ fn open_photo(shared: &Shared, screen: &Screen, photo: &mut Option<Photo>, reque
     match opened {
         Ok((mut p, metadata, decode_ms)) => {
             p.id = request.id;
+            *shared.image.lock().unwrap_or_else(PoisonError::into_inner) = Some(p.image.clone());
             *photo = Some(p);
             shared.stats(|s| {
                 s.camera = format!("{} {}", metadata.make, metadata.model);
@@ -713,7 +844,7 @@ impl Screen {
         Ok((
             Photo {
                 id: 0,
-                image,
+                image: Arc::new(image),
                 renderer,
             },
             metadata,

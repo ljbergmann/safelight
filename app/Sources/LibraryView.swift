@@ -11,9 +11,11 @@ struct LibraryView: View {
     @State private var selected: Set<Int64> = []
     @State private var pasteNote: String?
     @State private var exporting = false
+    /// The catalog sidebar, hidden while a photo is open in the editor.
+    @State private var columns: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             LibrarySidebar(model: model)
         } detail: {
         NavigationStack(path: $path) {
@@ -117,6 +119,7 @@ struct LibraryView: View {
             }
         }
         }
+        .onChange(of: path) { _, open in columns = open.isEmpty ? .automatic : .detailOnly }
         .task {
             await model.open()
             let args = ProcessInfo.processInfo.arguments

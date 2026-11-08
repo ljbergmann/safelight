@@ -23,6 +23,16 @@ final class LiveModel {
     var copied = false
     var copying = false
     var exporting = false
+    /// What a touch on the photo does (masks, Heal); zoom and pan wait while
+    /// a tool is open.
+    var tool: PhotoTool = .none
+    var selectedMask: UInt32?
+    var brushSize: Float = 0.04
+    var brushFeather: Float = 0.5
+    var brushFlow: Float = 1
+    var brushErase = false
+    var spotSize: Float = 0.02
+    var cloneSpots = false
     /// What a paste couldn't carry over, shown below the controls.
     var pasteNote: String?
     /// Fit, or 100% around a centre in fractions of the developed photo.
@@ -93,7 +103,7 @@ final class LiveModel {
 
     /// Fit ↔ 100% at `location`.
     func toggleZoom(at location: CGPoint, in size: CGSize, scale: CGFloat) {
-        guard !cropping else { return }
+        guard !cropping && tool == .none else { return }
         if case .fit = zoom, let (x, y) = photoPoint(at: location, in: size, scale: scale) {
             zoom = .actual(centerX: x, centerY: y)
         } else {
@@ -103,7 +113,7 @@ final class LiveModel {
 
     /// Ends a pinch: in from Fit to 100% around its anchor, or out to Fit.
     func endPinch(in size: CGSize, scale: CGFloat) {
-        guard !cropping else { pinch = 1; return }
+        guard !cropping && tool == .none else { pinch = 1; return }
         let anchor = CGPoint(x: pinchAnchor.x * size.width, y: pinchAnchor.y * size.height)
         switch zoom {
         case .fit where pinch > 1.25:
@@ -120,7 +130,7 @@ final class LiveModel {
 
     /// Pans at 100% by `translation` points from where the drag started.
     func drag(by translation: CGSize, scale: CGFloat) {
-        guard !cropping else { return }
+        guard !cropping && tool == .none else { return }
         guard case .actual(let cx, let cy) = zoom, let stats = live?.stats(), stats.fullWidth > 0 else { return }
         if dragStart == nil { dragStart = (cx, cy) }
         let (sx, sy) = dragStart!
@@ -175,7 +185,11 @@ struct LiveEditor: View {
                     model.toggleZoom(at: location, in: geometry.size, scale: displayScale)
                 }
                 .overlay {
-                    if model.cropping { CropOverlay(model: model, size: geometry.size) }
+                    if model.cropping {
+                        CropOverlay(model: model, size: geometry.size)
+                    } else if model.tool != .none {
+                        PhotoToolOverlay(model: model, size: geometry.size)
+                    }
                 }
             }
             .background(Color(white: 0.11))
@@ -204,6 +218,7 @@ struct LiveEditor: View {
                     Text("Full size").tag(DecodeSize.full)
                 }
                 .pickerStyle(.menu)
+                .fixedSize()
             }
             .labelStyle(.iconOnly)
             .font(.title3)
@@ -249,6 +264,21 @@ struct LiveEditor: View {
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-set-exposure"), i + 1 < args.count, let stops = Float(args[i + 1]) {
             model.set(.param(index: 2), to: stops, done: true)
+        }
+        if args.contains("-mask-test"), let live = model.live {
+            // A radial mask in the middle at +1 EV, a brush stroke, a Heal spot.
+            if let radial = live.addMask(kind: .radial, from: [0.5, 0.5], to: [0.65, 0.6]) {
+                let exposure = live.maskSliders(index: radial).firstIndex { $0.label == "Exposure" }
+                if let exposure {
+                    live.setControl(control: .mask(mask: radial, index: UInt32(exposure)), value: 1, done: true)
+                }
+            }
+            if let brush = live.addMask(kind: .brush, from: [0, 0], to: [0, 0]) {
+                live.brush(index: brush, stroke: Stroke(points: [0.2, 0.3, 0.3, 0.35, 0.4, 0.4], radius: 0.03, feather: 0.5, flow: 0.8, erase: false))
+            }
+            let healed = live.addSpot(at: [0.7, 0.7], radius: 0.02, clone: false)
+            model.refresh()
+            print("MASKS \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); spots \(model.edit?.spots ?? 0) (heal found a source: \(healed)); steps \(model.edit?.steps ?? [])")
         }
         if args.contains("-save") { model.save() }
         if let edit = model.edit {
@@ -371,6 +401,8 @@ struct DevelopPanels: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 PresetsPanel(model: model)
+                Divider()
+                MasksPanel(model: model)
                 Divider()
                 ForEach(model.edit?.sections ?? [], id: \.title) { section in
                     PanelSection(section: section, model: model, isOpen: isOpen(section.title))
