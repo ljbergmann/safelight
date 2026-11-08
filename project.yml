@@ -15,6 +15,10 @@ targets:
       - app/Generated
       # The app icon, drawn by scripts/render-icon.swift from docs/brand.
       - app/Assets.xcassets
+      # What the App Store asks the app to declare, and the licences it ships
+      # (scripts/acknowledgements.py).
+      - app/PrivacyInfo.xcprivacy
+      - app/Acknowledgements.txt
     # A full-size decode of a 45 MP RAW and its 100% view need more than the
     # default limit on an 8 GB iPad (MEASUREMENTS.md).
     entitlements:
@@ -45,5 +49,8 @@ targets:
         # Finder (and the Files app) can put photos in the app's Documents.
         INFOPLIST_KEY_UIFileSharingEnabled: YES
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+        # Only the system's standard encryption (HTTPS downloads), which
+        # needs no export documentation.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"

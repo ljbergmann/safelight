@@ -114,7 +114,14 @@ open Safelight.xcodeproj
 Then run it on your iPad from Xcode, with your own team for signing. The
 scripts use rustup's toolchain explicitly: a Homebrew `rustc` on `PATH` has
 no iPad targets. Run `scripts/build-core.sh` again after changing `core/` or
-the crates.
+the crates, and `scripts/acknowledgements.py` after changing the core's
+dependencies or ONNX Runtime: it writes `app/Acknowledgements.txt`, the
+licences the app shows under About Safelight › Acknowledgements.
+
+For the App Store, `app/PrivacyInfo.xcprivacy` declares the "required reason"
+APIs the app and its Rust core use (file timestamps, disk space, elapsed
+time) and that it tracks no one and collects nothing; the app uses only the
+system's standard encryption (`ITSAppUsesNonExemptEncryption` is NO).
 
 From the command line (the iPad unlocked, Developer Mode on):
 
@@ -156,6 +163,7 @@ them after `--`):
 | `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
 | `-point-color` (with `-open -color-mix`) | Opens Point Color with its eyedropper's circle |
 | `-point-color-ranges` (with `-open -color-mix`) | Samples a swatch in the middle of the photo and shows its ranges and Visualize Range |
+| `-about` | Opens About Safelight |
 | `-wb-loupe` (with `-open`) | Opens the white balance eyedropper's sampling circle |
 | `-import-profiles <folder>` (with `-open`) | Imports the profiles in that folder of the app's Documents as Import Profiles does, and lists the photo's profiles again |
 | `-mask-color-test` (with `-open`) | Adds a mask over the whole photo and checks each of its Color sliders changes the live render, then goes back |

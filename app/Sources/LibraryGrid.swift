@@ -4,6 +4,7 @@ import SwiftUI
 /// tile, a name and a count.
 struct LibrarySidebar: View {
     @Bindable var model: LibraryModel
+    @State private var about = ProcessInfo.processInfo.arguments.contains("-about")
 
     var body: some View {
         ScrollView {
@@ -33,8 +34,17 @@ struct LibrarySidebar: View {
             }
             .padding(8)
         }
+        .safeAreaInset(edge: .bottom) {
+            Button { about = true } label: {
+                rowLabel("About Safelight", "info.circle", detail: "", chosen: false)
+            }
+            .buttonStyle(.plain)
+            .padding(8)
+            .background(Theme.panel)
+        }
         .background(Theme.panel)
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $about) { AboutView() }
     }
 
     private func row(_ source: LibrarySource, _ name: String, _ icon: String, count: Int) -> some View {
