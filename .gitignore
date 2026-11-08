@@ -1,0 +1,16 @@
+/build/
+/core/target/
+/app/Generated/
+/Rawmakase.xcodeproj/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+# Never commit RAW files or photos.
+*.dng
+*.arw
+*.cr2
+*.cr3
+*.nef
+*.raf
+*.orf
+*.rw2

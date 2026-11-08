@@ -1,0 +1,30 @@
+[package]
+name = "rawmakase-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+description = "RAWmakase's Swift-facing API for the iPad app"
+publish = false
+
+[lib]
+# staticlib for the app; cdylib only so uniffi-bindgen can read the API from it.
+crate-type = ["staticlib", "cdylib", "lib"]
+name = "rawmakase_core"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+uniffi = { version = "0.32", features = ["cli"] }
+# RAWmakase's crates from the fork checkout next to this repository
+# (branch ios/build-crates of ljbergmann/rawmakase).
+rawmakase-protocol = { path = "../../rawmakase-ios/crates/rawmakase-protocol" }
+rawmakase-model = { path = "../../rawmakase-ios/crates/rawmakase-model" }
+
+[profile.release]
+lto = "thin"
+# Xcode strips the app; leaving it to Xcode also avoids rust-objcopy, which
+# fails to start in some rustup installs.
+strip = false
