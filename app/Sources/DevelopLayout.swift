@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// What the editor's right-hand panel shows, chosen on the tool rail.
 enum DevelopPane: String, CaseIterable {
@@ -195,6 +196,9 @@ struct EditPane: View {
 struct ProfileRow: View {
     let model: LiveModel
     let amount: Section?
+    @State private var importing = false
+    @State private var imported: ProfileImport?
+    @State private var working = false
 
     var body: some View {
         let profiles = model.edit == nil ? [] : (model.live?.profiles() ?? [])
@@ -216,14 +220,50 @@ struct ProfileRow: View {
                             ForEach(profiles.filter { $0.group == group }, id: \.title) { item($0) }
                         }
                     }
+                    Divider()
+                    Button("Import Profiles…", systemImage: "square.and.arrow.down") { importing = true }
                 } label: {
-                    Text("Browse").padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
+                    Group {
+                        if working { ProgressView().controlSize(.small) } else { Text("Browse") }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
                 }
+                .disabled(working)
             }
             ForEach(amount?.sliders ?? [], id: \.label) { SliderRow(slider: $0, model: model) }
         }
         .padding(16)
+        .fileImporter(
+            isPresented: $importing,
+            allowedContentTypes: ["dcp", "xmp", "cube"].map { UTType(filenameExtension: $0) ?? .data } + [.folder],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case .success(let picks) = result, !picks.isEmpty else { return }
+            working = true
+            let live = model.live
+            Task {
+                imported = await Task.detached { Self.runImport(picks, live: live) }.value
+                model.refresh()
+                working = false
+            }
+        }
+        .alert(imported?.message ?? "", isPresented: Binding(get: { imported != nil }, set: { if !$0 { imported = nil } })) {
+            Button("OK") { imported = nil }
+        } message: {
+            Text((imported?.details.prefix(6) ?? []).joined(separator: "\n"))
+        }
+    }
+
+    /// Imports the profiles, looks and LUTs in `picks` (files or folders)
+    /// while their security scope is open, then lists the photo's profiles
+    /// again.
+    nonisolated private static func runImport(_ picks: [URL], live: LiveView?) -> ProfileImport {
+        let opened = picks.filter { $0.startAccessingSecurityScopedResource() }
+        defer { opened.forEach { $0.stopAccessingSecurityScopedResource() } }
+        let result = importProfiles(paths: picks.map(\.path))
+        if result.done > 0 { live?.reloadProfiles() }
+        return result
     }
 
     private func item(_ p: ProfileInfo) -> some View {

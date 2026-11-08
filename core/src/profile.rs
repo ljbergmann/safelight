@@ -97,3 +97,83 @@ pub(crate) fn choose(
     r.follow_profile_treatment(old.as_deref(), None);
     Some(title)
 }
+
+/// What importing profiles did, for the app to say.
+#[derive(uniffi::Record, Debug)]
+pub struct ProfileImport {
+    /// Profiles, looks and LUTs added, or found added already.
+    pub done: u32,
+    /// Files that couldn't be imported.
+    pub failed: u32,
+    /// One line: "Imported 3 profiles · 1 already imported".
+    pub message: String,
+    /// A line for each LUT renamed or held approximately, and each file that
+    /// failed, with why.
+    pub details: Vec<String>,
+}
+
+/// Imports camera profiles (DCP), looks (XMP) and `.cube` LUTs from
+/// `paths`, files or folders, into the profile library, as the desktop's
+/// Import Profiles does. LUTs are taken as expecting sRGB, the desktop's
+/// default. A photo open in the editor lists them after
+/// [`crate::LiveView::reload_profiles`].
+#[uniffi::export]
+pub fn import_profiles(paths: Vec<String>) -> ProfileImport {
+    import_into(
+        &paths,
+        &rawmakase_model::storage::data_dir().join("camera-profiles"),
+    )
+}
+
+pub(crate) fn import_into(paths: &[String], destination: &std::path::Path) -> ProfileImport {
+    let picks: Vec<std::path::PathBuf> = paths.iter().map(Into::into).collect();
+    let summary = rawmakase_interop::bulk_import::import_profiles_into(
+        &picks,
+        rawmakase_model::camera_profiles::LutSpace::default(),
+        destination,
+    );
+    ProfileImport {
+        done: summary.done() as u32,
+        failed: summary.failures() as u32,
+        message: summary.message(),
+        details: summary.lines(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 2×2×2 `.cube` that keeps every colour.
+    const IDENTITY: &str =
+        "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
+    const PRESET: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Exposure2012="+0.50"/></rdf:RDF></x:xmpmeta>"#;
+
+    #[test]
+    fn a_lut_becomes_a_look_once_and_a_preset_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let picked = dir.path().join("Picked");
+        std::fs::create_dir_all(&picked).unwrap();
+        std::fs::write(picked.join("Teal.cube"), IDENTITY).unwrap();
+        std::fs::write(picked.join("Warm.xmp"), PRESET).unwrap();
+        let library = dir.path().join("camera-profiles");
+        let paths = vec![
+            picked.join("Teal.cube").display().to_string(),
+            picked.join("Warm.xmp").display().to_string(),
+        ];
+
+        let first = import_into(&paths, &library);
+        assert_eq!((first.done, first.failed), (1, 1), "{first:?}");
+        assert!(
+            first.details.iter().any(|l| l.starts_with("Warm.xmp")),
+            "{first:?}"
+        );
+        let files: Vec<_> = std::fs::read_dir(&library).unwrap().flatten().collect();
+        assert_eq!(files.len(), 1, "the LUT's look");
+
+        // Again: found imported already, not a second look.
+        let again = import_into(&paths[..1], &library);
+        assert_eq!((again.done, again.failed), (1, 0), "{again:?}");
+        assert_eq!(std::fs::read_dir(&library).unwrap().count(), 1);
+    }
+}

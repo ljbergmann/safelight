@@ -37,7 +37,8 @@ Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
 - [x] Auto Settings and Auto white balance
 - [x] Point curve, RGB and per channel, built-in curves
 - [x] Profile browser and Profile Amount
-- [ ] Importing profiles (DCP, XMP looks, `.cube`) from the Files app (M)
+- [x] Importing profiles (DCP, XMP looks, `.cube` LUTs as sRGB looks) from the Files
+      app, files or folders, as the desktop's Import Profiles does
 - [x] Histogram and clipping warnings
 - [x] Mask math (add, subtract, intersect, invert), mask invert and Amount,
       Color and Luminance Range masks

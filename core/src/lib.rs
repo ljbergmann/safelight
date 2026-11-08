@@ -33,7 +33,7 @@ pub use library::{Added, CollectionInfo, Library, LibraryPhoto, SortChoice, sort
 pub use masks::{ComponentInfo, MaskInfo, MaskOperation, NewMask, Stroke};
 pub use metadata::{KeywordInfo, MetadataField, PhotoMetadata};
 mod profile;
-pub use profile::ProfileInfo;
+pub use profile::{ProfileImport, ProfileInfo, import_profiles};
 mod render;
 mod snapshots;
 pub use snapshots::SnapshotInfo;

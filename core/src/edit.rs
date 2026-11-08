@@ -17,7 +17,7 @@ use rawmakase_interop::export_settings::ExportOptions;
 use rawmakase_model::camera_data::Metadata;
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::storage::Identity;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// The edit as the editor shows it.
@@ -183,6 +183,27 @@ impl OpenEdit {
         self.session
             .change(Some(Step::new(name, value)), |r| *r = after);
         true
+    }
+
+    /// The profiles this photo at `path` can use, as the editor lists them
+    /// when it opens: the library's, with the camera's fitted default look
+    /// where it has one. Slow when a look is fitted: call it without the
+    /// edit's lock.
+    pub(crate) fn list_profiles(
+        path: &Path,
+        metadata: &Metadata,
+    ) -> (
+        Vec<Arc<rawmakase_model::camera_profiles::CameraProfile>>,
+        rawmakase_model::camera_profiles::Groups,
+    ) {
+        let listed = rawmakase_model::camera_profiles::listed(metadata);
+        let profiles = rawmakase_decode::camera_look::with_default(
+            path,
+            metadata,
+            listed.profiles,
+            rawmakase_cancel::Cancel::NEVER,
+        );
+        (profiles, listed.groups)
     }
 
     /// Moves Color Grading wheel `region` (shadows, midtones, highlights,

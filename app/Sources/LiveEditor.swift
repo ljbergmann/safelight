@@ -349,6 +349,20 @@ struct LiveEditor: View {
             model.refresh()
             print("MASKS \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); spots \(model.edit?.spots ?? 0) (heal found a source: \(healed)); steps \(model.edit?.steps ?? [])")
         }
+        // -import-profiles <folder in Documents>: imports it as Import
+        // Profiles does, and lists the photo's profiles again.
+        if let i = args.firstIndex(of: "-import-profiles"), i + 1 < args.count, let live = model.live {
+            let folder = URL.documentsDirectory.appending(path: args[i + 1])
+            let before = live.profiles().count
+            let result = await Task.detached { () -> ProfileImport in
+                let r = importProfiles(paths: [folder.path])
+                live.reloadProfiles()
+                return r
+            }.value
+            model.refresh()
+            let looks = live.profiles().filter { $0.title.contains("Teal") }.map { "\($0.group)/\($0.title)" }
+            print("PROFILES IMPORT \(result.message); failed \(result.failed) \(result.details); profiles \(before) → \(live.profiles().count); \(looks)")
+        }
         // -show-mask: the Masks pane on the first mask, its Color open.
         if args.contains("-show-mask"), let first = model.edit?.masks.first?.index {
             model.pane = .masks

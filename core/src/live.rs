@@ -872,6 +872,30 @@ impl LiveView {
             .unwrap_or_default()
     }
 
+    /// Lists the open photo's profiles again, once an import has added some.
+    /// The edit keeps the profile it has; only the list changes.
+    pub fn reload_profiles(&self) {
+        let Some((id, path, metadata)) = self
+            .shared
+            .edit()
+            .as_ref()
+            .map(|e| (e.id, e.path.clone(), e.metadata.clone()))
+        else {
+            return;
+        };
+        // On the core's thread: a fitted look reads the RAW.
+        let Ok((profiles, groups)) =
+            on_core_thread(move || Ok(OpenEdit::list_profiles(&path, &metadata)))
+        else {
+            return;
+        };
+        // Unless another photo opened meanwhile.
+        if let Some(edit) = self.shared.edit().as_mut().filter(|e| e.id == id) {
+            edit.profiles = profiles;
+            edit.profile_groups = groups;
+        }
+    }
+
     /// Chooses profile `index` from [`Self::profiles`] (`None`: the camera
     /// matrix): one History step.
     pub fn set_profile(&self, index: Option<u32>) {

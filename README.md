@@ -76,7 +76,7 @@ out is [docs/PLAN.md](docs/PLAN.md).
   virtual copies; deleting (to Recently Deleted), renaming and moving photos
   and folders.
 - **Develop**: every slider of RAWmakase's Develop; profiles and Profile
-  Amount; swiping to the next or previous photo; white balance presets and
+  Amount, and importing camera profiles, looks and `.cube` LUTs from Files; swiping to the next or previous photo; white balance presets and
   eyedropper; Auto; the point curve; the Color Mixer a band at a time and
   Color Grading's wheels; Crop,
   Straighten, Rotate and Flip; Undo, Redo, Reset and a History you can step
@@ -154,6 +154,7 @@ them after `--`):
 | `-metadata-test` | Sets and reads back a title and a keyword on a test copy, with its camera info, then takes them off |
 | `-virtual-copy-test` | Makes a virtual copy of the test copy, renames it and removes it |
 | `-file-ops-test` | Moves the test copy into a new folder and back and renames it and back, with a virtual copy, then removes the copy |
+| `-import-profiles <folder>` (with `-open`) | Imports the profiles in that folder of the app's Documents as Import Profiles does, and lists the photo's profiles again |
 | `-mask-color-test` (with `-open`) | Adds a mask over the whole photo and checks each of its Color sliders changes the live render, then goes back |
 | `-show-mask` (with `-open`, after `-mask-test -keep`) | Opens the Masks pane on the first mask with its Color sliders |
 | `-color-mix`, `-grading` (with `-open`) | Opens the Color Mixer, or the Color Grading pane |
