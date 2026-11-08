@@ -38,6 +38,8 @@ struct Requests {
     zoom: Zoom,
     /// The Crop tool is open: the photo is shown uncropped.
     cropping: bool,
+    /// Point Color's Visualize Range, for this swatch.
+    visualize: Option<u32>,
     /// Clipped shadows and highlights shown in blue and red.
     clipping: ClipOverlay,
     /// Before/After: Before alone or beside the edit.
@@ -252,6 +254,8 @@ impl LiveView {
     pub fn open_photo(&self, library: Arc<Library>, id: i64, path: String, decode: DecodeSize) {
         self.shared.stats(|s| s.loading = true);
         self.shared.request(|r| {
+            // Another photo's swatches are its own.
+            r.visualize = None;
             r.open = Some(OpenRequest {
                 library,
                 id,
@@ -300,6 +304,12 @@ impl LiveView {
         if changed {
             self.shared.request(|_| {});
         }
+    }
+
+    /// Shows which colours Point Color swatch `index` selects, the rest
+    /// grey, as Visualize Range does; `None` shows the edit again.
+    pub fn set_visualize_point_color(&self, index: Option<u32>) {
+        self.shared.request(|r| r.visualize = index);
     }
 
     /// Opens or closes the Crop tool: while open, the photo is shown whole,
@@ -1080,6 +1090,45 @@ impl LiveView {
         Ok(index as u32)
     }
 
+    /// Which point of swatch `swatch`'s range `which` a press at `t` (0–1
+    /// along its rail) takes, as the desktop picks it.
+    pub fn nearest_range_point(&self, swatch: u32, which: u32, t: f32) -> u32 {
+        let edit = self.shared.edit();
+        let points = edit
+            .as_ref()
+            .and_then(|e| e.recipe().point_colors.get(swatch as usize).copied())
+            .zip(crate::point_color::RANGES.get(which as usize))
+            .map(|(p, &w)| p.range_points(w));
+        points.map_or(0, |p| {
+            rawmakase_model::model::point_color::nearest_point(&p, t) as u32
+        })
+    }
+
+    /// Moves a point of a Point Color swatch's range (see
+    /// [`Self::nearest_range_point`]); `done` ends the drag, one History step.
+    /// `None` for `point` resets the range.
+    pub fn set_point_color_range(
+        &self,
+        swatch: u32,
+        which: u32,
+        point: Option<u32>,
+        t: f32,
+        done: bool,
+    ) {
+        let changed = self.shared.edit().as_mut().is_some_and(|e| {
+            e.set_point_color_range(
+                swatch as usize,
+                which as usize,
+                point.map(|k| k as usize),
+                t,
+                done,
+            )
+        });
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// Deletes Point Color swatch `index`, or every swatch with `None`: one
     /// History step.
     pub fn delete_point_color(&self, index: Option<u32>) {
@@ -1321,7 +1370,7 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
     let mut photo: Option<Photo> = None;
     let mut times: VecDeque<f64> = VecDeque::new();
     loop {
-        let (open, zoom, cropping, preset, size, clipping, compare) = {
+        let (open, zoom, (cropping, visualize), preset, size, clipping, compare) = {
             let mut r = shared
                 .requests
                 .lock()
@@ -1336,7 +1385,7 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             (
                 r.open.take(),
                 r.zoom,
-                r.cropping,
+                (r.cropping, r.visualize),
                 r.preset.take(),
                 r.size,
                 r.clipping,
@@ -1372,15 +1421,10 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
 
         // The edit as it is now; changes made while this renders ask for the
         // next frame.
-        let recipe = shared.edit().as_ref().map(|e| {
-            let mut r = e.recipe().clone();
-            if cropping {
-                // As the desktop's Crop tool: the whole straightened photo.
-                r.crop = [0., 0., 1., 1.];
-                r.constrain_crop = false;
-            }
-            r
-        });
+        let recipe = shared
+            .edit()
+            .as_ref()
+            .map(|e| shown(e.recipe(), cropping, visualize));
         // AI Denoise runs on the full-size decode, as on the desktop: a
         // half-size photo is decoded again at full size first.
         let full_size = photo.as_ref().is_some_and(|p| p.image.fast)
@@ -1452,6 +1496,24 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             render_one_preview(shared, p);
         }
     }
+}
+
+/// The edit as the view shows it: with the Crop tool open, the whole
+/// straightened photo, as the desktop's Crop tool shows it; with Visualize
+/// Range on, swatch `visualize`'s selection in colour and the rest grey.
+/// Neither is saved.
+fn shown(r: &Recipe, cropping: bool, visualize: Option<u32>) -> Recipe {
+    let mut r = r.clone();
+    if cropping {
+        r.crop = [0., 0., 1., 1.];
+        r.constrain_crop = false;
+    }
+    if let Some(list) = visualize.and_then(|i| {
+        rawmakase_model::model::point_color::visualize_range(&r.point_colors, i as usize)
+    }) {
+        r.point_colors = list;
+    }
+    r
 }
 
 /// Preset `id` applied over `recipe`, rendered `edge` pixels on its long
@@ -2196,6 +2258,25 @@ impl Screen {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visualize_range_shows_one_swatchs_selection_without_changing_the_edit() {
+        let mut r = Recipe::default();
+        crate::point_color::add(&mut r, [0.5, 0.6, 0.4]).unwrap();
+        crate::point_color::add(&mut r, [3.5, 0.5, 0.3]).unwrap();
+        let view = rawmakase_model::model::point_color::SwatchView::VisualizeRange;
+        let s = shown(&r, false, Some(1));
+        assert_eq!(s.point_colors[1].view, view);
+        assert_ne!(s.point_colors[0].view, view);
+        assert_eq!(s.crop, r.crop);
+        // A swatch that isn't there, or none, shows the edit as it is.
+        assert_eq!(shown(&r, false, Some(5)), r);
+        assert_eq!(shown(&r, false, None), r);
+        assert!(
+            r.point_colors.iter().all(|p| p.view != view),
+            "the edit itself"
+        );
+    }
 
     #[test]
     fn a_preset_preview_is_a_small_jpeg_of_the_preset_over_the_edit() {

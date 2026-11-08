@@ -6,7 +6,7 @@
 
 use crate::controls::{Control, SliderState};
 use rawmakase_model::camera_data::Metadata;
-use rawmakase_model::model::point_color::PointColor;
+use rawmakase_model::model::point_color::{PointColor, SwatchRange};
 use rawmakase_model::model::recipe::Recipe;
 
 /// A swatch as the Point Color panel shows it.
@@ -19,6 +19,50 @@ pub struct SwatchInfo {
     pub adjusted: Vec<f32>,
     /// Hue, Sat and Lum Shift, Variance and Range.
     pub sliders: Vec<SliderState>,
+    /// Its Hue, Sat and Lum ranges.
+    pub ranges: Vec<RangeInfo>,
+}
+
+/// One of a swatch's selection ranges, as a rail with four handles.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct RangeInfo {
+    pub label: String,
+    /// The outer and inner points, 0–1 along the rail.
+    pub points: Vec<f32>,
+    /// The rail's colours, evenly spaced from one end to the other, as sRGB
+    /// 0–1 triples one after another.
+    pub rail: Vec<f32>,
+}
+
+/// The ranges, in the order the panel shows them.
+pub(crate) const RANGES: [SwatchRange; 3] = SwatchRange::ALL;
+
+/// Stops along a range's rail.
+const RAIL_STOPS: usize = 13;
+
+/// Range `which`'s rail: around the swatch's hue for its hue range, its
+/// colour from grey to full for saturation, and dark to light for
+/// luminance, as the desktop draws them.
+fn rail(p: &PointColor, which: SwatchRange) -> Vec<f32> {
+    use rawmakase_model::color::hsv::hsv_to_rgb;
+    let [h, s, v] = p.source;
+    let hue = h / 6. * std::f32::consts::TAU;
+    let window = rawmakase_engine::develop::point_color::HUE_WINDOW;
+    (0..RAIL_STOPS)
+        .flat_map(|i| {
+            let t = i as f32 / (RAIL_STOPS - 1) as f32;
+            let c = match which {
+                SwatchRange::Hue => {
+                    hsv_to_rgb(hue + (t - 0.5) * 2. * window, s.max(0.5), v.max(0.5))
+                }
+                SwatchRange::Saturation => hsv_to_rgb(hue, t, v.max(0.5)),
+                SwatchRange::Luminance => {
+                    hsv_to_rgb(hue, s, rawmakase_model::color::srgb_decode(t))
+                }
+            };
+            display(c)
+        })
+        .collect()
 }
 
 /// Linear ProPhoto RGB as sRGB for the screen, 0–1.
@@ -57,6 +101,14 @@ pub(crate) fn swatches(r: &Recipe, photo: &Metadata) -> Vec<SwatchInfo> {
                         r,
                         photo,
                     )
+                })
+                .collect(),
+            ranges: RANGES
+                .iter()
+                .map(|&which| RangeInfo {
+                    label: which.label().into(),
+                    points: p.range_points(which).to_vec(),
+                    rail: rail(p, which),
                 })
                 .collect(),
         })

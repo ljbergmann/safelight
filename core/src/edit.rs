@@ -505,6 +505,48 @@ impl OpenEdit {
         Ok(index)
     }
 
+    /// Moves point `point` of swatch `swatch`'s range `which` (0 hue, 1
+    /// saturation, 2 luminance) to `t`, kept where Camera Raw accepts the
+    /// swatch, as one editor frame; `done` ends the drag, one History step
+    /// named as the desktop names it ("Point Color Hue Range", the points).
+    /// `None` for `point` resets the range, one step.
+    pub(crate) fn set_point_color_range(
+        &mut self,
+        swatch: usize,
+        which: usize,
+        point: Option<usize>,
+        t: f32,
+        done: bool,
+    ) -> bool {
+        let Some(&which) = crate::point_color::RANGES.get(which) else {
+            return false;
+        };
+        if swatch >= self.session.recipe().point_colors.len() {
+            return false;
+        }
+        let frame = self.session.begin();
+        let p = &mut self.session.recipe_mut().point_colors[swatch];
+        match point {
+            Some(k) => p.move_range_point(which, k, t),
+            None => p.reset_range(which),
+        }
+        let shown: Vec<String> = p
+            .range_points(which)
+            .iter()
+            .map(|v| format!("{:.0}", v * 100.))
+            .collect();
+        self.session.name_next_step(Step::new(
+            format!("Point Color {}", which.label()),
+            shown.join(" / "),
+        ));
+        let gesture = if done || point.is_none() {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+    }
+
     /// Deletes swatch `index`, or all of them: one History step.
     pub(crate) fn delete_point_color(&mut self, index: Option<usize>) -> bool {
         let list = &self.session.recipe().point_colors;
@@ -1063,6 +1105,39 @@ pub(crate) mod tests {
         assert!(!edit.delete_point_color(None), "nothing left");
         edit.step(-1);
         assert_eq!(edit.recipe().point_colors.len(), 1);
+    }
+
+    #[test]
+    fn a_range_handle_drag_is_one_step_and_keeps_the_swatch_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        edit.add_point_color([0.5, 0.6, 0.4]).unwrap();
+        let fresh = edit.recipe().point_colors[0];
+        let steps = edit.state().steps.len();
+        // The inner saturation point dragged past the sampled value stops at it.
+        for (t, done) in [(0.7, false), (0.9, false), (0.95, true)] {
+            edit.set_point_color_range(0, 1, Some(1), t, done);
+        }
+        let p = edit.recipe().point_colors[0];
+        assert_eq!(p.saturation_range[1], 0.6);
+        assert!(p.is_valid());
+        let names = edit.state().steps;
+        assert_eq!(names.len(), steps + 1, "{names:?}");
+        assert!(
+            names.last().unwrap().starts_with("Point Color Sat Range"),
+            "{names:?}"
+        );
+
+        assert!(edit.set_point_color_range(0, 1, None, 0., true), "reset");
+        assert_eq!(
+            edit.recipe().point_colors[0].saturation_range,
+            fresh.saturation_range
+        );
+        assert!(
+            !edit.set_point_color_range(3, 1, Some(0), 0.5, true),
+            "no such swatch"
+        );
     }
 
     #[test]
