@@ -726,6 +726,70 @@ impl LiveView {
         });
     }
 
+    /// Starts a Targeted Adjustment drag at `at` (fractions across the
+    /// photo as shown): samples the photo there as each control sees it,
+    /// then decides which sliders the drag moves. Takes a moment (it renders
+    /// around the point): call it off the main thread, keeping the drag's
+    /// travel meanwhile. False when the colour there is one the tool leaves
+    /// alone (a neutral or black), or the edit changed while sampling.
+    pub fn start_targeted(
+        &self,
+        kind: crate::targeted::TargetKind,
+        at: Vec<f32>,
+    ) -> Result<bool, RenderError> {
+        let [u, v] = point(&at).ok_or_else(|| RenderError::Failed {
+            message: "No point".into(),
+        })?;
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| RenderError::Failed {
+                message: "No photo is open".into(),
+            })?;
+        let Some((sampled, id)) = self
+            .shared
+            .edit()
+            .as_ref()
+            .map(|e| (e.recipe().clone(), e.id))
+        else {
+            return Ok(false);
+        };
+        let recipe = sampled.clone();
+        let sample = on_core_thread(move || {
+            Ok(rawmakase_engine::develop::quality::targeted_sample(
+                &image,
+                &recipe,
+                u,
+                v,
+                Cancel::NEVER,
+            )?)
+        })?;
+        Ok(self
+            .shared
+            .edit()
+            .as_mut()
+            .filter(|e| e.id == id)
+            .is_some_and(|e| e.start_targeted(kind, &sample, &sampled)))
+    }
+
+    /// The Targeted Adjustment drag has gone `up` points up from where it
+    /// started (down negative): the sliders follow; `done` ends it, one
+    /// History step. False once there is no drag.
+    pub fn drag_targeted(&self, up: f32, done: bool) -> bool {
+        let moved = self
+            .shared
+            .edit()
+            .as_mut()
+            .is_some_and(|e| e.drag_targeted(up, done));
+        if moved {
+            self.shared.request(|_| {});
+        }
+        moved
+    }
+
     /// Straightens the photo so the line drawn from `from` to `to` (view
     /// points over the photo as shown) is level or plumb: one History step.
     /// False for a line too short to go by.

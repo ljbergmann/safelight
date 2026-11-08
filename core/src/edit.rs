@@ -96,6 +96,8 @@ pub(crate) struct OpenEdit {
     /// The Color Grading wheel being dragged, and its color when the drag
     /// began, which History names the change from.
     pub(crate) wheel: Option<(u32, rawmakase_model::model::grading::HueSat)>,
+    /// The Targeted Adjustment Tool's drag under way.
+    pub(crate) targeted: Option<crate::targeted::TargetDrag>,
 }
 
 impl OpenEdit {
@@ -144,6 +146,7 @@ impl OpenEdit {
             amount: None,
             before: None,
             wheel: None,
+            targeted: None,
         })
     }
 
@@ -491,6 +494,57 @@ impl OpenEdit {
             self.session
                 .change(Some(Step::new(name, value)), |r| *r = after);
         }
+    }
+
+    /// Starts a Targeted Adjustment drag over `sample`, the pixel where it
+    /// began, taken of the edit `sampled`. False when the edit has changed
+    /// since, or the colour is one the tool leaves alone.
+    pub(crate) fn start_targeted(
+        &mut self,
+        kind: crate::targeted::TargetKind,
+        sample: &rawmakase_engine::develop::targeted::TargetSample,
+        sampled: &Recipe,
+    ) -> bool {
+        self.session.finish_gesture();
+        self.targeted = (self.session.recipe() == sampled)
+            .then(|| crate::targeted::TargetDrag::new(kind, sample, sampled))
+            .flatten();
+        self.targeted.is_some()
+    }
+
+    /// The drag has gone `up` points up from where it started (down is
+    /// negative): the sliders follow, as one editor frame; `done` ends it, one
+    /// History step named as the desktop names it ("Orange Saturation").
+    /// False once the drag has ended, or something else changed the edit.
+    pub(crate) fn drag_targeted(&mut self, up: f32, done: bool) -> bool {
+        let Some(drag) = self.targeted.take() else {
+            return false;
+        };
+        if *self.session.recipe() != drag.last {
+            return false;
+        }
+        let frame = self.session.begin();
+        drag.weights.apply(
+            &drag.start,
+            up * rawmakase_engine::develop::targeted::DRAG_RATE,
+            self.session.recipe_mut(),
+        );
+        let (name, value) = drag.weights.step(self.session.recipe());
+        self.session.name_next_step(Step::new(name, value));
+        let gesture = if done {
+            Gesture::Released
+        } else {
+            Gesture::Held
+        };
+        let edited =
+            self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited;
+        if !done {
+            self.targeted = Some(crate::targeted::TargetDrag {
+                last: self.session.recipe().clone(),
+                ..drag
+            });
+        }
+        edited
     }
 
     /// Sets Straighten so the line drawn from `from` to `to` (view points,
@@ -1237,6 +1291,49 @@ pub(crate) mod tests {
         assert_eq!(names.len(), steps + 1);
         assert!(names.last().unwrap().starts_with("Angle"), "{names:?}");
         assert!(!edit.straighten_with_ruler([0., 0.], [3., 1.]), "too short");
+    }
+
+    #[test]
+    fn a_targeted_drag_on_orange_raises_its_saturation_as_one_step() {
+        use crate::targeted::TargetKind;
+        use rawmakase_engine::develop::targeted::TargetSample;
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let steps = edit.state().steps.len();
+        // A skin tone, as the measured mixer and the B&W mix see it.
+        let skin = TargetSample {
+            tone: 0.5,
+            mixer: [0.42, 0.30, 0.22],
+            color: [0.7, 0.05, 0.06],
+        };
+        let sampled = edit.recipe().clone();
+        assert!(edit.start_targeted(TargetKind::Saturation, &skin, &sampled));
+        for (up, done) in [(40., false), (90., false), (125., true)] {
+            assert!(edit.drag_targeted(up, done));
+        }
+        let orange = edit.recipe().hsl[1][1];
+        assert!(
+            orange > 0.4,
+            "Orange Saturation moved with the drag: {orange}"
+        );
+        let names = edit.state().steps;
+        assert_eq!(names.len(), steps + 1, "{names:?}");
+        assert!(names.last().unwrap().contains("Saturation"), "{names:?}");
+        assert!(!edit.drag_targeted(10., true), "the drag has ended");
+
+        // A neutral grey moves nothing; a sample of an edit since changed is dropped.
+        let grey = TargetSample {
+            tone: 0.5,
+            mixer: [0.3, 0.3, 0.3],
+            color: [0.6, 0., 0.],
+        };
+        let now = edit.recipe().clone();
+        assert!(!edit.start_targeted(TargetKind::Hue, &grey, &now));
+        assert!(
+            !edit.start_targeted(TargetKind::Hue, &skin, &sampled),
+            "stale sample"
+        );
     }
 
     #[test]

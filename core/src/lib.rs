@@ -40,11 +40,13 @@ pub use profile::{ImportSummary, ProfileInfo, import_profiles};
 mod render;
 mod snapshots;
 pub use snapshots::SnapshotInfo;
+mod targeted;
 mod transfer;
 mod wb;
 pub use guides::{CropGuideInfo, crop_guide_lines, crop_guides};
 pub use live::{FrameStats, HistogramData, LiveView, MaskOverlay, Zoom};
 pub use render::{Backend, DecodeSize, RenderError, Rendering, render_photo};
+pub use targeted::TargetKind;
 pub use transfer::{
     CopyGroup, PresetAmountState, PresetInfo, copy_groups, delete_preset, import_presets,
     preset_groups, presets, rename_preset,
