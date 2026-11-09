@@ -134,7 +134,10 @@ and no soft proofing, so they aren't gaps.
       on fine texture. Find a RAW-domain model with a licence we can ship
       that runs on the Neural Engine, and compare both on the same high-ISO
       photos against Lightroom (M–L; the model is RAWmakase's, so raise it
-      upstream too)
+      upstream too). Looked at on 2026-11-10: RawNIND stays for now, and
+      training our own is out. Okeinla (same input and output, tuned for
+      detail) is the one to watch, but its weights are GPLv3 only; the
+      strong alternatives (LED, CycleISP, DualDn) are non-commercial
 - [ ] Select Subject and Background on the Neural Engine: SAM 2's graphs do
       not load on CoreML through ONNX Runtime; try them converted as Sky was
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
