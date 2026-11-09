@@ -57,6 +57,17 @@ struct Requests {
     quit: bool,
 }
 
+/// The closest zoom: 400%, four screen pixels per pixel of the file (eight
+/// per pixel of a half-size decode).
+pub const MAX_ZOOM: f32 = 4.;
+
+/// [`MAX_ZOOM`], for the app's pinch, which scales by
+/// [`FrameStats::decode_scale`].
+#[uniffi::export]
+pub fn max_zoom() -> f32 {
+    MAX_ZOOM
+}
+
 /// How the photo is shown.
 #[derive(uniffi::Enum, Clone, Copy, Debug, Default, PartialEq)]
 pub enum Zoom {
@@ -67,8 +78,9 @@ pub enum Zoom {
     /// photo given as fractions of its width and height. With a half-size
     /// decode, a pixel of the half-size image.
     Actual { center_x: f32, center_y: f32 },
-    /// Between Fit and 100%: `scale` screen pixels per photo pixel (below 1),
-    /// centred on a point of the developed photo as for `Actual`.
+    /// Between Fit and 100%, or past 100% up to [`MAX_ZOOM`]: `scale` screen
+    /// pixels per photo pixel, centred on a point of the developed photo as
+    /// for `Actual`.
     Scaled {
         scale: f32,
         center_x: f32,
@@ -121,6 +133,9 @@ pub struct FrameStats {
     /// shows a pixel of.
     pub full_width: u32,
     pub full_height: u32,
+    /// The file's pixels per pixel of that resolution: 2 for a half-size
+    /// decode, so 400% of the file is 800% of what 100% shows.
+    pub decode_scale: f32,
     /// The straightened photo's width and height before cropping, which the
     /// crop's 0–1 coordinates span.
     pub frame_width: f32,
@@ -2377,6 +2392,7 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
                     s.height = frame.height;
                     s.full_width = frame.full[0];
                     s.full_height = frame.full[1];
+                    s.decode_scale = frame.decode_scale;
                     s.zoom = frame.zoom;
                     s.frame_width = frame.frame[0];
                     s.frame_height = frame.frame[1];
@@ -2390,6 +2406,38 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             render_one_preview(shared, p);
         }
     }
+}
+
+/// The file's pixels per decoded pixel: 2 for a half-size decode, 1 at full
+/// size.
+fn decode_scale(image: &CameraImage) -> f32 {
+    (image.metadata.width as f32 / image.width.max(1) as f32).max(1.)
+}
+
+/// The part of a photo `size` pixels large that a view `view` pixels large
+/// shows at `scale` screen pixels per photo pixel (1 at 100%), around
+/// `center` (fractions of the photo), kept inside the photo; and its centre.
+fn region_around(
+    view: [u32; 2],
+    size: [u32; 2],
+    center: [f32; 2],
+    scale: f32,
+) -> ([u32; 4], [f32; 2]) {
+    let side = |v: u32, s: u32| ((v as f32 / scale).ceil() as u32).clamp(1, s.max(1));
+    let (w, h) = (side(view[0], size[0]), side(view[1], size[1]));
+    let start = |c: f32, part: u32, whole: u32| {
+        (c * whole as f32 - part as f32 / 2.)
+            .round()
+            .clamp(0., whole.saturating_sub(part) as f32) as u32
+    };
+    let (x, y) = (start(center[0], w, size[0]), start(center[1], h, size[1]));
+    (
+        [x, y, w, h],
+        [
+            (x as f32 + w as f32 / 2.) / size[0] as f32,
+            (y as f32 + h as f32 / 2.) / size[1] as f32,
+        ],
+    )
 }
 
 /// The edit as the view shows it: with the Crop tool open, the whole
@@ -2570,6 +2618,7 @@ fn current_size(shared: &Shared) -> [u32; 2] {
 }
 
 struct Shown {
+    decode_scale: f32,
     render_ms: f64,
     present_ms: f64,
     backend: &'static str,
@@ -2619,6 +2668,9 @@ struct BeforeKey {
 struct Side {
     texture: wgpu::Texture,
     actual: bool,
+    /// Screen pixels per texture pixel when drawn 1:1 or closer: past 100%,
+    /// the zoom's scale; else 1.
+    magnify: f32,
     /// For a zoomed-out view, the whole photo at its scale: the point drawn
     /// at the view's centre, as fractions of the texture.
     center: Option<[f32; 2]>,
@@ -2910,6 +2962,7 @@ impl Screen {
         }
         self.draw(&paints);
         Ok(Shown {
+            decode_scale: decode_scale(&p.image),
             render_ms,
             present_ms: t.elapsed().as_secs_f64() * 1000.,
             backend,
@@ -2937,11 +2990,36 @@ impl Screen {
     ) -> anyhow::Result<(Side, Zoom, Histogram, &'static str)> {
         let g = Geometry::new(&p.image, recipe, 0);
         let mut whole = None;
+        let mut magnify = 1.;
         let (region, zoom) = match zoom {
             Zoom::Fit => (None, Zoom::Fit),
             // The whole photo at the scale, from the pyramid as the desktop's
             // zoomed-out views are, drawn 1:1 around the centre, kept so the
             // photo never leaves a gap where it is larger than the view.
+            // Past 100%: the region the view shows, rendered at the photo's
+            // resolution and drawn enlarged.
+            Zoom::Scaled {
+                scale,
+                center_x,
+                center_y,
+            } if scale > 1. => {
+                let scale = scale.min(MAX_ZOOM * decode_scale(&p.image));
+                let (region, [center_x, center_y]) = region_around(
+                    [width, height],
+                    [g.width, g.height],
+                    [center_x, center_y],
+                    scale,
+                );
+                magnify = scale;
+                (
+                    Some(region),
+                    Zoom::Scaled {
+                        scale,
+                        center_x,
+                        center_y,
+                    },
+                )
+            }
             Zoom::Scaled {
                 scale,
                 center_x,
@@ -2972,19 +3050,13 @@ impl Screen {
                 )
             }
             Zoom::Actual { center_x, center_y } => {
-                let w = width.min(g.width);
-                let h = height.min(g.height);
-                let x = (center_x * g.width as f32 - w as f32 / 2.)
-                    .round()
-                    .clamp(0., (g.width - w) as f32) as u32;
-                let y = (center_y * g.height as f32 - h as f32 / 2.)
-                    .round()
-                    .clamp(0., (g.height - h) as f32) as u32;
-                let center = Zoom::Actual {
-                    center_x: (x as f32 + w as f32 / 2.) / g.width as f32,
-                    center_y: (y as f32 + h as f32 / 2.) / g.height as f32,
-                };
-                (Some([x, y, w, h]), center)
+                let (region, [center_x, center_y]) = region_around(
+                    [width, height],
+                    [g.width, g.height],
+                    [center_x, center_y],
+                    1.,
+                );
+                (Some(region), Zoom::Actual { center_x, center_y })
             }
         };
         let display = Display {
@@ -3027,6 +3099,7 @@ impl Screen {
         };
         let side = Side {
             texture,
+            magnify,
             actual: region.is_some() || whole.is_some(),
             center: whole.map(|(_, c)| c),
         };
@@ -3113,7 +3186,7 @@ impl Screen {
                 let texture = &paint.side.texture;
                 let (tw, th) = (texture.width() as f32, texture.height() as f32);
                 let scale = if paint.side.actual {
-                    1.
+                    paint.side.magnify
                 } else {
                     (w / tw).min(h / th)
                 };
@@ -3198,6 +3271,23 @@ impl Screen {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 100% shows a view-sized part of the photo; 200% half as much around
+    /// the same point, kept inside the photo at its edges.
+    #[test]
+    fn zooming_past_one_hundred_percent_shows_a_smaller_part() {
+        let (at_100, _) = region_around([1000, 800], [4000, 3000], [0.5, 0.5], 1.);
+        assert_eq!(at_100, [1500, 1100, 1000, 800]);
+        let (at_200, c) = region_around([1000, 800], [4000, 3000], [0.5, 0.5], 2.);
+        assert_eq!(at_200, [1750, 1300, 500, 400]);
+        assert_eq!(c, [0.5, 0.5]);
+        let (corner, c) = region_around([1000, 800], [4000, 3000], [0., 0.], 4.);
+        assert_eq!(corner, [0, 0, 250, 200]);
+        assert!(c[0] > 0. && c[1] > 0., "kept inside: {c:?}");
+        // A photo smaller than the view: all of it, at any zoom it covers.
+        let (small, _) = region_around([1000, 800], [300, 200], [0.5, 0.5], 2.);
+        assert_eq!(small, [0, 0, 300, 200]);
+    }
 
     #[test]
     fn visualize_range_shows_one_swatchs_selection_without_changing_the_edit() {

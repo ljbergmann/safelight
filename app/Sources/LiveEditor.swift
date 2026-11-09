@@ -252,19 +252,21 @@ final class LiveModel {
         }
     }
 
-    /// Ends a pinch at the scale it reached, between Fit and 100%, centred
-    /// on its anchor: past either end it settles there.
+    /// Ends a pinch at the scale it reached, from Fit to 400% (the core's
+    /// `max_zoom`), centred on its anchor: past either end it settles there,
+    /// and close to 100% it settles at 100%.
     func endPinch(in size: CGSize, scale: CGFloat) {
         defer { pinch = 1 }
         guard !cropping && tool == .none, let stats = live?.stats(), stats.fullWidth > 0,
               let now = zoomScale(in: size, scale: scale) else { return }
         let fit = min(size.width * scale / CGFloat(stats.fullWidth), size.height * scale / CGFloat(stats.fullHeight))
-        let target = now * pinch
+        let closest = CGFloat(maxZoom()) * CGFloat(max(stats.decodeScale, 1))
+        let target = min(now * pinch, max(closest, fit))
         let anchor = CGPoint(x: pinchAnchor.x * size.width, y: pinchAnchor.y * size.height)
         guard let (x, y) = photoPoint(at: anchor, in: size, scale: scale) else { return }
-        if target <= fit * 1.02 || fit >= 1 {
-            zoom = target >= 1 ? .actual(centerX: x, centerY: y) : .fit
-        } else if target >= 0.98 {
+        if target <= fit * 1.02 {
+            zoom = .fit
+        } else if abs(target - 1) < 0.02 {
             zoom = .actual(centerX: x, centerY: y)
         } else {
             zoom = .scaled(scale: Float(target), centerX: x, centerY: y)
@@ -349,7 +351,10 @@ struct LiveEditor: View {
                     MagnifyGesture()
                         .onChanged { value in
                             model.pinchAnchor = value.startAnchor
-                            model.pinch = value.magnification
+                            // Up to 400% while the fingers move, as where it can end.
+                            let now = model.zoomScale(in: geometry.size, scale: displayScale) ?? 1
+                            let closest = CGFloat(maxZoom()) * CGFloat(max(model.live?.stats().decodeScale ?? 1, 1))
+                            model.pinch = min(value.magnification, max(1, closest / max(now, 0.0001)))
                         }
                         .onEnded { _ in model.endPinch(in: geometry.size, scale: displayScale) }
                 )
@@ -870,7 +875,7 @@ extension LiveEditor {
 extension FrameStats {
     static let empty = FrameStats(
         frames: 0, renderMs: 0, presentMs: 0, meanRenderMs: 0, backend: "", width: 0, height: 0,
-        fullWidth: 0, fullHeight: 0, frameWidth: 0, frameHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
+        fullWidth: 0, fullHeight: 0, decodeScale: 1, frameWidth: 0, frameHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
 }
 
 struct SwitchRow: View {
