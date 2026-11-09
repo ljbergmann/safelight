@@ -49,6 +49,10 @@ pub enum Control {
         component: u32,
         which: u32,
     },
+    /// Lens Corrections' Defringe, as the desktop's sliders: `which` 0 to 2
+    /// Purple's Amount, Hue low and high; 3 to 5 Green's. A range's ends stay
+    /// at least 0.1 apart.
+    Defringe { which: u32 },
 }
 
 /// The range part `component` of mask `mask`.
@@ -313,6 +317,20 @@ impl Control {
                 signed: false,
                 unit: "",
             }),
+            Control::Defringe { which } => Some(Spec {
+                label: format!(
+                    "{} {}",
+                    if which < 3 { "Purple" } else { "Green" },
+                    ["Amount", "Hue Low", "Hue High"][which as usize % 3]
+                ),
+                min: 0.,
+                max: 1.,
+                step: 0.,
+                scale: if which % 3 == 0 { 20. } else { 100. },
+                decimals: 0,
+                signed: false,
+                unit: "",
+            }),
             Control::Levels { which } => Some(Spec {
                 label: if which == 0 {
                     "Black Point"
@@ -418,6 +436,13 @@ impl Control {
                 grade.get(channel as usize).copied()
             }
             Control::ProfileAmount => Some(r.profile_amount),
+            Control::Defringe { which } => {
+                let i = (which / 3) as usize;
+                match which % 3 {
+                    0 => r.effects.defringe.get(i).copied(),
+                    k => r.effects.defringe_ranges.get(i).map(|h| h[k as usize - 1]),
+                }
+            }
             Control::Levels { which } => Some(if which == 0 {
                 r.black_point
             } else {
@@ -499,6 +524,19 @@ impl Control {
                     } else if which == 1 {
                         *low = low.min(*high);
                     }
+                }
+            }
+            Control::Defringe { which } => {
+                let i = (which / 3) as usize;
+                if i > 1 {
+                    return None;
+                }
+                let [lo, hi] = &mut r.effects.defringe_ranges[i];
+                match which % 3 {
+                    0 => r.effects.defringe[i] = value.clamp(0., 1.),
+                    // As the desktop's sliders: low under high by 0.1 at least.
+                    1 => *lo = value.clamp(0., (*hi - 0.1).max(0.)),
+                    _ => *hi = value.clamp((*lo + 0.1).min(1.), 1.),
                 }
             }
             Control::Levels { which } => {
@@ -973,6 +1011,12 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata, start: &Recipe) -> Vec<Sect
                 P::LensVignetteMidpoint,
             ]),
         ),
+        group(
+            "Optics",
+            "Defringe",
+            vec![],
+            (0..6).map(|which| Control::Defringe { which }).collect(),
+        ),
         group("Geometry", "Straighten", vec![], params(&[P::Straighten])),
         group(
             "Geometry",
@@ -1068,6 +1112,31 @@ mod tests {
             .label,
             "Global Saturation"
         );
+    }
+
+    /// Defringe's sliders set the desktop's fields; a hue range's ends stay
+    /// 0.1 apart at least, as the desktop's sliders keep them.
+    #[test]
+    fn defringe_sets_its_amounts_and_keeps_its_ranges_apart() {
+        let m = Metadata::default();
+        let mut r = Recipe::default();
+        let set = |r: &mut Recipe, which, v| Control::Defringe { which }.set(r, &m, v);
+        set(&mut r, 0, 0.5).unwrap();
+        set(&mut r, 3, 0.25).unwrap();
+        assert_eq!(r.effects.defringe, [0.5, 0.25]);
+        let [_, hi] = r.effects.defringe_ranges[0];
+        set(&mut r, 1, 0.99).unwrap();
+        assert!((r.effects.defringe_ranges[0][0] - (hi - 0.1)).abs() < 1e-6);
+        set(&mut r, 5, 0.).unwrap();
+        let [lo, hi] = r.effects.defringe_ranges[1];
+        assert!((hi - (lo + 0.1)).abs() < 1e-6);
+        assert!(r.validate().is_ok());
+        assert_eq!(
+            Control::Defringe { which: 0 }.spec(&m).unwrap().text(0.5),
+            "10",
+            "Amount shown 0–20, as on the desktop"
+        );
+        assert!(set(&mut r, 6, 0.5).is_none());
     }
 
     #[test]

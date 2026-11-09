@@ -26,6 +26,7 @@ pub use export::{ExportChoice, ExportFormat};
 pub use files::{FileChange, FolderInfo};
 mod guides;
 mod import;
+mod lens;
 mod library;
 pub use edit::{EditState, Orientation};
 pub use import::{ImportCandidate, ImportJob, ImportMode};

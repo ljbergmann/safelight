@@ -1438,6 +1438,38 @@ impl LiveView {
         }
     }
 
+    /// The imported lens profiles that fit the photo's camera, for Lens
+    /// Corrections' profile menu.
+    pub fn lens_profiles(&self) -> Vec<crate::lens::LensProfileInfo> {
+        let edit = self.shared.edit();
+        edit.as_ref()
+            .map(|e| crate::lens::profiles(e.recipe(), &e.metadata))
+            .unwrap_or_default()
+    }
+
+    /// Chooses lens profile `index` (of [`Self::lens_profiles`]), or Auto
+    /// with `None`: one History step.
+    pub fn set_lens_profile(&self, index: Option<u32>) {
+        let changed = self.shared.edit().as_mut().is_some_and(|e| {
+            let mut after = e.recipe().clone();
+            let Some((name, value)) = crate::lens::choose(&mut after, &e.metadata, index) else {
+                return false;
+            };
+            if after == *e.recipe() {
+                return false;
+            }
+            e.session.finish_gesture();
+            e.session.change(
+                Some(rawmakase_edit_session::history::Step::new(name, value)),
+                |r| *r = after,
+            );
+            true
+        });
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// Upright's mode, as the Transform panel shows it; `None` for Guided,
     /// which the iPad doesn't offer yet.
     pub fn upright(&self) -> Option<crate::geometry_upright::Upright> {

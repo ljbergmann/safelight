@@ -365,6 +365,7 @@ struct EditGroup: View {
                 VStack(alignment: .leading, spacing: 6) {
                     if name == "Color" { WhiteBalanceRow(model: model) }
                     controls(main, skipping: [.monochrome])
+                    if name == "Optics" { LensProfileRow(model: model) }
                     if name == "Light", shown.contains("Tone Curve") {
                         subsections("Tone Curve")
                     }
@@ -715,6 +716,42 @@ struct CropPane: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Lens Corrections' profile: Auto (the imported profile that fits the
+/// lens best), or one of the imported Adobe profiles for this camera, those
+/// for this lens first.
+struct LensProfileRow: View {
+    let model: LiveModel
+
+    var body: some View {
+        let _ = model.edit?.applied
+        let profiles = model.live?.lensProfiles() ?? []
+        if !profiles.isEmpty {
+            HStack {
+                Text("Lens Profile").foregroundStyle(Theme.secondaryText)
+                Spacer()
+                Menu {
+                    Button("Auto") { model.live?.setLensProfile(index: nil); model.refresh() }
+                    Divider()
+                    ForEach(profiles, id: \.index) { p in
+                        Button {
+                            model.live?.setLensProfile(index: p.index)
+                            model.refresh()
+                        } label: {
+                            if p.used { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(profiles.first(where: \.used)?.name ?? "None").lineLimit(1)
+                        Image(systemName: "chevron.down").font(.caption)
+                    }
+                }
+            }
+            .font(.callout)
+        }
     }
 }
 
