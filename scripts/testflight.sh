@@ -22,13 +22,24 @@ ipad=${IPAD_UDID:-00008103-000A593E3E6B001E}
 work=${TMPDIR:-/tmp}/safelight-testflight
 
 cd "$root"
-build=$(sed -n 's/^ *CURRENT_PROJECT_VERSION: "\([0-9]*\)"/\1/p' project.yml)
+# The bump is made from the last commit's project.yml and committed alone,
+# through a separate index, so whatever else is uncommitted in this checkout
+# (another session's work, say) stays out of the release and untouched.
+build=$(git show HEAD:project.yml | sed -n 's/^ *CURRENT_PROJECT_VERSION: "\([0-9]*\)"/\1/p')
+version=$(git show HEAD:project.yml | sed -n 's/^ *MARKETING_VERSION: "\(.*\)"/\1/p')
 next=$((build + 1))
-sed -i '' "s/CURRENT_PROJECT_VERSION: \"$build\"/CURRENT_PROJECT_VERSION: \"$next\"/" project.yml
-version=$(sed -n 's/^ *MARKETING_VERSION: "\(.*\)"/\1/p' project.yml)
-git add project.yml
-git commit -q -m "Build $next of $version for TestFlight"
-commit=$(git rev-parse HEAD)
+bump="s/CURRENT_PROJECT_VERSION: \"$build\"/CURRENT_PROJECT_VERSION: \"$next\"/"
+blob=$(git show HEAD:project.yml | sed "$bump" | git hash-object -w --stdin)
+index=$(mktemp)
+GIT_INDEX_FILE=$index git read-tree HEAD
+GIT_INDEX_FILE=$index git update-index --cacheinfo "100644,$blob,project.yml"
+tree=$(GIT_INDEX_FILE=$index git write-tree)
+rm -f "$index"
+commit=$(git commit-tree "$tree" -p HEAD -m "Build $next of $version for TestFlight" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")
+git update-ref -m "testflight: build $next" HEAD "$commit"
+# This checkout's index and project.yml follow, keeping their other changes.
+git update-index --cacheinfo "100644,$blob,project.yml"
+sed -i '' "$bump" project.yml
 echo "Build $next of $version from $(git rev-parse --short HEAD)"
 
 # A clean copy of the commit, its submodule from this checkout's.
