@@ -16,6 +16,7 @@ mod compare;
 pub use compare::{BeforeAfterCopy, Compare, after_area};
 mod controls;
 mod curve;
+mod denoise_measure;
 pub use curve::CurveState;
 mod edit;
 mod export;
