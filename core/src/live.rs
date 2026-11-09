@@ -231,7 +231,7 @@ impl LiveView {
         });
         let worker_shared = shared.clone();
         let worker = std::thread::Builder::new()
-            .name("rawmakase-live".into())
+            .name("safelight-live".into())
             .stack_size(STACK_BYTES)
             .spawn(move || {
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2429,7 +2429,7 @@ impl Screen {
         }))?;
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-                label: Some("RAWmakase live view"),
+                label: Some("Safelight live view"),
                 // The engine's limits, within what the adapter offers: the iPad
                 // simulator's Metal allows fewer inter-stage variables than
                 // wgpu's defaults ask for; the M1 allows them all.

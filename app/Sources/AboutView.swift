@@ -21,7 +21,7 @@ struct AboutView: View {
                     VStack(spacing: 8) {
                         Text("Safelight").font(.title.weight(.semibold))
                         Text(version).font(.callout).foregroundStyle(Theme.secondaryText)
-                        Text("A RAW photo editor for the iPad, built on RAWmakase.")
+                        Text("A RAW photo editor for the iPad.")
                             .font(.callout).multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)

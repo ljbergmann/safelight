@@ -1754,34 +1754,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rawmakase-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytemuck",
- "image",
- "libc",
- "pollster",
- "rawmakase-ai",
- "rawmakase-cancel",
- "rawmakase-catalog",
- "rawmakase-decode",
- "rawmakase-edit-session",
- "rawmakase-engine",
- "rawmakase-export",
- "rawmakase-inference",
- "rawmakase-interop",
- "rawmakase-model",
- "rawmakase-protocol",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "uniffi",
- "wgpu",
-]
-
-[[package]]
 name = "rawmakase-decode"
 version = "0.1.0"
 dependencies = [
@@ -2129,6 +2101,34 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "safelight-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "image",
+ "libc",
+ "pollster",
+ "rawmakase-ai",
+ "rawmakase-cancel",
+ "rawmakase-catalog",
+ "rawmakase-decode",
+ "rawmakase-edit-session",
+ "rawmakase-engine",
+ "rawmakase-export",
+ "rawmakase-inference",
+ "rawmakase-interop",
+ "rawmakase-model",
+ "rawmakase-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "uniffi",
+ "wgpu",
+]
 
 [[package]]
 name = "scopeguard"

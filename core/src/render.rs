@@ -80,7 +80,7 @@ pub(crate) fn on_core_thread<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, RenderError> + Send + 'static,
 ) -> Result<T, RenderError> {
     let thread = std::thread::Builder::new()
-        .name("rawmakase-core".into())
+        .name("safelight-core".into())
         .stack_size(STACK_BYTES)
         .spawn(work)
         .map_err(|e| RenderError::Failed {

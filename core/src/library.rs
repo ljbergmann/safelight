@@ -402,7 +402,7 @@ fn follow_container(catalog: &mut Catalog, photos: &Path, data: &Path) -> anyhow
         let inside = |d: &Path| at == d.join("Photos");
         let ours = inside(data)
             || data.canonicalize().is_ok_and(|d| inside(&d))
-            || at.ends_with("Library/Application Support/RAWmakase/Photos")
+            || at.ends_with("Library/Application Support/Safelight/Photos")
             || at.ends_with("Library/Application Support/Photos");
         if at != photos && !at.exists() && ours {
             catalog.relink_root(id, photos)?;
@@ -647,8 +647,8 @@ mod tests {
     fn photos_are_found_after_the_container_moves() {
         let dir = tempfile::tempdir().unwrap();
         // Containers keep the app's own folder layout below them.
-        let old = dir.path().join("A/Library/Application Support/RAWmakase");
-        let new = dir.path().join("B/Library/Application Support/RAWmakase");
+        let old = dir.path().join("A/Library/Application Support/Safelight");
+        let new = dir.path().join("B/Library/Application Support/Safelight");
         let library = Library::open(
             old.display().to_string(),
             dir.path().join("caches").display().to_string(),

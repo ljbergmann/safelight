@@ -2,7 +2,6 @@
 /core/target/
 /app/Generated/
 /Safelight.xcodeproj/
-/Rawmakase.xcodeproj/
 *.xcuserstate
 xcuserdata/
 DerivedData/

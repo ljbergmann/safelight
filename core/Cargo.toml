@@ -1,16 +1,16 @@
 [package]
-name = "rawmakase-core"
+name = "safelight-core"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
-description = "RAWmakase's Swift-facing API for the iPad app"
+description = "Safelight's Swift-facing API: RAWmakase's crates for the iPad app"
 publish = false
 
 [lib]
 # staticlib for the app; cdylib only so uniffi-bindgen can read the API from it.
 crate-type = ["staticlib", "cdylib", "lib"]
-name = "rawmakase_core"
+name = "safelight_core"
 
 [[bin]]
 name = "uniffi-bindgen"

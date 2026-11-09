@@ -62,8 +62,8 @@ final class LibraryModel {
     func open() async {
         guard library == nil else { return }
         let fm = FileManager.default
-        let data = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "RAWmakase")
-        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "RAWmakase")
+        let data = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "Safelight")
+        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "Safelight")
         do {
             let opened = try await Task.detached { try Library.open(data: data.path, caches: caches.path) }.value
             library = opened

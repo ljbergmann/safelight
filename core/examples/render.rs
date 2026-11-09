@@ -2,7 +2,7 @@
 //! `cargo run --release --example render -- <photo> <out.ppm> [cpu|gpu] [full|half]`
 //! prints the timings and writes the pixels as a binary PPM.
 
-use rawmakase_core::{Backend, DecodeSize, render_photo};
+use safelight_core::{Backend, DecodeSize, render_photo};
 use std::io::Write;
 
 fn main() -> anyhow::Result<()> {

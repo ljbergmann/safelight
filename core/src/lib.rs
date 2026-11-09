@@ -83,7 +83,7 @@ pub fn folders() -> Folders {
 #[uniffi::export]
 pub fn hello() -> String {
     format!(
-        "RAWmakase core {} running on Rust",
+        "Safelight core {} running on Rust",
         env!("CARGO_PKG_VERSION")
     )
 }

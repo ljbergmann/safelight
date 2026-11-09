@@ -136,7 +136,7 @@ xcodebuild -project Safelight.xcodeproj -scheme Safelight -configuration Release
 | Path | What |
 | --- | --- |
 | `app/Sources/` | The SwiftUI app; `app/Generated/` holds the Swift bindings the build writes |
-| `core/` | The Rust core the app calls (`rawmakase-core`) |
+| `core/` | The Rust core the app calls (`safelight-core`) |
 | `vendor/rawmakase/` | RAWmakase, as a submodule on the fork's `ios/build-crates` branch |
 | `scripts/` | Building the core and ONNX Runtime |
 | `project.yml` | The Xcode project, for XcodeGen |
