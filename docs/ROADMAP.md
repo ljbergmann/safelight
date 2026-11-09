@@ -94,8 +94,10 @@ and no soft proofing, so they aren't gaps.
 
 ## Sync
 
-- [ ] Sync through S3-compatible storage: per-device change records,
-      originals by content hash, never the SQLite file (L; needs a bucket)
+- [ ] Sync through S3-compatible storage, designed in [SYNC.md](SYNC.md):
+      originals at home on a device (or in the bucket), per-album rules
+      (Transit, Archive, Everywhere), XMP sidecars and a change log, in the
+      background (L; phases 1–6 there; needs a bucket)
 - [ ] Smart previews: edit without the original on the device (L)
 
 ## Platforms and polish

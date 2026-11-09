@@ -62,9 +62,11 @@ in RAWmakase there, as it already can; how a Mac joins sync is still open.
 1. **An iPad app for daily use** (now): every Develop tool a Lightroom user
    reaches for, a proper import from cards, folders and the Photos library,
    and a library you can live in.
-2. **Sync.** Each device writes its own change records to the bucket and
-   uploads originals by content hash, never the SQLite file; each device
-   merges what the others wrote into its own catalog.
+2. **Sync.** A self-hosted replacement for Lightroom's cloud, through an
+   S3-compatible bucket the user owns: originals live on the user's own
+   devices (or in the bucket, if they prefer), each photo carries a standard
+   XMP sidecar, and a change log carries the rest, in the background, with
+   no sync button ([SYNC.md](SYNC.md)).
 3. **Smart previews.** Edit a photo whose original isn't on this device,
    from a small proxy, as Lightroom does; download the original only to
    export.
