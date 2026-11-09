@@ -127,7 +127,7 @@ struct FileAlerts: ViewModifier {
 
     private var message: String {
         switch model.fileRequest {
-        case .remove: "Their edits and metadata go; their files stay in the photo folder."
+        case .remove: "Their edits and metadata go; their files stay on this device."
         case .delete: "Their files go to Recently Deleted, with their virtual copies; the edits go."
         case .emptyDeleted: "\(model.deletedFiles) file\(model.deletedFiles == 1 ? "" : "s") will be deleted. This can't be undone."
         default: ""

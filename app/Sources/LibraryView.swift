@@ -49,7 +49,7 @@ struct LibraryView: View {
                     } description: {
                         Text("Import RAW files from the Files app or the Photos library. They're copied into the catalog.")
                     } actions: {
-                        Button("From a Card or Folder…") { pickFolder = true; picking = true }.buttonStyle(.borderedProminent)
+                        Button("From a Card or Drive…") { pickFolder = true; picking = true }.buttonStyle(.borderedProminent)
                         Button("From Files…") { pickFolder = false; picking = true }
                         Button("From Photos…") { pickingPhotos = true }
                     }
@@ -252,7 +252,7 @@ struct LibraryView: View {
                 if let job = model.importJob { Button("Cancel") { job.cancel() } }
             } else {
                 Menu {
-                    Button("From a Card or Folder…", systemImage: "sdcard") { pickFolder = true; picking = true }
+                    Button("From a Card or Drive…", systemImage: "sdcard") { pickFolder = true; picking = true }
                     Button("From Files…", systemImage: "doc") { pickFolder = false; picking = true }
                     Button("From Photos…", systemImage: "photo.on.rectangle") { pickingPhotos = true }
                 } label: {

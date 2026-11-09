@@ -74,10 +74,10 @@ struct ImportScreen: View {
                 if choice.scanning {
                     ProgressView("Looking for photos…")
                 } else if let error = choice.error {
-                    ContentUnavailableView("Couldn't read the folder", systemImage: "exclamationmark.triangle", description: Text(error))
+                    ContentUnavailableView("Couldn’t read this location", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else if choice.candidates.isEmpty {
                     ContentUnavailableView("No photos here", systemImage: "photo.on.rectangle",
-                                           description: Text("No RAW or image files were found in this folder or the folders in it."))
+                                           description: Text("No RAW or image files were found in this location."))
                 } else {
                     grid
                 }

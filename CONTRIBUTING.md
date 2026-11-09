@@ -38,6 +38,21 @@ Run `scripts/build-core.sh` again after changing `core/` or the crates.
 - [docs/PLAN.md](docs/PLAN.md) explains how the port was laid out, and
   [MEASUREMENTS.md](MEASUREMENTS.md) records what was measured on the iPad.
 
+## Words the app uses
+
+The app says what Lightroom for iPad says, so a photographer coming from it
+finds the same things under the same names:
+
+- **Album**: photos gathered by hand. The catalog stores it as a Lightroom
+  collection, so the desktop's Collections panel shows it.
+- **Folder**: holds albums and other folders, nothing else. It is a
+  collection set in the catalog. Photos' files never move when albums or
+  folders do, and the app never shows the folders on disk.
+- **Collection**: the catalog's and RAWmakase's word, kept out of the app,
+  except for the **Quick Collection**, Lightroom's own name for it.
+- Where files come from is a **card**, a **drive** or a **location**, never
+  a folder.
+
 ## What a change must keep
 
 RAWmakase's rules apply here as they are (saved edits keep working, domain
