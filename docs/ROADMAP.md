@@ -68,10 +68,13 @@ Last checked against the desktop: 2026-11-09 (fork `ios/build-crates`).
 
 ## Then: the rest of Develop
 
-- **Basic:** Treatment Auto, the HDR switch (HDR display is L), Fit Camera
-  Look, per-slider Auto, panel reset
-- **Lens and Transform:** choosing a lens profile and Lensfun, Defringe,
-  Upright and Guided Upright, Constrain Crop, Calibration's process version
+- **Basic:** the HDR switch (HDR display is L). (The B&W conversion with
+  its first Auto mix and Fit Camera Look are done. Per-slider Auto and
+  resetting a panel are Lightroom's, not RAWmakase's: not planned unless
+  touch needs them.)
+- **Lens and Transform:** Lensfun, Guided Upright, Calibration's process
+  version. (Choosing an imported lens profile, Defringe, Upright's other
+  modes and Constrain Crop are done.)
 - **Retouch:** moving a Pet Eye's catchlight (brushed spots, Feather and
   Opacity, moving, re-sourcing and deleting a spot, Visualize Spots, Red Eye
   and Pet Eye are done)
@@ -99,6 +102,13 @@ and no soft proofing, so they aren't gaps.
 
 ## Platforms and polish
 
+- [ ] TestFlight: an App Store Connect record, distribution signing, an
+      archive uploaded from the command line, testers invited (S; needs the
+      Apple account)
+- [x] Huge files: linear DNGs (merged panoramas) open at half size in the
+      reduced mode, a 271 MP panorama in 814 MB of pixels
+- [x] Compatibility: `scripts/compat-check.sh` renders an edit made here in
+      the desktop app, pixel for pixel the same
 - [ ] iPhone layout (M–L)
 - [ ] The interface modelled on Lightroom for iPad throughout (M–L): the
       Library and Develop's frame are (photo edge to edge, a panel per tool
