@@ -246,6 +246,28 @@ impl OpenEdit {
         self.session.recipe().upright.needs_analysis()
     }
 
+    /// The camera's reference exposure offset, when Calibration offers it as
+    /// the desktop does: the photo has a camera profile and the edit's offset
+    /// isn't it.
+    pub(crate) fn camera_exposure_baseline(&self) -> Option<f32> {
+        let baseline =
+            rawmakase_model::camera_profiles::reference::baseline_exposure(&self.metadata);
+        let r = self.session.recipe();
+        (r.profile.is_some() && r.camera_exposure != baseline).then_some(baseline)
+    }
+
+    /// Applies [`Self::camera_exposure_baseline`], one History step, leaving
+    /// the Exposure slider as it is.
+    pub(crate) fn use_camera_exposure_baseline(&mut self) -> bool {
+        let Some(baseline) = self.camera_exposure_baseline() else {
+            return false;
+        };
+        self.change("Camera Exposure Baseline", "", |r| {
+            r.camera_exposure = baseline
+        });
+        true
+    }
+
     /// Guided Upright with `guides` (ends in Upright's frame), one History
     /// step named `step` as on the desktop (Add Guide, Move Guide, Delete
     /// Guide): the mode turns Guided and the guides are solved beside the
@@ -1341,6 +1363,29 @@ pub(crate) mod tests {
         assert!(edit.go_to(3));
         assert_eq!(exposure(&edit), 1.0);
         assert!(!edit.go_to(9), "past the last step");
+    }
+
+    /// Calibration's "Use camera exposure baseline" sets the camera's offset
+    /// in one step and is offered only while the edit's differs.
+    #[test]
+    fn the_camera_exposure_baseline_is_offered_until_used() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let baseline =
+            rawmakase_model::camera_profiles::reference::baseline_exposure(&edit.metadata);
+        let exposure = edit.recipe().exposure;
+        edit.change("Test", "", |r| r.camera_exposure = baseline + 0.5);
+        assert!(
+            edit.recipe().profile.is_some(),
+            "the chart has a camera profile"
+        );
+        assert_eq!(edit.camera_exposure_baseline(), Some(baseline));
+        assert!(edit.use_camera_exposure_baseline());
+        assert_eq!(edit.recipe().camera_exposure, baseline);
+        assert_eq!(edit.recipe().exposure, exposure, "Exposure as it was");
+        assert_eq!(edit.camera_exposure_baseline(), None);
+        assert!(!edit.use_camera_exposure_baseline());
     }
 
     /// The HDR switch sits under Light, as Lightroom's, and is one step that

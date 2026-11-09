@@ -1585,6 +1585,25 @@ impl LiveView {
         Ok(issue)
     }
 
+    /// Whether Calibration offers the desktop's "Use camera exposure
+    /// baseline" ([`OpenEdit::camera_exposure_baseline`]).
+    pub fn offers_camera_exposure_baseline(&self) -> bool {
+        self.shared
+            .edit()
+            .as_ref()
+            .is_some_and(|e| e.camera_exposure_baseline().is_some())
+    }
+
+    /// Applies the camera's reference exposure offset, leaving the Exposure
+    /// slider as it is: one History step, as the desktop's button.
+    pub fn use_camera_exposure_baseline(&self) {
+        if let Some(edit) = self.shared.edit().as_mut()
+            && edit.use_camera_exposure_baseline()
+        {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// What the HDR switch shows under it, as the desktop's note: with HDR
     /// on, that the photo shows its SDR rendition (the iPad shows no HDR
     /// yet), and why HDR export can't render it, if it can't. `None` with

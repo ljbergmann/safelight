@@ -414,6 +414,7 @@ struct EditGroup: View {
     }
 
     @ViewBuilder private func controls(_ section: Section, skipping: [Switch]) -> some View {
+        if section.title == "Calibration" { CalibrationProcess(model: model) }
         ForEach(section.switches.filter { !skipping.contains($0.id) }, id: \.label) { item in
             SwitchRow(item: item, model: model)
             if item.id == .hdr, item.on, let note = model.live?.hdrNote() {
@@ -910,5 +911,29 @@ struct ThinSlider: View {
     private func moved(_ dx: CGFloat, travel: CGFloat, span: Float) -> Float {
         let base = start ?? value
         return min(max(base + Float(dx / travel) * span, range.lowerBound), range.upperBound)
+    }
+}
+
+/// Calibration's process version, as the desktop shows it (RAWmakase renders
+/// every edit with the current one), and its button for the camera's
+/// exposure baseline when the edit doesn't use it.
+struct CalibrationProcess: View {
+    let model: LiveModel
+
+    var body: some View {
+        let _ = model.edit?.applied
+        HStack {
+            Text("Process").foregroundStyle(Theme.secondaryText)
+            Spacer()
+            Text("Current version").foregroundStyle(Theme.secondaryText)
+        }
+        .font(.callout)
+        if model.live?.offersCameraExposureBaseline() == true {
+            Button("Use Camera Exposure Baseline") {
+                model.live?.useCameraExposureBaseline()
+                model.refresh()
+            }
+            .font(.callout)
+        }
     }
 }
