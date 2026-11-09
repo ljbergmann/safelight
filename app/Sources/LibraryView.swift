@@ -38,6 +38,11 @@ struct LibraryView: View {
             .background(Theme.canvas)
             .overlay(alignment: .bottom) { bottomPill.padding(.bottom, 18) }
             .overlay {
+                // A card in the middle while photos come in: on an empty
+                // library the grid is blank until they do.
+                if let importing = model.importing { importCard(importing) }
+            }
+            .overlay {
                 if model.photos.isEmpty && model.importing == nil {
                     ContentUnavailableView {
                         Label("No photos yet", systemImage: "photo.on.rectangle")
@@ -212,6 +217,28 @@ struct LibraryView: View {
     }
 
     /// Floating over the grid: import, select, and what is going on.
+    /// The import's progress, in the middle of the grid: a bar while it can
+    /// be counted, else a spinner, what it is doing, and Cancel.
+    private func importCard(_ text: String) -> some View {
+        VStack(spacing: 14) {
+            if let p = model.importProgress, p.total > 0 {
+                ProgressView(value: Double(p.done), total: Double(p.total))
+                    .frame(width: 240)
+            } else {
+                ProgressView().controlSize(.large)
+            }
+            Text(text).font(.callout).multilineTextAlignment(.center)
+            if let job = model.importJob {
+                Button("Cancel", role: .cancel) { job.cancel() }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: 320)
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, lineWidth: 0.5))
+        .padding()
+    }
+
     @ViewBuilder private var bottomPill: some View {
         HStack(spacing: 14) {
             if let importing = model.importing {

@@ -57,6 +57,9 @@ final class LibraryModel {
     var notice: String?
     /// An import that can be cancelled, while it runs.
     private(set) var importJob: ImportJob?
+    /// How far the import is, for its progress bar: done and total, while
+    /// it can be counted.
+    var importProgress: (done: Int, total: Int)?
 
     /// Opens (or creates) the catalog in Application Support.
     func open() async {
@@ -141,7 +144,7 @@ final class LibraryModel {
 
     func setImporting(_ text: String?) {
         importing = text
-        if text != nil { notice = nil }
+        if text != nil { notice = nil } else { importProgress = nil }
     }
 
     /// Runs the core's import of `paths` (dated folders, duplicates by
@@ -153,10 +156,12 @@ final class LibraryModel {
         importJob = job
         while !job.finished() {
             importing = "Importing \(job.done()) of \(job.total())…"
+            importProgress = (Int(job.done()), Int(job.total()))
             try? await Task.sleep(for: .milliseconds(200))
         }
         importJob = nil
         importing = nil
+        importProgress = nil
         await reload()
         var notes = ["\(job.imported()) imported"]
         if job.skipped() > 0 { notes.append("\(job.skipped()) already in the catalog") }
@@ -167,6 +172,7 @@ final class LibraryModel {
 
     func finishImport(_ note: String) {
         importing = nil
+        importProgress = nil
         lastImport = note
         notice = note
         print("IMPORT \(note)")

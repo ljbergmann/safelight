@@ -54,10 +54,12 @@ enum PhotosStaging {
     /// Photos' callbacks, off it. The picker hands over the RAW when it is
     /// the photo's own file; a pair Photos imported as RAW+JPEG shows the
     /// JPEG, and its RAW is read from the library instead.
-    @MainActor static func stage(_ results: [PHPickerResult], in folder: URL) async -> Staged {
+    @MainActor static func stage(_ results: [PHPickerResult], in folder: URL,
+                                 progress: (Int) -> Void = { _ in }) async -> Staged {
         var staged = Staged()
         var seen: Set<String> = []
         for (i, result) in results.enumerated() {
+            progress(i)
             let provider = result.itemProvider
             let target = folder.appending(path: String(i))
             let suggested = provider.suggestedName
@@ -141,8 +143,12 @@ extension LibraryModel {
     func importFromPhotos(_ results: [PHPickerResult]) async {
         guard !results.isEmpty else { return }
         setImporting("Getting \(results.count) originals from Photos…")
+        importProgress = (0, results.count)
         let folder = Self.stagingFolder()
-        let staged = await PhotosStaging.stage(results, in: folder)
+        let staged = await PhotosStaging.stage(results, in: folder) { [weak self] done in
+            self?.setImporting("Getting \(done + 1) of \(results.count) originals from Photos…")
+            self?.importProgress = (done, results.count)
+        }
         await importStaged(staged, from: folder)
     }
 
