@@ -189,7 +189,11 @@ impl Ai {
         let cache = rawmakase_decode::ai::cache::AiCache::default();
         cache.set_folder(Some(caches));
         Self {
-            denoise: Service::new(cache),
+            denoise: Service::with_loader(
+                cache,
+                crate::neural_denoise::provider(),
+                crate::neural_denoise::loader(),
+            ),
             subject: Mutex::new(None),
             sky: Mutex::new(None),
         }

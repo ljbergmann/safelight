@@ -37,6 +37,7 @@ pub use import::{ImportCandidate, ImportJob, ImportMode};
 mod live;
 mod masks;
 mod metadata;
+mod neural_denoise;
 pub use library::{Added, CollectionInfo, Library, LibraryPhoto, SortChoice, sort_orders};
 pub use masks::{ComponentInfo, MaskInfo, MaskOperation, NewMask, Stroke};
 pub use metadata::{KeywordInfo, MetadataField, PhotoMetadata};

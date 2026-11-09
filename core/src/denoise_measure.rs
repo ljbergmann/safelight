@@ -5,7 +5,7 @@
 //! docs/rendering-quality.md); these measure the iPad before a plan is chosen
 //! there.
 
-use rawmakase_ai::ai_denoise::{Command, command};
+use rawmakase_ai::ai_denoise::{Command, Loader, command, load_model_with};
 use rawmakase_ai::model_install::Pack;
 use rawmakase_cancel::Cancel;
 use rawmakase_inference::{
@@ -15,6 +15,7 @@ use rawmakase_model::camera_data::Decode;
 use rawmakase_model::model::recipe::Recipe;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// The CoreML plans measured: the GPU (AI Denoise's choice so far), the Neural
@@ -74,7 +75,12 @@ fn measure_denoise(
             input: raw.to_path_buf(),
             model: model.map(Path::to_path_buf),
             provider,
-            coreml,
+            loader: Some(match coreml {
+                Some(plan) => {
+                    Arc::new(move |dir: &Path, p| load_model_with(dir, p, Some(plan))) as Loader
+                }
+                None => crate::neural_denoise::loader(),
+            }),
             amount: 1.,
             output: None,
             plain_output: None,
@@ -95,21 +101,30 @@ fn measure_denoise(
     let cpu_s = run(Provider::Cpu, None, &reference)?;
     println!("DENOISE CPU took {cpu_s:.1} s");
     let mut runs = vec![serde_json::json!({ "plan": "CPU", "seconds": cpu_s })];
-    for plan in PLANS {
-        let dump = scratch.join("CoreML.f32");
-        let result = run(Provider::CoreML, Some(plan), &dump)
+    // The app's own run first: the bundled model on the Neural Engine, through the
+    // same pipeline (tiling, gain fit). `SAFELIGHT_MEASURE=:NeuralEngine` measures
+    // only the runs whose names contain that part.
+    let only = std::env::var("SAFELIGHT_MEASURE").unwrap_or_default();
+    let only = only
+        .split_once(':')
+        .map_or(only.as_str(), |(_, plan)| plan)
+        .to_string();
+    let candidates = std::iter::once(("NeuralEngine".to_string(), Provider::NeuralEngine, None))
+        .chain(PLANS.map(|plan| (plan.name(), Provider::CoreML, Some(plan))))
+        .filter(|(name, ..)| name.contains(&only));
+    for (name, provider, plan) in candidates {
+        let dump = scratch.join("accelerated.f32");
+        let result = run(provider, plan, &dump)
             .and_then(|seconds| Ok((seconds, difference(&reference, &dump)?)));
         let _ = std::fs::remove_file(&dump);
         let entry = match result {
             Ok((seconds, d)) => {
                 println!(
                     "DENOISE {} took {seconds:.1} s, max diff {:e}, PSNR {:.1} dB",
-                    plan.name(),
-                    d.max_abs,
-                    d.psnr_db
+                    name, d.max_abs, d.psnr_db
                 );
                 serde_json::json!({
-                    "plan": plan.name(),
+                    "plan": name,
                     "seconds": seconds,
                     "max_abs_diff": d.max_abs,
                     "mean_abs_diff": d.mean_abs,
@@ -118,8 +133,8 @@ fn measure_denoise(
                 })
             }
             Err(e) => {
-                println!("DENOISE {} failed: {e:#}", plan.name());
-                serde_json::json!({ "plan": plan.name(), "error": format!("{e:#}") })
+                println!("DENOISE {name} failed: {e:#}");
+                serde_json::json!({ "plan": name, "error": format!("{e:#}") })
             }
         };
         runs.push(entry);
@@ -153,9 +168,13 @@ fn difference(reference: &Path, other: &Path) -> anyhow::Result<Difference> {
         if n == 0 {
             break;
         }
-        for (x, y) in abuf[..n].chunks_exact(4).zip(bbuf[..n].chunks_exact(4)) {
-            let x = f32::from_le_bytes([x[0], x[1], x[2], x[3]]);
-            let y = f32::from_le_bytes([y[0], y[1], y[2], y[3]]);
+        for (x, y) in abuf[..n]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(bbuf[..n].as_chunks::<4>().0)
+        {
+            let (x, y) = (f32::from_le_bytes(*x), f32::from_le_bytes(*y));
             if !y.is_finite() {
                 non_finite += 1;
                 continue;

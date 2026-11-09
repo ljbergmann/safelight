@@ -413,7 +413,28 @@ M1 iPad Pro, Release build, ONNX Runtime 1.23, a Canon CR3 (`-denoise-measure`,
 | | | NeuralNetwork, any units | — | the app is killed at the memory limit |
 
 The Neural Engine runs half precision only, so it takes nothing of a
-single-precision ML Program; AI Denoise's activations overflow half precision
-anyway. Nothing changes: AI Denoise stays on CoreML's GPU and the selections on
-the CPU. The DETR-only rows were measured with a build that kept SAM 2 on the
-CPU, which was not kept.
+single-precision ML Program, and AI Denoise's activations overflow half
+precision. The selections stay on the CPU. The DETR-only rows were measured with
+a build that kept SAM 2 on the CPU, which was not kept.
+
+### AI Denoise on the Neural Engine, converted
+
+AI Denoise now runs a half-precision Core ML conversion of the model
+(app/Models/README.md), called from the core directly, not through ONNX Runtime.
+Each layer is rescaled by a power of two so its values fit half precision; the
+skip connections keep their own scales (one shared scale made a layer's weights
+subnormal, which the Neural Engine flushes: 15 dB). Same iPad, same CR3:
+
+| | Time | Against the CPU |
+|---|---|---|
+| One 512 tile, Neural Engine | 13 ms | worst 70 dB over 9 tiles |
+| One 512 tile, GPU (half precision) | 56 ms | worst 72 dB |
+| One 512 tile, CPU (Core ML) | 68 ms | worst 49 dB |
+| The photo, Neural Engine (`-denoise-measure`) | 3.4 s denoising, 5.7 s in all | 89.7 dB, largest difference 1.5e-3 |
+| The photo, CoreML's GPU in single precision | 19.4 s denoising | 154 dB |
+| The photo, CPU | 35.2 s denoising, 37.6 s in all | — |
+| In the app (`-open … -ai-denoise`) | Ready 5.2 s after the switch | progress 0–100% in 5% steps |
+
+All 77 tiles of the photo stay finite on the Neural Engine (on the Mac, the
+conversion script's check). The app's memory peaked at 3.4 GB during the run in
+the app.

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Writes app/Acknowledgements.txt: the licences of everything the app ships.
 
-The Rust core's dependencies for the iPad (cargo metadata, aarch64-apple-ios)
-and ONNX Runtime. Each crate's own licence files are copied as they are, since
+The Rust core's dependencies for the iPad (cargo metadata, aarch64-apple-ios),
+ONNX Runtime and the AI Denoise model bundled in app/Models. Each crate's own licence files are copied as they are, since
 MIT, BSD and Apache ask that their notices ship with the software; identical
 texts are written once, after the crates that share them. A crate that ships
 no licence file is listed with its SPDX expression.
@@ -88,6 +88,13 @@ def main() -> int:
         texts.setdefault(ort.read_text(errors="replace").strip(), []).append(name.strip())
     else:
         print("note: build/onnxruntime.xcframework is missing; run scripts/build-ort.sh first", file=sys.stderr)
+
+    # The AI Denoise model bundled for the Neural Engine (app/Models): its credit, what
+    # was changed, and its licence, as CC BY 4.0 asks.
+    models = ROOT / "app" / "Models"
+    notice = (models / "RawNIND-ANE.NOTICE").read_text().strip()
+    texts.setdefault(notice + "\n\n" + (models / "RawNIND-ANE.LICENSE").read_text().strip(), []).append(
+        "RawNIND UtNet2 (Bayer), converted for the Neural Engine")
 
     lines = [
         "Safelight is built on RAWmakase and on the open-source software below.",

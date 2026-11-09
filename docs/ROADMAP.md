@@ -121,10 +121,14 @@ and no soft proofing, so they aren't gaps.
       Lightroom's Save to Device, Share and Export As…
 - [x] AI Denoise on CoreML: measured on an M1 iPad Pro, a 45 MP photo's
       output within 1.1e-6 of the CPU's, in 12.7 s against 39.9 s
-- [x] The Neural Engine, measured for every model: none is faster there.
-      AI Denoise stays on CoreML's GPU; Select Subject, Sky and Background
-      stay on the CPU (CoreML cannot load SAM 2's graphs, and Sky is slower
-      on the Neural Engine and too large to compile for the GPU)
+- [x] AI Denoise on the Neural Engine: a half-precision Core ML conversion
+      bundled with the app (app/Models), about 6× faster than CoreML's GPU
+      (a 45 MP photo ready in about 5 s), 89.7 dB from the CPU's output; a
+      progress bar while it runs
+- [ ] Select Subject, Sky and Background on the Neural Engine: through ONNX
+      Runtime none is faster (CoreML cannot load SAM 2's graphs; Sky is
+      slower there and too large to compile for the GPU); try Sky converted
+      as AI Denoise was
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views
 
