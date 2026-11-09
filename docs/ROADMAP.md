@@ -130,6 +130,11 @@ and no soft proofing, so they aren't gaps.
       about 18× faster than the CPU for 3:2, 4:3, 16:9 and square photos;
       other shapes stay on the CPU, and no download is needed for the ones it
       covers; it falls back to the GPU, then the CPU
+- [ ] A better AI Denoise model: RawNIND falls short of Lightroom's Denoise
+      on fine texture. Find a RAW-domain model with a licence we can ship
+      that runs on the Neural Engine, and compare both on the same high-ISO
+      photos against Lightroom (M–L; the model is RAWmakase's, so raise it
+      upstream too)
 - [ ] Select Subject and Background on the Neural Engine: SAM 2's graphs do
       not load on CoreML through ONNX Runtime; try them converted as Sky was
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
