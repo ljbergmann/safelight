@@ -23,7 +23,8 @@ pub(crate) fn name(mode: UprightMode) -> &'static str {
     }
 }
 
-/// Upright's modes the iPad offers; Guided needs its guides drawn first.
+/// Upright's modes. Guided corrects along guides drawn on the photo
+/// ([`crate::live::LiveView::set_upright_guides`]).
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Upright {
     Off,
@@ -31,6 +32,7 @@ pub enum Upright {
     Level,
     Vertical,
     Full,
+    Guided,
 }
 
 impl Upright {
@@ -41,17 +43,18 @@ impl Upright {
             Upright::Level => UprightMode::Level,
             Upright::Vertical => UprightMode::Vertical,
             Upright::Full => UprightMode::Full,
+            Upright::Guided => UprightMode::Guided,
         }
     }
 
-    pub(crate) fn of(mode: UprightMode) -> Option<Self> {
-        Some(match mode {
+    pub(crate) fn of(mode: UprightMode) -> Self {
+        match mode {
             UprightMode::Off => Upright::Off,
             UprightMode::Auto => Upright::Auto,
             UprightMode::Level => Upright::Level,
             UprightMode::Vertical => Upright::Vertical,
             UprightMode::Full => Upright::Full,
-            UprightMode::Guided => return None,
-        })
+            UprightMode::Guided => Upright::Guided,
+        }
     }
 }

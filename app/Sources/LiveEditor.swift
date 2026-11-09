@@ -18,10 +18,14 @@ final class LiveModel {
     var cropping = false {
         didSet {
             live?.setCropping(on: cropping); zoom = .fit
+            if !cropping { guiding = false }
             // Tools work on the edit alone, as on the desktop.
             if cropping && compare != .off { compare = .off }
         }
     }
+    /// Guided Upright's guides are being drawn on the photo (over the Crop
+    /// tool, whose pane offers them).
+    var guiding = false
     /// The right-hand panel's tool. Crop shows the crop's handles; leaving
     /// Masks or Edit lets go of a mask or the eyedropper.
     /// History's steps applied when a tool's pane opened (Crop, Masks,
@@ -349,7 +353,9 @@ struct LiveEditor: View {
                     model.toggleZoom(at: location, in: geometry.size, scale: displayScale)
                 }
                 .overlay {
-                    if model.cropping {
+                    if model.guiding {
+                        GuidesOverlay(model: model, size: geometry.size)
+                    } else if model.cropping {
                         CropOverlay(model: model, size: geometry.size)
                     } else if let kind = model.targeted {
                         TargetedOverlay(model: model, kind: kind, size: geometry.size)

@@ -765,6 +765,7 @@ struct UprightRow: View {
 
     private static let modes: [(Upright, String)] = [
         (.off, "Off"), (.auto, "Auto"), (.level, "Level"), (.vertical, "Vertical"), (.full, "Full"),
+        (.guided, "Guided"),
     ]
 
     var body: some View {
@@ -781,7 +782,11 @@ struct UprightRow: View {
             }
             HStack(spacing: 4) {
                 ForEach(Self.modes, id: \.1) { mode, name in
-                    Button { choose(mode, again: false) } label: {
+                    Button {
+                        // Guided opens its guides on the photo, as the desktop's Guided tool.
+                        if mode == .guided { model.guiding = true }
+                        choose(mode, again: false)
+                    } label: {
                         Text(name).font(.caption).lineLimit(1)
                             .frame(maxWidth: .infinity).padding(.vertical, 6)
                             .background(current == mode ? Theme.chosen : .clear, in: RoundedRectangle(cornerRadius: 6))

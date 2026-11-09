@@ -1470,10 +1470,104 @@ impl LiveView {
         }
     }
 
-    /// Upright's mode, as the Transform panel shows it; `None` for Guided,
-    /// which the iPad doesn't offer yet.
+    /// Guided Upright's guides as view points (x, y of one end, then the
+    /// other, for each guide), over the photo as shown.
+    pub fn upright_guides(&self) -> Vec<f32> {
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let (Some(image), Some(r)) = (image, self.shown_now()) else {
+            return vec![];
+        };
+        let g = rawmakase_engine::develop::Geometry::new(&image, &r, 0);
+        r.upright
+            .guides
+            .iter()
+            .flat_map(|guide| {
+                let [a, b] = [g.from_upright_frame(guide.a), g.from_upright_frame(guide.b)];
+                [a[0], a[1], b[0], b[1]]
+            })
+            .collect()
+    }
+
+    /// Sets Guided Upright's guides from view points (as
+    /// [`Self::upright_guides`] gives them, at most four), one History step
+    /// named `step` (Add Guide, Move Guide, Delete Guide),
+    /// analysing the photo first when it hasn't been (a moment: call it off
+    /// the main thread). Returns what Guided Upright has to say (too few
+    /// guides, guides it can't use fully).
+    pub fn set_upright_guides(
+        &self,
+        points: Vec<f32>,
+        step: String,
+    ) -> Result<Option<String>, RenderError> {
+        use rawmakase_model::model::transform::{MAX_GUIDES, UprightGuide, UprightMode};
+        let failed = |message: &str| RenderError::Failed {
+            message: message.into(),
+        };
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| failed("The photo is still opening"))?;
+        let shown = self.shown_now().ok_or_else(|| failed("No photo is open"))?;
+        let g = rawmakase_engine::develop::Geometry::new(&image, &shown, 0);
+        let guides: Vec<UprightGuide> = points
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .take(MAX_GUIDES)
+            .map(|[ax, ay, bx, by]| UprightGuide {
+                a: g.upright_frame(*ax, *ay),
+                b: g.upright_frame(*bx, *by),
+            })
+            .collect();
+        // The other modes' corrections come first; Guided is solved beside them.
+        if shown.upright.corrections.len() < UprightMode::Guided.code() {
+            let analysed = self
+                .shared
+                .edit()
+                .as_ref()
+                .ok_or_else(|| failed("No photo is open"))?
+                .recipe()
+                .clone();
+            let corrections = {
+                let (image, analysed) = (image.clone(), analysed.clone());
+                on_core_thread(move || {
+                    Ok(rawmakase_engine::develop::upright::analyse(
+                        &image, &analysed,
+                    ))
+                })?
+            };
+            let mut guard = self.shared.edit();
+            let edit = guard.as_mut().ok_or_else(|| failed("No photo is open"))?;
+            if edit.recipe().upright.corrections != analysed.upright.corrections {
+                return Err(failed(
+                    "The settings changed during the analysis; draw the guide again",
+                ));
+            }
+            edit.store_upright(&analysed, &corrections);
+        }
+        let issue = self
+            .shared
+            .edit()
+            .as_mut()
+            .ok_or_else(|| failed("No photo is open"))?
+            .set_guides(guides, &step);
+        self.shared.request(|_| {});
+        Ok(issue)
+    }
+
+    /// Upright's mode, as the Transform panel shows it; `None` with no photo
+    /// open.
     pub fn upright(&self) -> Option<crate::geometry_upright::Upright> {
-        crate::geometry_upright::Upright::of(self.shared.edit().as_ref()?.recipe().upright.mode)
+        let mode = self.shared.edit().as_ref()?.recipe().upright.mode;
+        Some(crate::geometry_upright::Upright::of(mode))
     }
 
     /// Chooses Upright's mode, one History step, and analyses the photo for
@@ -1887,6 +1981,18 @@ impl LiveView {
 }
 
 impl LiveView {
+    /// The photo's settings as the live view shows them now (whole while
+    /// cropping), for mapping touches to the photo.
+    fn shown_now(&self) -> Option<Recipe> {
+        let cropping = self
+            .shared
+            .requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .cropping;
+        Some(shown(self.shared.edit().as_ref()?.recipe(), cropping, None))
+    }
+
     /// Runs `work` with the decoded photo and the edit, then asks for a frame.
     fn with_image<T>(
         &self,

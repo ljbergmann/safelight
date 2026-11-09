@@ -246,6 +246,36 @@ impl OpenEdit {
         self.session.recipe().upright.needs_analysis()
     }
 
+    /// Guided Upright with `guides` (ends in Upright's frame), one History
+    /// step named `step` as on the desktop (Add Guide, Move Guide, Delete
+    /// Guide): the mode turns Guided and the guides are solved beside the
+    /// photo's analysis, which must be there (the other modes'
+    /// corrections). Returns why the guides correct less than they might, as
+    /// the desktop's status line says it.
+    pub(crate) fn set_guides(
+        &mut self,
+        guides: Vec<rawmakase_model::model::transform::UprightGuide>,
+        step: &str,
+    ) -> Option<String> {
+        use rawmakase_engine::develop::guided::{self, Issue};
+        self.session.finish_gesture();
+        let metadata = self.metadata.clone();
+        let count = guides.len();
+        let mut issue = None;
+        let value = match count {
+            1 => "1 guide".to_string(),
+            n => format!("{n} guides"),
+        };
+        self.session.change(Some(Step::new(step, value)), |r| {
+            r.upright.mode = UprightMode::Guided;
+            r.upright.guides = guides;
+            issue = guided::store(r, &metadata);
+        });
+        issue
+            .or((count < 2).then_some(Issue::TooFew))
+            .map(|i| i.message().to_string())
+    }
+
     /// Stores Upright's `corrections`, analysed on `analysed`, in every
     /// History state (and Before) they fit: the analysis is part of the
     /// photo, not an edit, so undoing the mode leaves nothing half-applied.
@@ -1357,6 +1387,37 @@ pub(crate) mod tests {
         // Another mode uses the same analysis: no new one is needed.
         assert!(!edit.set_upright(UprightMode::Level));
         assert!(!edit.set_upright(UprightMode::Level), "already Level");
+    }
+
+    /// Guides are one History step that turns the mode Guided; one guide is
+    /// too few, as the desktop says, and two solve a correction.
+    #[test]
+    fn guides_are_one_step_and_two_solve_a_correction() {
+        use rawmakase_model::model::transform::UprightGuide;
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let image = rawmakase_decode::photo::open(&path)
+            .unwrap()
+            .develop(rawmakase_model::camera_data::Decode::Half, Cancel::NEVER)
+            .unwrap();
+        let analysed = edit.recipe().clone();
+        let corrections = rawmakase_engine::develop::upright::analyse(&image, &analysed);
+        edit.store_upright(&analysed, &corrections);
+        let tilted = |x: f32| UprightGuide {
+            a: [x, -0.4],
+            b: [x + 0.03, 0.4],
+        };
+        let one = edit.set_guides(vec![tilted(-0.3)], "Add Guide");
+        assert!(one.is_some(), "one guide is too few");
+        assert_eq!(edit.recipe().upright.mode, UprightMode::Guided);
+        let two = edit.set_guides(vec![tilted(-0.3), tilted(0.3)], "Add Guide");
+        assert_eq!(two, None);
+        assert_eq!(edit.recipe().upright.guides.len(), 2);
+        assert_eq!(
+            edit.state().steps,
+            ["Add Guide 1 guide", "Add Guide 2 guides"]
+        );
     }
 
     /// A look fitted to the photo's embedded JPEG becomes its profile at
