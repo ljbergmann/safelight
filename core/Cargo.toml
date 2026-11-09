@@ -48,6 +48,8 @@ serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# Reading the desktop's renders in the compatibility test (src/compat.rs).
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 
 [profile.release]
 lto = "thin"

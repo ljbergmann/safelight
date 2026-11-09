@@ -53,7 +53,11 @@ from behaviour changes, rendering references are evidence). On top of them:
   repository's `make check`, so RAWmakase's own updates still merge. Prefer
   moving code over changing it.
 - **The catalog stays the desktop's.** A catalog made on the iPad must open
-  in RAWmakase on a computer, and its edits render the same there.
+  in RAWmakase on a computer, and its edits render the same there;
+  `scripts/compat-check.sh` proves it, pixel for pixel. Nothing only Safelight
+  understands goes into the catalog or a photo's edit: the desktop would
+  ignore it or drop it. Safelight's own settings (export presets, the last
+  export) live in files of their own beside the catalog.
 - **Memory is tight.** An iPad may have 8 GB for everything. Measure the
   footprint of anything that decodes or renders at full size
   (`Memory.footprint()`), and record what you measured in MEASUREMENTS.md.
@@ -77,11 +81,16 @@ At each RAWmakase release, and when an upstream fix Safelight wants lands:
    took drop out. Where upstream changed code a commit moved, redo the move
    on upstream's version: keep its behaviour, re-apply only the move, and
    fold any fix into the commit it belongs to.
-3. Run the fork's `make check` and `cargo test` in `core/`, adapting the core
-   to upstream's API; build the app and look at it on the simulator.
+3. Run the fork's `make check`, `cargo test` in `core/` (adapting the core
+   to upstream's API) and `scripts/compat-check.sh`; build the app and look
+   at it on the simulator. Compare what is left of each of Safelight's
+   commits with what upstream took (`git range-diff`): a commit whose change
+   RAWmakase took in another form leaves a remainder to drop.
 4. Force-push the branch (`--force-with-lease`), then commit the submodule
    bump here as "Follow RAWmakase to <sha>", naming what users will notice,
-   and update the roadmap's "Last checked against the desktop" date.
+   and update the roadmap's "Last checked against the desktop" date. If
+   RAWmakase changed its catalog's format (a migration), say so first in
+   that commit: the iPad and the Mac should then be updated together.
 
 ## Tests and checks
 
