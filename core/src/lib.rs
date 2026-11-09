@@ -15,6 +15,7 @@ static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 mod compare;
 pub use compare::{BeforeAfterCopy, Compare, after_area};
 mod controls;
+mod coreml;
 mod curve;
 mod denoise_measure;
 pub use curve::CurveState;
