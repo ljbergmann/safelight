@@ -54,6 +54,6 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         # The share sheet's Save to Photos, for exported photos. Importing
         # uses the system's picker, which needs no access to the library.
-        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Safelight saves the photos you export to your library when you choose Save Image."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Safelight saves the photos you export to your library when you choose Save to Device."
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"

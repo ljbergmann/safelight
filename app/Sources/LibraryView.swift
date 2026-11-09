@@ -366,6 +366,7 @@ struct EditorView: View {
     let photo: LibraryPhoto
     let model: LibraryModel
     @State private var live = LiveModel()
+    @State private var quick = QuickExport()
     @State private var saveFailed = false
     /// The move to another photo a failed save held back; `nil`, leaving.
     @State private var heldMove: Int?
@@ -419,10 +420,30 @@ struct EditorView: View {
                 Button("Redo", systemImage: "arrow.uturn.forward") { live.redo() }
                     .disabled(!(live.edit?.canRedo ?? false))
                 BeforeAfterMenu(model: live)
-                Button("Export", systemImage: "square.and.arrow.up") {
-                    // The export reads the edit from the catalog.
-                    if live.save() { live.exporting = true }
+                // As Lightroom: Save to Device at once, and Share's menu.
+                // Each export reads the edit from the catalog, so it saves first.
+                Button("Save to Device", systemImage: "square.and.arrow.down") {
+                    if live.save(), let library = model.library { quick.run(.save, library: library, ids: [shown.id]) }
                 }
+                .disabled(quick.running)
+                Menu("Share", systemImage: "square.and.arrow.up") {
+                    Button("Save to Device", systemImage: "square.and.arrow.down") {
+                        if live.save(), let library = model.library { quick.run(.save, library: library, ids: [shown.id]) }
+                    }
+                    Button("Share", systemImage: "square.and.arrow.up") {
+                        if live.save(), let library = model.library { quick.run(.share, library: library, ids: [shown.id]) }
+                    }
+                    Divider()
+                    Button {
+                        if live.save() { live.exporting = true }
+                    } label: {
+                        Label {
+                            Text("Export As…")
+                            Text("Choose file type, size and more")
+                        } icon: { Image(systemName: "rectangle.portrait.and.arrow.right") }
+                    }
+                }
+                .disabled(quick.running)
                 Menu("More", systemImage: "ellipsis") {
                     Button("Copy Settings…", systemImage: "doc.on.doc") { live.copying = true }
                     Button("Paste Settings", systemImage: "doc.on.clipboard") { live.paste() }
@@ -454,6 +475,20 @@ struct EditorView: View {
         }
         .toolbarBackground(Theme.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .overlay(alignment: .top) {
+            if quick.running || quick.said != nil {
+                HStack(spacing: 8) {
+                    if quick.running { ProgressView().controlSize(.small) }
+                    Text(quick.said ?? "Exporting…").font(.callout)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.top, 10)
+            }
+        }
+        .sheet(isPresented: Binding(get: { !quick.files.isEmpty }, set: { if !$0 { quick.files = [] } })) {
+            ShareSheet(items: quick.files)
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             live.save()
         }

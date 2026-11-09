@@ -1,10 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// Export, as Lightroom's dialog: presets, File Naming with an example and
-/// the user's own filename templates, format, colour space and size,
-/// Metadata and watermarks (the Simple Copyright Watermark or the user's
-/// own presets); then the iPadOS share sheet for the files (Save to Photos,
+/// Export As…, as Lightroom for iPad lays it out: file type, dimension,
+/// quality and the watermark first; naming (with the user's own filename
+/// templates), colour space, Metadata, presets and the watermark editor
+/// under More options; then the iPadOS share sheet for the files (Save to Photos,
 /// Files, AirDrop…). It starts from the last export's choices.
 struct ExportSheet: View {
     let library: Library
@@ -26,9 +26,50 @@ struct ExportSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                namingSection
-                fileSection
-                metadataSection
+                SwiftUI.Section {
+                    Picker("File type", selection: $choice.format) {
+                        Text("JPG").tag(ExportFormat.jpeg)
+                        Text("JPEG XL").tag(ExportFormat.jxl)
+                        Text("TIF (16-bit)").tag(ExportFormat.tiff)
+                        Text("PNG").tag(ExportFormat.png)
+                    }
+                    Picker("Dimension", selection: dimension) {
+                        Text("Full size").tag(Dimension.full)
+                        Text("Small (2048 px)").tag(Dimension.small)
+                        Text("Custom").tag(Dimension.custom)
+                    }
+                    if dimension.wrappedValue == .custom {
+                        LabeledContent("Long side") {
+                            HStack {
+                                TextField("Pixels", value: $choice.longEdge, format: .number.grouping(.never))
+                                    .keyboardType(.numberPad)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(maxWidth: 90)
+                                Text("px").foregroundStyle(Theme.secondaryText)
+                            }
+                        }
+                    }
+                    if choice.format == .jpeg || choice.format == .jxl {
+                        Picker("Image quality", selection: $choice.quality) {
+                            ForEach(Self.qualities, id: \.self) { Text("\($0)%").tag($0) }
+                            if !Self.qualities.contains(choice.quality) {
+                                Text("\(choice.quality)%").tag(choice.quality)
+                            }
+                        }
+                    }
+                }
+                SwiftUI.Section {
+                    SwiftUI.Toggle("Include watermark", isOn: $choice.watermark)
+                    if choice.watermark && !watermarks.isEmpty {
+                        Picker("Watermark", selection: $choice.watermarkName) {
+                            Text("Simple Copyright").tag("")
+                            ForEach(watermarks, id: \.name) { w in Text(w.name).tag(w.name) }
+                        }
+                    }
+                }
+                SwiftUI.Section {
+                    NavigationLink("More options") { moreOptions }
+                }
                 if let error { Text(error).foregroundStyle(.red) }
                 if !problems.isEmpty {
                     SwiftUI.Section("Not everything went as planned") {
@@ -39,12 +80,16 @@ struct ExportSheet: View {
                     HStack { ProgressView(); Text("Exporting \(ids.count) photo\(ids.count == 1 ? "" : "s")…") }
                 }
             }
-            .navigationTitle("Export")
+            .navigationTitle("Export as… (\(ids.count))")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .principal) { presetMenu }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Export") { export() }.disabled(running)
+                    Button("Export", systemImage: "checkmark") { export() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(running)
                 }
             }
             .alert("Save Preset", isPresented: $naming) {
@@ -69,6 +114,50 @@ struct ExportSheet: View {
                 reloadExtras()
             }
         }
+    }
+
+    private static let qualities: [UInt8] = [100, 90, 80, 70, 60, 50]
+
+    private enum Dimension: Hashable { case full, small, custom }
+
+    /// Lightroom's Dimension: full size, a small 2048 px copy, or a long side
+    /// of one's own.
+    private var dimension: Binding<Dimension> {
+        Binding(
+            get: {
+                switch choice.longEdge {
+                case 0: .full
+                case 2048: .small
+                default: .custom
+                }
+            },
+            set: {
+                switch $0 {
+                case .full: choice.longEdge = 0
+                case .small: choice.longEdge = 2048
+                case .custom: if choice.longEdge == 0 || choice.longEdge == 2048 { choice.longEdge = 4096 }
+                }
+            })
+    }
+
+    /// The rest of Lightroom's choices: naming, colour space, metadata,
+    /// presets, the editors of templates and watermarks.
+    private var moreOptions: some View {
+        Form {
+            namingSection
+            SwiftUI.Section("Color") {
+                Picker("Color Space", selection: $choice.colorSpace) {
+                    Text("sRGB").tag(ExportColorSpace.srgb)
+                    Text("Adobe RGB (1998)").tag(ExportColorSpace.adobeRgb)
+                    Text("ProPhoto RGB").tag(ExportColorSpace.proPhoto)
+                }
+            }
+            metadataSection
+            SwiftUI.Section("Presets") {
+                presetMenu
+            }
+        }
+        .navigationTitle("More options")
     }
 
     private var namingSection: some View {
@@ -103,37 +192,6 @@ struct ExportSheet: View {
         }
     }
 
-    private var fileSection: some View {
-        SwiftUI.Section("File Settings") {
-            Picker("Format", selection: $choice.format) {
-                Text("JPEG").tag(ExportFormat.jpeg)
-                Text("JPEG XL").tag(ExportFormat.jxl)
-                Text("TIFF (16-bit)").tag(ExportFormat.tiff)
-                Text("PNG").tag(ExportFormat.png)
-            }
-            if choice.format == .jpeg || choice.format == .jxl {
-                LabeledContent("Quality \(choice.quality)") {
-                    Slider(value: Binding(get: { Double(choice.quality) }, set: { choice.quality = UInt8($0) }),
-                           in: 30...100, step: 1)
-                }
-            }
-            Picker("Color Space", selection: $choice.colorSpace) {
-                Text("sRGB").tag(ExportColorSpace.srgb)
-                Text("Adobe RGB (1998)").tag(ExportColorSpace.adobeRgb)
-                Text("ProPhoto RGB").tag(ExportColorSpace.proPhoto)
-            }
-            Picker("Size", selection: $choice.longEdge) {
-                Text("Full size").tag(UInt32(0))
-                Text("Long edge 4096").tag(UInt32(4096))
-                Text("Long edge 2048").tag(UInt32(2048))
-                Text("Long edge 1080").tag(UInt32(1080))
-                if ![0, 4096, 2048, 1080].contains(choice.longEdge) {
-                    Text("Long edge \(choice.longEdge)").tag(choice.longEdge)
-                }
-            }
-        }
-    }
-
     private var metadataSection: some View {
         SwiftUI.Section("Metadata") {
             Picker("Include", selection: $choice.metadata) {
@@ -146,13 +204,6 @@ struct ExportSheet: View {
             // Lightroom always leaves the location out of the copyright ones.
             if choice.metadata != .copyrightOnly && choice.metadata != .copyrightAndContact {
                 SwiftUI.Toggle("Remove Location Info", isOn: $choice.removeLocation)
-            }
-            SwiftUI.Toggle("Watermark", isOn: $choice.watermark)
-            if choice.watermark {
-                Picker("Mark", selection: $choice.watermarkName) {
-                    Text("Simple Copyright Watermark").tag("")
-                    ForEach(watermarks, id: \.name) { w in Text(w.name).tag(w.name) }
-                }
             }
             Button("Edit Watermarks…") { editingWatermarks = true }
         }
