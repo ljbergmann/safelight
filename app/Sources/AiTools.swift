@@ -62,14 +62,20 @@ struct SelectButtons: View {
     }
 }
 
-/// Under the AI Denoise switch: what it is doing, and the model's download
-/// when it isn't installed.
+/// Under the AI Denoise switch: what it is doing, with a bar while the model
+/// runs, and the model's download when it isn't installed.
 struct AiDenoiseStatus: View {
     let model: LiveModel
 
     var body: some View {
         if let status = model.edit?.aiDenoise {
             VStack(alignment: .leading, spacing: 4) {
+                if let done = model.edit?.aiDenoiseProgress {
+                    ProgressView(value: Double(done))
+                        .tint(Theme.accent)
+                        .animation(.linear(duration: 0.2), value: done)
+                        .accessibilityLabel("AI Denoise")
+                }
                 Text(status).font(.caption).foregroundStyle(.secondary)
                 if aiModels().first(where: { $0.model == .denoise })?.installed != true {
                     Button("Download the AI Denoise model…") { model.offeredModel = .denoise }

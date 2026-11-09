@@ -602,6 +602,11 @@ struct LiveEditor: View {
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)
         }
+        // -ai-denoise: turns AI Denoise on, as its switch does, and prints how it runs.
+        if args.contains("-ai-denoise"), let live = model.live {
+            model.setSwitch(.aiDenoise, on: true)
+            await watchDenoise(live)
+        }
         if args.contains("-save") { model.save() }
         if let edit = model.edit {
             let exposure = edit.sections.flatMap(\.sliders).first { $0.label == "Exposure" }?.text ?? "?"
@@ -706,6 +711,26 @@ struct LiveEditor: View {
         print("LOUPE \(visited.joined(separator: " then "))")
     }
 
+    /// Prints AI Denoise's status and progress as they change, until it is
+    /// ready or fails (at most five minutes).
+    private func watchDenoise(_ live: LiveView) async {
+        let start = Date()
+        var last = ""
+        for _ in 0..<3000 {
+            let state = live.editState()
+            let status = state?.aiDenoise ?? "none"
+            let line = "\(status) \(state?.aiDenoiseProgress.map { "bar \(Int($0 * 100))%" } ?? "no bar")"
+            if line != last {
+                print(String(format: "AI denoise %.1f s: ", Date().timeIntervalSince(start)) + "\(line), footprint \(Memory.mb(Memory.footprint().current)), peak \(Memory.mb(Memory.footprint().peak))")
+                last = line
+            }
+            // "none" until the full-size decode has rendered once.
+            let running = status == "none" || status.hasPrefix("Waiting") || status.hasPrefix("Denoising")
+            if !running { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     /// `-ai-test`: installs any missing model, selects the subject and the
     /// sky as masks, then turns AI Denoise on and waits for its result,
     /// printing `AI …` lines with the times.
@@ -725,17 +750,8 @@ struct LiveEditor: View {
             case .failure(let error): print("AI select \(what) failed in \(ms) ms: \(error)")
             }
         }
-        let start = Date()
         live.setSwitch(which: .aiDenoise, on: true)
-        var last = ""
-        for _ in 0..<1200 {
-            let status = live.editState()?.aiDenoise ?? "none"
-            if status != last { print("AI denoise \(Int(Date().timeIntervalSince(start))) s: \(status), footprint \(Memory.mb(Memory.footprint().current)), peak \(Memory.mb(Memory.footprint().peak))"); last = status }
-            // "none" until the full-size decode has rendered once.
-            let running = status == "none" || status.hasPrefix("Waiting") || status.hasPrefix("Denoising")
-            if !running { break }
-            try? await Task.sleep(for: .milliseconds(250))
-        }
+        await watchDenoise(live)
         model.refresh()
         print("AI masks \(model.edit?.masks.map { "\($0.name)·\($0.kind)" } ?? []); steps \(model.edit?.steps ?? [])")
     }
@@ -764,10 +780,23 @@ struct LiveEditor: View {
 
     private var status: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-            let _ = (model.edit == nil || model.edit?.aiDenoise != nil) ? model.refresh() : ()
+            // AI Denoise's status arrives from the core on its own: polled while there
+            // is one, and from the moment its switch goes on, before the first one.
+            let denoising = model.edit?.sections.flatMap(\.switches).contains { $0.id == .aiDenoise && $0.on } ?? false
+            let _ = (model.edit == nil || model.edit?.aiDenoise != nil || denoising) ? model.refresh() : ()
             VStack(alignment: .leading, spacing: 4) {
                 if ProcessInfo.processInfo.arguments.contains("-stats") {
                     Text(summary(model.live?.stats() ?? .empty)).font(.caption2.monospaced())
+                }
+                // AI Denoise's progress, whichever tool is open; the panel has it too.
+                if let done = model.edit?.aiDenoiseProgress {
+                    HStack(spacing: 8) {
+                        Text("AI Denoise").font(.caption)
+                        ProgressView(value: Double(done)).tint(Theme.accent).frame(width: 110)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .accessibilityElement(children: .combine)
                 }
                 saveStatus
             }

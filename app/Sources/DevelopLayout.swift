@@ -408,7 +408,6 @@ struct EditGroup: View {
                         ForEach(rest, id: \.title) { section in
                             Text(section.title).font(.subheadline.weight(.semibold)).padding(.top, 10)
                             controls(section, skipping: [])
-                            if section.title == "AI Denoise" { AiDenoiseStatus(model: model) }
                         }
                     }
                 }
@@ -430,7 +429,7 @@ struct EditGroup: View {
         ForEach(section.sliders, id: \.label) { slider in
             SliderRow(slider: slider, model: model, track: SliderRow.track(for: slider.label, in: section.title))
         }
-        if section.title == "AI Denoise", name == main?.title { AiDenoiseStatus(model: model) }
+        if section.title == "AI Denoise" { AiDenoiseStatus(model: model) }
     }
 
     /// A family's sections, each under its view's name ("Hue", "Shadows"),

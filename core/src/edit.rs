@@ -47,6 +47,8 @@ pub struct EditState {
     pub save_error: Option<String>,
     /// What AI Denoise is doing for the photo on screen, when it is on.
     pub ai_denoise: Option<String>,
+    /// How much of it is done (0–1) while it runs, for a progress bar.
+    pub ai_denoise_progress: Option<f32>,
     /// The white balance menu: the current choice ("As Shot", "Auto", a
     /// preset or "Custom") and what it offers (none for a monochrome photo).
     pub white_balance: String,
@@ -998,6 +1000,7 @@ impl OpenEdit {
             needs_save: self.session.save_state().needs_save(),
             save_error: self.session.save_state().message().map(str::to_string),
             ai_denoise: None,
+            ai_denoise_progress: None,
             white_balance: crate::wb::current(self.session.recipe(), &self.metadata),
             white_balance_choices: crate::wb::choices(self.session.recipe(), &self.metadata),
             preset_amount: self

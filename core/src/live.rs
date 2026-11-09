@@ -178,6 +178,8 @@ struct AiShown {
     complete: bool,
     failed: bool,
     status: Option<String>,
+    /// How much of the photo is done (0–1) while the model runs.
+    progress: Option<f32>,
 }
 
 impl AiShown {
@@ -185,6 +187,37 @@ impl AiShown {
         self.requested
             .as_ref()
             .is_some_and(|(asked, _)| std::ptr::eq(asked.as_ptr(), Arc::as_ptr(image)))
+    }
+
+    /// What the panel says, and how far the run is, for a state of the job.
+    fn show(&mut self, state: &AiState) {
+        match state {
+            AiState::Queued => {
+                self.status = Some("Waiting for another photo…".into());
+                self.progress = None;
+            }
+            AiState::Running(done) => {
+                self.status = Some(format!("Denoising… {:.0}%", done * 100.));
+                self.progress = Some(done.clamp(0., 1.));
+            }
+            AiState::Partial(source) => {
+                self.source = Some(source.clone());
+                self.status = Some("Denoising… the view is ready".into());
+            }
+            AiState::Ready(source) => {
+                self.source = Some(source.clone());
+                self.complete = true;
+                self.status = Some("Ready".into());
+                self.progress = None;
+            }
+            AiState::Failed(why) => {
+                // A partial result isn't shown once the final one won't come.
+                self.source = None;
+                self.failed = true;
+                self.status = Some(why.clone());
+                self.progress = None;
+            }
+        }
     }
 
     /// Withdraws the request and forgets the result.
@@ -2051,13 +2084,14 @@ impl LiveView {
     /// The sliders, History and save state; `None` until the edit has loaded.
     pub fn edit_state(&self) -> Option<EditState> {
         let mut state = self.shared.edit().as_ref().map(OpenEdit::state)?;
-        state.ai_denoise = self
+        let ai = self
             .shared
             .ai
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .status
-            .clone();
+            .unwrap_or_else(PoisonError::into_inner);
+        state.ai_denoise = ai.status.clone();
+        state.ai_denoise_progress = ai.progress;
+        drop(ai);
         Some(state)
     }
 
@@ -2216,6 +2250,7 @@ fn ai_denoise(shared: &Arc<Shared>, p: &Photo, recipe: &Recipe) -> Option<AiSour
         let wanted = Arc::new(AtomicBool::new(true));
         ai.requested = Some((Arc::downgrade(&p.image), wanted.clone()));
         ai.status = Some("Waiting…".into());
+        ai.progress = Some(0.);
         // The service may answer at once, from its cache, through the sink,
         // which takes this lock.
         drop(ai);
@@ -2249,27 +2284,7 @@ fn ai_update(shared: &Shared, update: rawmakase_ai::ai_denoise::Update) {
         if !current {
             return;
         }
-        match &update.state {
-            AiState::Queued => ai.status = Some("Waiting for another photo…".into()),
-            AiState::Running(done) => {
-                ai.status = Some(format!("Denoising… {:.0}%", done * 100.));
-            }
-            AiState::Partial(source) => {
-                ai.source = Some(source.clone());
-                ai.status = Some("Denoising… the view is ready".into());
-            }
-            AiState::Ready(source) => {
-                ai.source = Some(source.clone());
-                ai.complete = true;
-                ai.status = Some("Ready".into());
-            }
-            AiState::Failed(why) => {
-                // A partial result isn't shown once the final one won't come.
-                ai.source = None;
-                ai.failed = true;
-                ai.status = Some(why.clone());
-            }
-        }
+        ai.show(&update.state);
     }
     shared.request(|_| {});
 }
@@ -3274,6 +3289,24 @@ mod tests {
 
     /// 100% shows a view-sized part of the photo; 200% half as much around
     /// the same point, kept inside the photo at its edges.
+    #[test]
+    fn ai_denoise_progress_shows_while_the_model_runs_and_not_after() {
+        let mut ai = AiShown {
+            progress: Some(0.),
+            ..AiShown::default()
+        };
+        ai.show(&AiState::Running(0.42));
+        assert_eq!(ai.progress, Some(0.42));
+        assert_eq!(ai.status.as_deref(), Some("Denoising… 42%"));
+        // Behind another photo's job nothing is known of this one's progress.
+        ai.show(&AiState::Queued);
+        assert_eq!(ai.progress, None);
+        ai.show(&AiState::Running(1.5));
+        assert_eq!(ai.progress, Some(1.), "never past the end");
+        ai.show(&AiState::Failed("no".into()));
+        assert_eq!((ai.progress, ai.failed), (None, true));
+    }
+
     #[test]
     fn zooming_past_one_hundred_percent_shows_a_smaller_part() {
         let (at_100, _) = region_around([1000, 800], [4000, 3000], [0.5, 0.5], 1.);
