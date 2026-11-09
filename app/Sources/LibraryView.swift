@@ -73,6 +73,10 @@ struct LibraryView: View {
                             .disabled(selected.isEmpty)
                     }
                     ToolbarItem(placement: .primaryAction) {
+                        Menu("Albums", systemImage: "rectangle.stack") { AlbumMenu(ids: Array(selected), model: model) }
+                            .disabled(selected.isEmpty)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Menu("Stack", systemImage: "square.stack") { SelectionStackMenu(ids: Array(selected), model: model) }
                             .disabled(selected.isEmpty)
                     }
@@ -152,6 +156,7 @@ struct LibraryView: View {
             }
         }
         .modifier(FileAlerts(model: model))
+        .modifier(AlbumAlerts(model: model))
         .modifier(CopyAlerts(model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy))
         .onChange(of: path) { _, open in columns = open.isEmpty ? .all : .detailOnly }
         .task {
@@ -370,12 +375,14 @@ struct PhotoMenu: View {
         CopyMenu(photo: photo, model: model, renaming: Bindable(model).renamingCopy, removing: Bindable(model).removingCopy)
         StackMenu(photo: photo, model: model)
         Divider()
-        FileMenu(ids: [photo.id], photo: photo, model: model)
+        AlbumMenu(ids: [photo.id], model: model)
         if model.inQuickCollection(photo) {
             Button("Remove from Quick Collection", systemImage: "circle.slash") { model.setQuickCollection([photo.id], false) }
         } else {
             Button("Add to Quick Collection", systemImage: "circle.inset.filled") { model.setQuickCollection([photo.id], true) }
         }
+        Divider()
+        FileMenu(ids: [photo.id], photo: photo, model: model)
     }
 }
 

@@ -24,12 +24,7 @@ struct LibrarySidebar: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if !model.collections.isEmpty {
-                    Text("Collections").font(.title3).padding(.horizontal, 12).padding(.top, 20).padding(.bottom, 6)
-                    ForEach(model.collections, id: \.id) { c in
-                        row(.collection(c.id), c.name, c.quick ? "circle.inset.filled" : "rectangle.stack", count: c.photos.count)
-                    }
-                }
+                AlbumsSection(model: model, chosen: chosen)
             }
             .padding(8)
         }
@@ -75,7 +70,7 @@ extension LibrarySource {
         case .all: "All photos"
         case .edited: "Edited"
         case .unedited: "Unedited"
-        case .collection(let id): model.collections.first { $0.id == id }?.name ?? "Collection"
+        case .collection(let id): model.collections.first { $0.id == id }?.name ?? "Album"
         case .lastImport: "Last Import"
         }
     }

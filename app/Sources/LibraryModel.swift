@@ -48,6 +48,8 @@ final class LibraryModel {
     var removingCopy: LibraryPhoto?
     /// A file operation waiting for a name or a yes.
     var fileRequest: FileRequest?
+    /// An album action waiting for a name or a confirmation.
+    var albumRequest: AlbumRequest?
     /// The photos the last import added (Last Import), and what Recently
     /// Deleted holds.
     var lastImported: Set<Int64> = []

@@ -294,6 +294,36 @@ mod tests {
         (library, ids)
     }
 
+    /// Albums sit in folders and hold photos; the list says which is which
+    /// and where each is; deleting a folder takes its albums, never photos.
+    #[test]
+    fn albums_and_their_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, ids) = library(dir.path());
+        let trips = library.create_album("Trips".into(), None, true).unwrap();
+        let japan = library
+            .create_album("Japan".into(), Some(trips), false)
+            .unwrap();
+        library.change_album(japan, ids.clone(), true).unwrap();
+        library.change_album(japan, vec![ids[0]], false).unwrap();
+        let listed = library.collections().unwrap();
+        let folder = listed.iter().find(|c| c.id == trips).unwrap();
+        let album = listed.iter().find(|c| c.id == japan).unwrap();
+        assert!(folder.folder && folder.photos.is_empty());
+        assert!(!album.folder);
+        assert_eq!(album.parent, Some(trips));
+        assert_eq!(album.photos, vec![ids[1]]);
+        library.rename_album(japan, "Kyoto".into()).unwrap();
+        library.move_album(japan, None).unwrap();
+        let moved = library.collections().unwrap();
+        let album = moved.iter().find(|c| c.id == japan).unwrap();
+        assert_eq!((album.name.as_str(), album.parent), ("Kyoto", None));
+        library.move_album(japan, Some(trips)).unwrap();
+        library.delete_album(trips).unwrap();
+        assert!(library.collections().unwrap().iter().all(|c| c.quick));
+        assert_eq!(library.photos().unwrap().len(), 2);
+    }
+
     fn path_of(library: &Library, id: i64) -> Option<PathBuf> {
         library
             .photos()

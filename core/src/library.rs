@@ -9,7 +9,7 @@
 //! empty.
 
 use crate::render::{RenderError, on_core_thread};
-use rawmakase_catalog::catalog::{Catalog, NewPhotoDefaults, PhotoId};
+use rawmakase_catalog::catalog::{Catalog, CollectionId, NewPhotoDefaults, PhotoId};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
@@ -46,13 +46,17 @@ pub struct LibraryPhoto {
     pub stack_collapsed: bool,
 }
 
-/// A collection and its photos.
+/// An album (a collection) and its photos, or an album folder (a
+/// collection set), which holds albums and folders and no photos.
 #[derive(uniffi::Record)]
 pub struct CollectionInfo {
     pub id: i64,
     pub name: String,
     pub photos: Vec<i64>,
     pub quick: bool,
+    pub folder: bool,
+    /// The folder it is in, if any.
+    pub parent: Option<i64>,
 }
 
 /// What adding the new photos did.
@@ -263,10 +267,13 @@ impl Library {
             .collections()?
             .into_iter()
             .filter(|c| {
-                c.id == quick || c.kind == rawmakase_catalog::catalog::CollectionKind::Collection
+                use rawmakase_catalog::catalog::CollectionKind;
+                c.id == quick || matches!(c.kind, CollectionKind::Collection | CollectionKind::Set)
             })
             .map(|c| CollectionInfo {
                 quick: c.id == quick,
+                folder: c.kind == rawmakase_catalog::catalog::CollectionKind::Set,
+                parent: c.parent.map(|p| p.0),
                 name: if c.id == quick {
                     "Quick Collection".into()
                 } else {
@@ -281,6 +288,46 @@ impl Library {
             .collect();
         list.sort_by_key(|c| (!c.quick, c.name.to_lowercase()));
         Ok(list)
+    }
+
+    /// Makes an album, or with `folder` an album folder, called `name`,
+    /// inside folder `parent` (at the top without one); returns its id.
+    pub fn create_album(
+        &self,
+        name: String,
+        parent: Option<i64>,
+        folder: bool,
+    ) -> Result<i64, RenderError> {
+        Ok(self
+            .catalog()
+            .create_collection(&name, parent.map(CollectionId), folder)?
+            .0)
+    }
+
+    pub fn rename_album(&self, id: i64, name: String) -> Result<(), RenderError> {
+        Ok(self.catalog().rename_collection(CollectionId(id), &name)?)
+    }
+
+    /// Puts album or folder `id` inside folder `parent`, or at the top.
+    pub fn move_album(&self, id: i64, parent: Option<i64>) -> Result<(), RenderError> {
+        Ok(self
+            .catalog()
+            .move_collection(CollectionId(id), parent.map(CollectionId))?)
+    }
+
+    /// Deletes album or folder `id` (a folder with what it holds); the
+    /// photos stay in the library.
+    pub fn delete_album(&self, id: i64) -> Result<(), RenderError> {
+        Ok(self.catalog().delete_collection(CollectionId(id))?)
+    }
+
+    /// Adds photos `ids` to album `album`, or with `add` false takes them out.
+    pub fn change_album(&self, album: i64, ids: Vec<i64>, add: bool) -> Result<(), RenderError> {
+        let ids: Vec<PhotoId> = ids.into_iter().map(PhotoId).collect();
+        let (add_ids, remove) = if add { (ids, vec![]) } else { (vec![], ids) };
+        Ok(self
+            .catalog()
+            .change_collection(CollectionId(album), &add_ids, &remove)?)
     }
 
     /// Adds photos `ids` to the Quick Collection, or takes them out.
