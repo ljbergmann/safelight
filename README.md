@@ -189,6 +189,16 @@ them after `--`):
 --example render` in `core/`, with `HOME` pointing at an empty folder so
 neither side reads installed profiles).
 
+## Given back to RAWmakase
+
+What Safelight's work turned up that belongs in RAWmakase itself goes
+upstream, for RAWmakase to take or leave:
+
+- Lightroom's panorama DNGs open, their JPEG XL tiles read on sRGB's curve
+  ([pch/rawmakase#953](https://github.com/pch/rawmakase/pull/953)), and the
+  empty corners their stitch leaves render white, as in Lightroom, from the
+  DNG's transparency mask ([pch/rawmakase#955](https://github.com/pch/rawmakase/pull/955)).
+
 ## Contributing
 
 Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) says how to
