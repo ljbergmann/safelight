@@ -69,4 +69,4 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Safelight reads the RAW file of a RAW+JPEG photo you pick to import, which the picker doesn't hand over."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Safelight saves the photos you export to your library when you choose Save to Device."
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "6"
+        CURRENT_PROJECT_VERSION: "7"
