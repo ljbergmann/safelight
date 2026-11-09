@@ -1,6 +1,9 @@
 # RAW+JPEG: the camera's JPEG as the reference look
 
-Status: design, not built (2026-11-09). Waiting for approval before any code.
+Status: tabled (2026-11-09), not built. Fitting Camera Look to the camera
+JPEG would change RAWmakase's own code (`camera_look::fit`), which would
+first have to be offered to RAWmakase as a pull request; the rest needs only
+Safelight's code.
 
 ## What it is for
 
