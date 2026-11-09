@@ -61,6 +61,28 @@ from behaviour changes, rendering references are evidence). On top of them:
   core's own 8 MB thread (`on_core_thread`), or Swift's 512 KB stacks
   overflow.
 
+## Following RAWmakase
+
+`ios/build-crates` is RAWmakase's `main` with Safelight's commits on top.
+Syncing only brings RAWmakase's work in; nothing from this branch goes
+upstream. A change offered to RAWmakase is a pull request from a fresh
+branch cut from RAWmakase's `main`, holding only that change, never from
+`ios/build-crates`.
+
+At each RAWmakase release, and when an upstream fix Safelight wants lands:
+
+1. Tag the branch's head (`ios/<date>`) and push the tag, so Safelight
+   commits that pin it can still be checked out.
+2. Rebase `ios/build-crates` onto RAWmakase's `main`. Commits RAWmakase
+   took drop out. Where upstream changed code a commit moved, redo the move
+   on upstream's version: keep its behaviour, re-apply only the move, and
+   fold any fix into the commit it belongs to.
+3. Run the fork's `make check` and `cargo test` in `core/`, adapting the core
+   to upstream's API; build the app and look at it on the simulator.
+4. Force-push the branch (`--force-with-lease`), then commit the submodule
+   bump here as "Follow RAWmakase to <sha>", naming what users will notice,
+   and update the roadmap's "Last checked against the desktop" date.
+
 ## Tests and checks
 
 ```sh

@@ -5,7 +5,7 @@ and the order to close the gaps. Checked off as it lands; "S", "M" and "L"
 are rough sizes. "Wiring" means the model or engine has it already and only
 the core's API and the iPad's screens are missing.
 
-Last checked against the desktop: 2026-11-08 (fork `ios/build-crates`).
+Last checked against the desktop: 2026-11-09 (fork `ios/build-crates`).
 
 ## Done
 
