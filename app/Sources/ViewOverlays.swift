@@ -87,3 +87,42 @@ struct ReferencePane: View {
         }
     }
 }
+
+/// The camera thumbnail over the photo: the JPEG the camera embedded,
+/// unedited and uncropped, labelled as the desktop labels it.
+struct CameraThumbnailView: View {
+    let model: LiveModel
+    let id: Int64
+    @State private var shown: (image: UIImage, label: String)?
+    @State private var failed: String?
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Theme.canvas
+            if let shown {
+                Image(uiImage: shown.image).resizable().scaledToFit()
+            } else if failed == nil {
+                ProgressView().frame(maxHeight: .infinity)
+            }
+            Text(shown?.label ?? failed ?? "Camera thumbnail")
+                .font(.callout)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.top, 12)
+        }
+        .onTapGesture { model.cameraThumbnail = false }
+        .task(id: id) {
+            shown = nil
+            failed = nil
+            let live = model.live
+            let result = await Task.detached { Result { try live?.cameraThumbnail() } }.value
+            switch result {
+            case .success(let t?):
+                if let image = UIImage(data: t.jpeg) { shown = (image, t.label) } else { failed = "Unreadable camera thumbnail" }
+            case .success(nil): failed = "No photo is open"
+            case .failure(RenderError.Failed(let message)): failed = message
+            case .failure(let error): failed = "\(error)"
+            }
+        }
+    }
+}

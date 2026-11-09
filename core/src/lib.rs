@@ -7,6 +7,7 @@ uniffi::setup_scaffolding!();
 
 mod ai;
 mod alloc;
+mod camera_thumbnail;
 mod compat;
 #[global_allocator]
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;

@@ -102,6 +102,9 @@ final class LiveModel {
     var infoOverlay = UserDefaults.standard.bool(forKey: "infoOverlay") {
         didSet { UserDefaults.standard.set(infoOverlay, forKey: "infoOverlay") }
     }
+    /// The camera's embedded JPEG in place of the photo, as the desktop's
+    /// camera thumbnail view.
+    var cameraThumbnail = false
     /// Reference View: this photo, as edited, beside the one being edited.
     var reference: LibraryPhoto?
     var referenceView = false
@@ -151,6 +154,7 @@ final class LiveModel {
         dragging = nil
         if pane == .crop { pane = .edit }
         cropping = false
+        cameraThumbnail = false
         tool = .none
         selectedMask = nil
         maskColors = [:]
@@ -376,6 +380,9 @@ struct LiveEditor: View {
                 }
             }
             .background(Theme.canvas)
+            .overlay {
+                if model.cameraThumbnail { CameraThumbnailView(model: model, id: photo.id) }
+            }
             .overlay { openError }
             .overlay(alignment: .bottomLeading) { status.padding(12) }
             .overlay(alignment: .bottomTrailing) {

@@ -1585,6 +1585,23 @@ impl LiveView {
         Ok(issue)
     }
 
+    /// The open photo's camera thumbnail, as the desktop's view of it
+    /// ([`crate::camera_thumbnail`]). Reading the RAW takes a moment: call it
+    /// off the main thread.
+    pub fn camera_thumbnail(
+        &self,
+    ) -> Result<crate::camera_thumbnail::CameraThumbnail, RenderError> {
+        let path = self
+            .shared
+            .edit()
+            .as_ref()
+            .map(|e| e.path.clone())
+            .ok_or_else(|| RenderError::Failed {
+                message: "No photo is open".into(),
+            })?;
+        crate::camera_thumbnail::read(&path)
+    }
+
     /// Whether Calibration offers the desktop's "Use camera exposure
     /// baseline" ([`OpenEdit::camera_exposure_baseline`]).
     pub fn offers_camera_exposure_baseline(&self) -> bool {

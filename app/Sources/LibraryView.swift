@@ -425,6 +425,7 @@ struct EditorView: View {
                     Button("Info…", systemImage: "info.circle") { model.info = InfoRequest(ids: [shown.id]) }
                     Divider()
                     SwiftUI.Toggle("Info Overlay", systemImage: "text.below.photo", isOn: Bindable(live).infoOverlay)
+                    SwiftUI.Toggle("Camera Thumbnail", systemImage: "camera", isOn: Bindable(live).cameraThumbnail)
                     Button("Set as Reference Photo", systemImage: "pin") {
                         live.reference = shown
                     }
