@@ -52,8 +52,9 @@ targets:
         # Only the system's standard encryption (HTTPS downloads), which
         # needs no export documentation.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-        # The share sheet's Save to Photos, for exported photos. Importing
-        # uses the system's picker, which needs no access to the library.
+        # Importing uses the system's picker; only a RAW+JPEG pair's RAW needs
+        # read access (PhotosImport.swift). Save to Device adds to the library.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Safelight reads the RAW file of a RAW+JPEG photo you pick to import, which the picker doesn't hand over."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Safelight saves the photos you export to your library when you choose Save to Device."
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"

@@ -2,14 +2,17 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Photos library's own picker, for RAW originals. It needs no access to
-/// the library: only what is picked comes to the app, and as the original
-/// file (`.current`), never a JPEG Photos would make from it.
+/// The Photos library's own picker, for RAW originals: only what is picked
+/// comes to the app, as the original file (`.current`), never a JPEG Photos
+/// would make from it. A RAW+JPEG pair's RAW needs read access to the
+/// library, asked for only when such a pair is picked.
 struct PhotosRawPicker: UIViewControllerRepresentable {
     let done: ([PHPickerResult]) -> Void
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
-        var configuration = PHPickerConfiguration()
+        // With the library, results carry their asset's id: a RAW+JPEG pair's
+        // RAW is reached through it when the picker offers only the JPEG.
+        var configuration = PHPickerConfiguration(photoLibrary: .shared())
         configuration.filter = .images
         configuration.selectionLimit = 0
         configuration.selection = .ordered
@@ -39,45 +42,88 @@ struct PhotosRawPicker: UIViewControllerRepresentable {
 enum PhotosStaging {
     struct Staged {
         var paths: [String] = []
-        /// Picked photos with no RAW original (a JPEG, HEIC or screenshot).
+        /// Picked photos with no RAW original (a JPEG, HEIC or screenshot),
+        /// and the kinds of file they were.
         var notRaw = 0
+        var notRawKinds: [String] = []
         var failed: [String] = []
     }
 
     /// Copies the RAW original of each of `results` into `folder`. On the
     /// main actor, where the picker's results are; the copies happen in
-    /// Photos' callbacks, off it.
+    /// Photos' callbacks, off it. The picker hands over the RAW when it is
+    /// the photo's own file; a pair Photos imported as RAW+JPEG shows the
+    /// JPEG, and its RAW is read from the library instead.
     @MainActor static func stage(_ results: [PHPickerResult], in folder: URL) async -> Staged {
         var staged = Staged()
-        let raw = UTType.rawImage.identifier
+        var seen: Set<String> = []
         for (i, result) in results.enumerated() {
             let provider = result.itemProvider
-            guard provider.hasItemConformingToTypeIdentifier(raw) else {
-                staged.notRaw += 1
-                continue
-            }
             let target = folder.appending(path: String(i))
             let suggested = provider.suggestedName
-            // The file Photos hands over lasts only as long as the callback:
-            // it is copied there.
-            let outcome: Result<String, Error> = await withCheckedContinuation { done in
-                _ = provider.loadFileRepresentation(forTypeIdentifier: raw) { url, error in
-                    done.resume(with: .success(Result {
-                        guard let url else { throw error ?? CocoaError(.fileReadUnknown) }
-                        let name = suggested.map { "\($0).\(url.pathExtension)" } ?? url.lastPathComponent
-                        let file = target.appending(path: name)
-                        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-                        try FileManager.default.copyItem(at: url, to: file)
-                        return file.path
-                    }))
-                }
+            let outcome: Result<String, Error>?
+            // By the file's own type (CR3, ARW…): loading by the abstract
+            // camera-RAW type isn't offered by every provider.
+            if let type = provider.registeredTypeIdentifiers
+                .compactMap(UTType.init)
+                .first(where: { $0.conforms(to: .rawImage) }) {
+                outcome = await load(provider, type: type, named: suggested, into: target)
+            } else if let id = result.assetIdentifier {
+                outcome = await rawResource(of: id, into: target)
+            } else {
+                outcome = nil
             }
             switch outcome {
-            case .success(let path): staged.paths.append(path)
-            case .failure(let error): staged.failed.append("\(suggested ?? "A photo"): \(error.localizedDescription)")
+            case .success(let path)?: staged.paths.append(path)
+            case .failure(let error)?: staged.failed.append("\(suggested ?? "A photo"): \(error.localizedDescription)")
+            case nil:
+                staged.notRaw += 1
+                seen.formUnion(provider.registeredTypeIdentifiers.compactMap { UTType($0)?.preferredFilenameExtension?.uppercased() })
             }
         }
+        staged.notRawKinds = seen.sorted()
         return staged
+    }
+
+    /// The provider's file of `type`, copied into `target` (the file Photos
+    /// hands over lasts only as long as the callback).
+    @MainActor private static func load(_ provider: NSItemProvider, type: UTType, named suggested: String?,
+                             into target: URL) async -> Result<String, Error> {
+        await withCheckedContinuation { done in
+            _ = provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, error in
+                done.resume(returning: Result {
+                    guard let url else { throw error ?? CocoaError(.fileReadUnknown) }
+                    let name = suggested.map { "\($0).\(url.pathExtension)" } ?? url.lastPathComponent
+                    let file = target.appending(path: name)
+                    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: url, to: file)
+                    return file.path
+                })
+            }
+        }
+    }
+
+    /// The RAW resource of the asset `id` (a RAW+JPEG pair's RAW), written
+    /// into `target`, downloaded from iCloud if need be; `nil` when the asset
+    /// has none. Needs read access to the library, asked for once.
+    private static func rawResource(of id: String, into target: URL) async -> Result<String, Error>? {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        guard status == .authorized || status == .limited,
+              let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject,
+              let resource = PHAssetResource.assetResources(for: asset).first(where: {
+                  UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) ?? false
+              })
+        else { return nil }
+        let file = target.appending(path: resource.originalFilename)
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        do {
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            try await PHAssetResourceManager.default().writeData(for: resource, toFile: file, options: options)
+            return .success(file.path)
+        } catch {
+            return .failure(error)
+        }
     }
 }
 
@@ -122,7 +168,10 @@ extension LibraryModel {
         } else {
             setImporting(nil)
         }
-        if staged.notRaw > 0 { notes.append("\(staged.notRaw) not RAW") }
+        if staged.notRaw > 0 {
+            let kinds = staged.notRawKinds.isEmpty ? "" : " (\(staged.notRawKinds.joined(separator: ", ")))"
+            notes.append("\(staged.notRaw) not RAW\(kinds)")
+        }
         notes += staged.failed
         finishImport("From Photos: " + (notes.isEmpty ? "nothing imported" : notes.joined(separator: " · ")))
     }
