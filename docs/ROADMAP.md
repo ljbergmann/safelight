@@ -68,18 +68,15 @@ Last checked against the desktop: 2026-11-09 (fork `ios/build-crates`).
 
 ## Then: the rest of Develop
 
-- **Basic:** the HDR switch (HDR display is L). (The B&W conversion with
-  its first Auto mix and Fit Camera Look are done. Per-slider Auto and
-  resetting a panel are Lightroom's, not RAWmakase's: not planned unless
-  touch needs them.)
-- **Lens and Transform:** Lensfun, Guided Upright, Calibration's process
-  version. (Choosing an imported lens profile, Defringe, Upright's other
-  modes and Constrain Crop are done.)
-- **Retouch:** moving a Pet Eye's catchlight (brushed spots, Feather and
-  Opacity, moving, re-sourcing and deleting a spot, Visualize Spots, Red Eye
-  and Pet Eye are done)
-- **View:** camera thumbnail (zooming to any scale between Fit and 100%,
-  the Info Overlay and Reference View are done)
+All of Develop's panels are on the iPad now, as the desktop has them:
+the HDR switch (the photo shows its SDR rendition; HDR display is L),
+Guided Upright, Lensfun's community profiles (downloaded on request),
+Calibration's process version and camera exposure baseline, a Pet Eye's
+catchlight, and the camera thumbnail. Per-slider Auto and resetting a panel
+are Lightroom's, not RAWmakase's: not planned unless touch needs them.
+
+- [ ] HDR display: the HDR master above SDR white on screens with headroom
+      (L)
 
 The desktop doesn't evaluate smart collections yet, and has no depth, object or people masks, no content-aware remove
 and no soft proofing, so they aren't gaps.
@@ -90,9 +87,10 @@ and no soft proofing, so they aren't gaps.
       Rename To templates with an example, colour space, JPEG XL, Metadata
       Include and Remove Location, the Simple Copyright Watermark; through
       the desktop's export batch, with the last choices remembered
-- [ ] Custom filename templates and watermark presets made on the desktop
-      (its data folder isn't on the iPad); output sharpening (the desktop
-      has none yet)
+- [x] Filename templates (Lightroom's Filename Template Editor) and
+      watermark presets, text or graphic, made on the iPad in RAWmakase's
+      formats
+- [ ] Output sharpening (the desktop has none yet)
 
 ## Sync
 
@@ -102,22 +100,25 @@ and no soft proofing, so they aren't gaps.
 
 ## Platforms and polish
 
-- [ ] TestFlight: an App Store Connect record, distribution signing, an
-      archive uploaded from the command line, testers invited (S; needs the
-      Apple account)
+- [x] TestFlight: an App Store Connect record ("Safelight RAW"),
+      Apple-managed signing, archives uploaded from the command line, an
+      internal group
 - [x] Huge files: linear DNGs (merged panoramas) open at half size in the
       reduced mode, a 271 MP panorama in 814 MB of pixels
 - [x] Compatibility: `scripts/compat-check.sh` renders an edit made here in
       the desktop app, pixel for pixel the same
-- [ ] iPhone layout (M–L)
+- [x] iPhone layout: the photo above the panel, the tools along the
+      bottom, the Library on its grid (and a narrow iPad window the same)
 - [ ] The interface modelled on Lightroom for iPad throughout (M–L): the
       Library and Develop's frame are (photo edge to edge, a panel per tool
       chosen on a rail); Edit's groups (Light, Color, Effects,
       Detail, Optics) and Crop are; Presets (with previews on
       the photo) and Heal are; the mask list floats over
       the photo; Cancel and Apply for tools; a double tap resets a slider; masks grouped as
-      Lightroom's Masking panel, with a preview each and an overlay colour
-- [ ] AI Denoise on CoreML (GPU / Neural Engine); measure against the CPU (S–M)
+      Lightroom's Masking panel, with a preview each and an overlay colour; Export as
+      Lightroom's Save to Device, Share and Export As…
+- [x] AI Denoise on CoreML: measured on an M1 iPad Pro, a 45 MP photo's
+      output within 1.1e-6 of the CPU's, in 12.7 s against 39.9 s
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views
 

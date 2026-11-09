@@ -23,7 +23,8 @@ pub fn measure_denoise_providers(raw: String, model: Option<String>, scratch: St
 fn measure(raw: &Path, model: Option<&Path>, scratch: &Path) -> anyhow::Result<String> {
     std::fs::create_dir_all(scratch)?;
     let mut runs = vec![];
-    for provider in [Provider::Cpu, Provider::CoreML] {
+    // CoreML first: on an iPad the CPU's run takes many minutes.
+    for provider in [Provider::CoreML, Provider::Cpu] {
         let dump = scratch.join(format!("{}.f32", provider.name()));
         let started = Instant::now();
         command(Command {
@@ -47,9 +48,10 @@ fn measure(raw: &Path, model: Option<&Path>, scratch: &Path) -> anyhow::Result<S
             .chunks_exact(4)
             .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
             .collect();
+        println!("DENOISE {} took {seconds:.1} s", provider.name());
         runs.push((provider.name(), seconds, values));
     }
-    let (cpu, coreml) = (&runs[0].2, &runs[1].2);
+    let (coreml, cpu) = (&runs[0].2, &runs[1].2);
     anyhow::ensure!(cpu.len() == coreml.len(), "the outputs differ in size");
     let mut max = 0f32;
     let mut sum = 0f64;
@@ -71,8 +73,8 @@ fn measure(raw: &Path, model: Option<&Path>, scratch: &Path) -> anyhow::Result<S
     Ok(serde_json::json!({
         "file": raw,
         "values": cpu.len(),
-        "cpu_s": runs[0].1,
-        "coreml_s": runs[1].1,
+        "coreml_s": runs[0].1,
+        "cpu_s": runs[1].1,
         "max_abs_diff": max,
         "mean_abs_diff": mean,
         "psnr_db": psnr,
