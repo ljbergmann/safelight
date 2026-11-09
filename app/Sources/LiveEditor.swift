@@ -356,11 +356,10 @@ struct LiveEditor: View {
                     MagnifyGesture()
                         .onChanged { value in
                             model.pinchAnchor = value.startAnchor
-                            // Not past 1:1 while the fingers move either:
-                            // a pinch ends at 100% (or Fit, when larger) at most.
+                            // Not past where the pinch can end, 100% (or Fit
+                            // when that is already larger), while the fingers move.
                             let now = model.zoomScale(in: geometry.size, scale: displayScale) ?? 1
-                            let most = max(1, model.fitMax)
-                            model.pinch = min(value.magnification, max(1, most / max(now, 0.0001)))
+                            model.pinch = min(value.magnification, max(1, 1 / max(now, 0.0001)))
                         }
                         .onEnded { _ in model.endPinch(in: geometry.size, scale: displayScale) }
                 )
