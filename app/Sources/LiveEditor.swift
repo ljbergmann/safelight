@@ -8,7 +8,9 @@ final class LiveModel {
     var live: LiveView? { didSet { open() } }
     var library: Library?
     var photo: LibraryPhoto? { didSet { if photo?.id != oldValue?.id { open() } } }
-    var size: DecodeSize = .half { didSet { if size != oldValue { open() } } }
+    /// Develop's decode: full size (the core opens a photo too large for
+    /// memory at half size itself). Diagnostics measures both.
+    var size: DecodeSize = .full { didSet { if size != oldValue { open() } } }
     /// The sliders, History and save state, as the core last reported them.
     private(set) var edit: EditState?
     /// A slider being dragged, and its value: shown instead of the core's
@@ -439,8 +441,6 @@ struct LiveEditor: View {
         }
         .task { await scripted() }
         .onAppear {
-            // -full: decode at full size from the start, for -sweep.
-            if ProcessInfo.processInfo.arguments.contains("-full") { model.size = .full }
             model.library = library
             model.photo = photo
         }

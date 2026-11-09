@@ -93,7 +93,26 @@ struct OpenRequest {
     id: i64,
     path: PathBuf,
     decode: DecodeSize,
+    /// What AI Denoise's status says while the photo opens: set when it is
+    /// opened again at full size for AI Denoise, so the panel shows the
+    /// wait from the moment the switch goes on.
+    ai_status: Option<&'static str>,
 }
+
+/// The most pixels a photo may have to open at full size: past this its
+/// developed pixels alone (12 bytes each, about 1.4 GB) come close to what
+/// an iPad lets an app use, so it opens at half size, as a merged panorama
+/// does (271 MP in 814 MB).
+const FULL_SIZE_LIMIT: u64 = 120_000_000;
+
+/// Whether a photo of `m` opens at full size ([`FULL_SIZE_LIMIT`]).
+fn opens_full(m: &rawmakase_model::camera_data::Metadata) -> bool {
+    m.width as u64 * m.height as u64 <= FULL_SIZE_LIMIT
+}
+
+/// AI Denoise's status while a half-size photo is decoded again at full size
+/// for it.
+const AI_FULL_SIZE: &str = "Opening the full-size photo for AI Denoise…";
 
 /// A mask's coverage, for drawing it over the photo.
 #[derive(uniffi::Record)]
@@ -320,6 +339,7 @@ impl LiveView {
                 id,
                 path: PathBuf::from(path),
                 decode,
+                ai_status: None,
             });
             r.zoom = Zoom::Fit;
         });
@@ -2226,6 +2246,12 @@ fn ai_denoise(shared: &Arc<Shared>, p: &Photo, recipe: &Recipe) -> Option<AiSour
         return None;
     }
     if p.image.fast {
+        // A photo too large to open at full size can't be denoised here; any
+        // other is being opened again at full size for it.
+        if !opens_full(&p.image.metadata) {
+            ai.status = Some("This photo is too large for AI Denoise on this device".into());
+            ai.progress = None;
+        }
         return None;
     }
     if !ai.asked_for(&p.image) && !ai.complete && !ai.failed {
@@ -2351,7 +2377,9 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             .map(|e| shown(e.recipe(), cropping, visualize));
         // AI Denoise runs on the full-size decode, as on the desktop: a
         // half-size photo is decoded again at full size first.
-        let full_size = photo.as_ref().is_some_and(|p| p.image.fast)
+        let full_size = photo
+            .as_ref()
+            .is_some_and(|p| p.image.fast && opens_full(&p.image.metadata))
             && recipe.as_ref().is_some_and(|r| r.ai_denoise.renders());
         // Taken in a statement of its own: `open_photo` locks the edit again.
         let reopen = full_size
@@ -2361,6 +2389,7 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
                     id: e.id,
                     path: e.path.clone(),
                     decode: DecodeSize::Full,
+                    ai_status: Some(AI_FULL_SIZE),
                 })
             })
             .flatten();
@@ -2587,11 +2616,14 @@ fn open_photo(shared: &Shared, screen: &Screen, photo: &mut Option<Photo>, reque
     }
     // Let go of the previous photo, its pyramid and its GPU copies before
     // decoding the next one.
-    shared
-        .ai
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .release();
+    {
+        let mut ai = shared.ai.lock().unwrap_or_else(PoisonError::into_inner);
+        ai.release();
+        if let Some(status) = request.ai_status {
+            ai.status = Some(status.into());
+            ai.progress = Some(0.);
+        }
+    }
     *photo = None;
     *shared.image.lock().unwrap_or_else(PoisonError::into_inner) = None;
     let opened = screen.open(&request.path, request.decode).and_then(
@@ -2881,10 +2913,12 @@ impl Screen {
             Cancel::NEVER,
         );
         let metadata = raw.metadata.clone();
+        let full = matches!(decode, DecodeSize::Full) && opens_full(&metadata);
         let image = raw.develop(
-            match decode {
-                DecodeSize::Full => Decode::full(Default::default()),
-                DecodeSize::Half => Decode::Half,
+            if full {
+                Decode::full(Default::default())
+            } else {
+                Decode::Half
             },
             Cancel::NEVER,
         )?;
@@ -3320,6 +3354,20 @@ mod tests {
         // A photo smaller than the view: all of it, at any zoom it covers.
         let (small, _) = region_around([1000, 800], [300, 200], [0.5, 0.5], 2.);
         assert_eq!(small, [0, 0, 300, 200]);
+    }
+
+    /// Photos open at full size up to 120 MP; a merged panorama past that
+    /// opens at half size.
+    #[test]
+    fn only_photos_too_large_for_memory_open_at_half_size() {
+        let m = |w, h| rawmakase_model::camera_data::Metadata {
+            width: w,
+            height: h,
+            ..Default::default()
+        };
+        assert!(opens_full(&m(8192, 5464)), "45 MP");
+        assert!(opens_full(&m(11648, 8736)), "102 MP medium format");
+        assert!(!opens_full(&m(32000, 8480)), "a 271 MP panorama");
     }
 
     #[test]

@@ -506,11 +506,6 @@ struct EditorView: View {
                     }
                     SwiftUI.Toggle("Reference View", systemImage: "rectangle.split.2x1", isOn: Bindable(live).referenceView)
                         .disabled(live.reference == nil || live.reference?.id == shown.id)
-                    Divider()
-                    Picker("Decode", selection: Bindable(live).size) {
-                        Text("Half Size").tag(DecodeSize.half)
-                        Text("Full Size").tag(DecodeSize.full)
-                    }
                 }
             }
         }
