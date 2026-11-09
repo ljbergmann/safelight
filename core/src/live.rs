@@ -1369,6 +1369,11 @@ impl LiveView {
 
     /// Turns a panel or option on or off, as one History step.
     pub fn set_switch(&self, which: Switch, on: bool) {
+        // The Treatment needs the photo, for the first conversion's Auto mix.
+        if which == Switch::Monochrome {
+            self.with_image(|image, edit| edit.set_treatment(on, image).then_some(()));
+            return;
+        }
         let changed = self
             .shared
             .edit()
@@ -1431,6 +1436,123 @@ impl LiveView {
         {
             self.shared.request(|_| {});
         }
+    }
+
+    /// Upright's mode, as the Transform panel shows it; `None` for Guided,
+    /// which the iPad doesn't offer yet.
+    pub fn upright(&self) -> Option<crate::geometry_upright::Upright> {
+        crate::geometry_upright::Upright::of(self.shared.edit().as_ref()?.recipe().upright.mode)
+    }
+
+    /// Chooses Upright's mode, one History step, and analyses the photo for
+    /// it when it has no corrections for it yet, as the desktop does; with
+    /// `again`, analyses again (Update: after changing lens corrections).
+    /// The analysis takes a moment: call it off the main thread. Returns what
+    /// Upright has to say (guides that correct less than they might).
+    pub fn set_upright(
+        &self,
+        mode: crate::geometry_upright::Upright,
+        again: bool,
+    ) -> Result<Option<String>, RenderError> {
+        let failed = |message: &str| RenderError::Failed {
+            message: message.into(),
+        };
+        let image = self
+            .shared
+            .image
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| failed("The photo is still opening"))?;
+        let analysed = {
+            let mut guard = self.shared.edit();
+            let edit = guard.as_mut().ok_or_else(|| failed("No photo is open"))?;
+            let needs = edit.set_upright(mode.mode());
+            let wanted = needs || again && mode != crate::geometry_upright::Upright::Off;
+            let analysed = wanted.then(|| edit.recipe().clone());
+            drop(guard);
+            self.shared.request(|_| {});
+            match analysed {
+                Some(r) => r,
+                None => return Ok(None),
+            }
+        };
+        let corrections = {
+            let (image, analysed) = (image.clone(), analysed.clone());
+            on_core_thread(move || {
+                Ok(rawmakase_engine::develop::upright::analyse(
+                    &image, &analysed,
+                ))
+            })?
+        };
+        let mut guard = self.shared.edit();
+        let edit = guard.as_mut().ok_or_else(|| failed("No photo is open"))?;
+        // Settings changed meanwhile (an Undo, another photo): this analysis
+        // no longer fits them.
+        if edit.recipe().upright.corrections != analysed.upright.corrections
+            || crate::geometry_upright::inputs(edit.recipe())
+                != crate::geometry_upright::inputs(&analysed)
+        {
+            return Err(failed(
+                "The settings changed during the analysis; choose the mode again",
+            ));
+        }
+        let issue = edit.store_upright(&analysed, &corrections);
+        drop(guard);
+        self.shared.request(|_| {});
+        Ok(issue)
+    }
+
+    /// Profile → Fit Camera Look: fits a look to the open RAW's embedded JPEG
+    /// (the camera's own rendering) and uses it, one History step. Takes a
+    /// few seconds: call it off the main thread. Refused, saying why, for a
+    /// photo without one, when the file or the profile changed while it was
+    /// fitted (a later choice wins), as on the desktop.
+    pub fn fit_camera_look(&self) -> Result<(), RenderError> {
+        use rawmakase_decode::camera_look::{FitInputs, cache::FitKey, fit};
+        let failed = |message: String| RenderError::Failed { message };
+        let (path, before) = {
+            let edit = self.shared.edit();
+            let edit = edit
+                .as_ref()
+                .ok_or_else(|| failed("No photo is open".into()))?;
+            if edit.metadata.is_rendered() {
+                return Err(failed(
+                    "Camera Look is fitted to a RAW's embedded preview; this photo isn't a RAW"
+                        .into(),
+                ));
+            }
+            (edit.path.clone(), edit.recipe().profile.clone())
+        };
+        let key = FitKey::of(&path).ok();
+        let fitted = {
+            let path = path.clone();
+            on_core_thread(move || {
+                fit(&path, &FitInputs::default(), Cancel::NEVER)
+                    .map(|f| f.profile)
+                    .map_err(|e| failed(format!("No camera look fitted: {}", e.reason)))
+            })?
+        };
+        if key.is_none() || FitKey::of(&path).ok() != key {
+            return Err(failed(
+                "No camera look fitted: the file changed while it was fitted".into(),
+            ));
+        }
+        let mut guard = self.shared.edit();
+        let edit = guard
+            .as_mut()
+            .filter(|e| e.path == path)
+            .ok_or_else(|| failed("Another photo opened while the look was fitted".into()))?;
+        if edit.recipe().profile != before {
+            return Err(failed(
+                "The profile changed while the camera look was fitted; fit it again to use it"
+                    .into(),
+            ));
+        }
+        edit.apply_fitted_look(Arc::new(fitted));
+        drop(guard);
+        self.shared.request(|_| {});
+        Ok(())
     }
 
     /// Point curve `channel` (0 RGB, 1 Red, 2 Green, 3 Blue) as drawn.

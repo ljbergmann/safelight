@@ -16,6 +16,7 @@ use rawmakase_edit_session::{EditSession, Gesture};
 use rawmakase_interop::export_settings::ExportOptions;
 use rawmakase_model::camera_data::Metadata;
 use rawmakase_model::model::recipe::Recipe;
+use rawmakase_model::model::transform::UprightMode;
 use rawmakase_model::storage::Identity;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -186,6 +187,118 @@ impl OpenEdit {
         self.session
             .change(Some(Step::new(name, value)), |r| *r = after);
         true
+    }
+
+    /// Lightroom's Treatment, as the desktop sets it
+    /// ([`TreatmentChoice::choose_treatment`]): converting to black & white
+    /// the first time (a mix never set) applies the Auto mix measured on
+    /// `image`, and choosing Color with a black & white profile goes back to
+    /// the photo's own profile. One History step, named as the desktop names
+    /// it; false when the Treatment was already that.
+    ///
+    /// [`TreatmentChoice::choose_treatment`]: rawmakase_engine::develop::black_white::TreatmentChoice::choose_treatment
+    pub(crate) fn set_treatment(
+        &mut self,
+        black_white: bool,
+        image: &rawmakase_model::camera_data::CameraImage,
+    ) -> bool {
+        use rawmakase_engine::develop::black_white::TreatmentChoice;
+        use rawmakase_engine::develop::{AutoMix, ColorSpread};
+        use rawmakase_model::model::recipe::Treatment;
+        self.session.finish_gesture();
+        let treatment = if black_white {
+            Treatment::BlackWhite
+        } else {
+            Treatment::Color
+        };
+        if self.session.recipe().treatment() == treatment {
+            return false;
+        }
+        let mut after = self.session.recipe().clone();
+        // Measured only when the conversion uses it.
+        let spread =
+            (black_white && after.effects.gray_mix == [0.; 8]).then(|| ColorSpread::measure(image));
+        let first = spread.as_ref().map(|spread| AutoMix {
+            spread,
+            metadata: &self.metadata,
+        });
+        after.choose_treatment(treatment, first, self.start.profile.clone(), &self.metadata);
+        let name = if black_white {
+            "Convert to Black & White"
+        } else {
+            "Convert to Color"
+        };
+        self.session
+            .change(Some(Step::new(name, "")), |r| *r = after);
+        true
+    }
+
+    /// Upright's mode, one History step; whether the photo must be analysed
+    /// for it (no corrections for the mode yet).
+    pub(crate) fn set_upright(&mut self, mode: UprightMode) -> bool {
+        self.session.finish_gesture();
+        if self.session.recipe().upright.mode == mode {
+            return false;
+        }
+        let name = crate::geometry_upright::name(mode);
+        self.session
+            .change(Some(Step::new("Upright", name)), |r| r.upright.mode = mode);
+        self.session.recipe().upright.needs_analysis()
+    }
+
+    /// Stores Upright's `corrections`, analysed on `analysed`, in every
+    /// History state (and Before) they fit: the analysis is part of the
+    /// photo, not an edit, so undoing the mode leaves nothing half-applied.
+    /// States with corrections of their own keep them. Returns why the guides
+    /// correct less than they might, for the photo as shown. Mirrors the
+    /// desktop's `upright_ready`, which runs in its event loop.
+    pub(crate) fn store_upright(
+        &mut self,
+        analysed: &Recipe,
+        corrections: &[[f32; 9]],
+    ) -> Option<String> {
+        let inputs = crate::geometry_upright::inputs;
+        let fits = |r: &Recipe| {
+            inputs(r) == inputs(analysed) && r.upright.corrections == analysed.upright.corrections
+        };
+        let metadata = self.metadata.clone();
+        let mut issue = None;
+        for (i, r) in self
+            .session
+            .states_mut()
+            .chain(self.before.as_mut())
+            .enumerate()
+        {
+            if fits(r) {
+                let solved =
+                    rawmakase_engine::develop::upright::store(r, corrections, Some(&metadata));
+                if i == 0 {
+                    issue = solved.map(|s| s.message().to_string());
+                }
+            }
+        }
+        self.session.save_state_mut().mark_changed();
+        issue
+    }
+
+    /// Uses `profile`, a look fitted to this photo's embedded JPEG, as its
+    /// profile at 100%, as the desktop's Profile → Fit Camera Look does: Temp
+    /// and Tint follow the new profile with the white balance unchanged, and
+    /// the Treatment follows it, all one step.
+    pub(crate) fn apply_fitted_look(
+        &mut self,
+        profile: Arc<rawmakase_model::camera_profiles::CameraProfile>,
+    ) {
+        use rawmakase_engine::develop::black_white::TreatmentChoice;
+        self.session.finish_gesture();
+        let metadata = self.metadata.clone();
+        self.session
+            .change(Some(Step::new("Fit Camera Look", "")), |r| {
+                let old = r.profile.replace(profile);
+                r.profile_amount = 1.;
+                r.profile_changed(&metadata);
+                r.follow_profile_treatment(old.as_deref(), None);
+            });
     }
 
     /// The profiles this photo at `path` can use, as the editor lists them
@@ -1214,6 +1327,94 @@ pub(crate) mod tests {
         assert!(!titles.iter().any(|t| t.starts_with("Color Mixer")));
         // Setting it as it is changes nothing.
         assert!(!edit.switch(Switch::Monochrome, true));
+    }
+
+    /// Choosing an Upright mode is one step and asks for an analysis; the
+    /// analysis reaches every History state it fits, so undoing the choice
+    /// leaves the photo's corrections in place, as on the desktop.
+    #[test]
+    fn upright_is_analysed_once_and_kept_through_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let image = rawmakase_decode::photo::open(&path)
+            .unwrap()
+            .develop(rawmakase_model::camera_data::Decode::Half, Cancel::NEVER)
+            .unwrap();
+        assert!(edit.set_upright(UprightMode::Auto), "needs an analysis");
+        let analysed = edit.recipe().clone();
+        let corrections = rawmakase_engine::develop::upright::analyse(&image, &analysed);
+        assert!(!corrections.is_empty());
+        edit.store_upright(&analysed, &corrections);
+        assert!(!edit.recipe().upright.needs_analysis());
+        assert_eq!(edit.state().steps, ["Upright Auto"]);
+        // Every state has the analysis: the one before the choice too.
+        assert!(
+            edit.session
+                .states_mut()
+                .all(|r| r.upright.corrections == corrections)
+        );
+        // Another mode uses the same analysis: no new one is needed.
+        assert!(!edit.set_upright(UprightMode::Level));
+        assert!(!edit.set_upright(UprightMode::Level), "already Level");
+    }
+
+    /// A look fitted to the photo's embedded JPEG becomes its profile at
+    /// 100%, one step named as the desktop names it. (The fit itself is
+    /// RAWmakase's, tested there: no test RAW here has an embedded JPEG, so a
+    /// listed profile stands in for the fitted one.)
+    #[test]
+    fn a_fitted_camera_look_becomes_the_profile_at_full_amount() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let look = edit
+            .profiles
+            .iter()
+            .find(|p| Some(*p) != edit.recipe().profile.as_ref())
+            .cloned()
+            .expect("another profile");
+        edit.session
+            .change(Some(Step::new("Profile Amount", "")), |r| {
+                r.profile_amount = 0.4
+            });
+        edit.apply_fitted_look(look.clone());
+        assert_eq!(edit.recipe().profile.as_ref(), Some(&look));
+        assert_eq!(edit.recipe().profile_amount, 1.);
+        assert_eq!(
+            edit.state().steps.last().map(String::as_str),
+            Some("Fit Camera Look")
+        );
+    }
+
+    /// Converting to black & white sets the photo's Auto mix the first time,
+    /// as the desktop (and Lightroom) do, and later conversions keep the mix;
+    /// each is one step named as the desktop names it.
+    #[test]
+    fn converting_to_black_and_white_applies_the_auto_mix_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let image = rawmakase_decode::photo::open(&path)
+            .unwrap()
+            .develop(rawmakase_model::camera_data::Decode::Half, Cancel::NEVER)
+            .unwrap();
+        assert!(edit.set_treatment(true, &image));
+        let mix = edit.recipe().effects.gray_mix;
+        assert!(edit.recipe().effects.monochrome);
+        assert_ne!(mix, [0.; 8], "the Auto mix");
+        assert!(!edit.set_treatment(true, &image), "already black & white");
+        assert!(edit.set_treatment(false, &image));
+        assert!(edit.set_treatment(true, &image));
+        assert_eq!(edit.recipe().effects.gray_mix, mix, "the mix is kept");
+        assert_eq!(
+            edit.state().steps,
+            [
+                "Convert to Black & White",
+                "Convert to Color",
+                "Convert to Black & White"
+            ]
+        );
     }
 
     #[test]

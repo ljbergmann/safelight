@@ -19,6 +19,7 @@ pub use curve::CurveState;
 mod edit;
 mod export;
 mod files;
+mod geometry_upright;
 pub use ai::{AiModel, AiModelInfo, AiSelection, ModelInstall, ai_models};
 pub use controls::{Control, Section, SliderState, Switch, SwitchState};
 pub use export::{ExportChoice, ExportFormat};

@@ -199,6 +199,8 @@ struct ProfileRow: View {
     @State private var importing = false
     @State private var imported: ImportSummary?
     @State private var working = false
+    /// Fit Camera Look's progress, or why it fitted nothing.
+    @State private var fitNote: String?
 
     var body: some View {
         let profiles = model.edit == nil ? [] : (model.live?.profiles() ?? [])
@@ -221,6 +223,7 @@ struct ProfileRow: View {
                         }
                     }
                     Divider()
+                    Button("Fit Camera Look", systemImage: "camera.filters") { fitCameraLook() }
                     Button("Import Profiles…", systemImage: "square.and.arrow.down") { importing = true }
                 } label: {
                     Group {
@@ -230,6 +233,9 @@ struct ProfileRow: View {
                     .background(Theme.chosen, in: RoundedRectangle(cornerRadius: 8))
                 }
                 .disabled(working)
+            }
+            if let fitNote {
+                Text(fitNote).font(.caption).foregroundStyle(Theme.secondaryText)
             }
             ForEach(amount?.sliders ?? [], id: \.label) { SliderRow(slider: $0, model: model) }
         }
@@ -252,6 +258,24 @@ struct ProfileRow: View {
             Button("OK") { imported = nil }
         } message: {
             Text((imported?.details.prefix(6) ?? []).joined(separator: "\n"))
+        }
+    }
+
+    /// Profile → Fit Camera Look, as on the desktop: a look fitted to the
+    /// RAW's embedded JPEG, used as its profile; takes a few seconds.
+    private func fitCameraLook() {
+        working = true
+        fitNote = "Fitting the camera's look…"
+        let live = model.live
+        Task {
+            let result = await Task.detached { Result { try live?.fitCameraLook() } }.value
+            switch result {
+            case .success: fitNote = nil
+            case .failure(RenderError.Failed(let message)): fitNote = message
+            case .failure(let error): fitNote = "\(error)"
+            }
+            model.refresh()
+            working = false
         }
     }
 
@@ -666,6 +690,7 @@ struct CropPane: View {
             .buttonStyle(.plain)
             if showGeometry {
                 VStack(alignment: .leading, spacing: 6) {
+                    UprightRow(model: model)
                     ForEach(geometry.dropFirst(), id: \.title) { section in
                         ForEach(section.switches, id: \.label) { SwitchRow(item: $0, model: model) }
                         ForEach(section.sliders, id: \.label) { SliderRow(slider: $0, model: model) }
@@ -690,6 +715,66 @@ struct CropPane: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Transform's Upright, as the desktop's: Off, Auto, Level, Vertical and
+/// Full, each analysing the photo the first time it needs it, and Update to
+/// analyse again (after changing lens corrections).
+struct UprightRow: View {
+    let model: LiveModel
+    @State private var working = false
+    @State private var note: String?
+
+    private static let modes: [(Upright, String)] = [
+        (.off, "Off"), (.auto, "Auto"), (.level, "Level"), (.vertical, "Vertical"), (.full, "Full"),
+    ]
+
+    var body: some View {
+        let _ = model.edit?.applied
+        let current = model.live?.upright()
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Upright").foregroundStyle(Theme.secondaryText)
+                Spacer()
+                if working { ProgressView().controlSize(.small) }
+                Button("Update") { choose(current ?? .off, again: true) }
+                    .font(.callout)
+                    .disabled(working || current == nil || current == .off)
+            }
+            HStack(spacing: 4) {
+                ForEach(Self.modes, id: \.1) { mode, name in
+                    Button { choose(mode, again: false) } label: {
+                        Text(name).font(.caption).lineLimit(1)
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                            .background(current == mode ? Theme.chosen : .clear, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(current == mode ? Color.primary : Theme.secondaryText)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(working)
+                }
+            }
+            if let note {
+                Text(note).font(.caption).foregroundStyle(Theme.secondaryText)
+            }
+        }
+        .padding(.bottom, 6)
+    }
+
+    private func choose(_ mode: Upright, again: Bool) {
+        working = true
+        note = nil
+        let live = model.live
+        Task {
+            let result = await Task.detached { Result { try live?.setUpright(mode: mode, again: again) } }.value
+            switch result {
+            case .success(let said): note = said ?? nil
+            case .failure(RenderError.Failed(let message)): note = message
+            case .failure(let error): note = "\(error)"
+            }
+            model.refresh()
+            working = false
+        }
     }
 }
 

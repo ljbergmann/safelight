@@ -88,6 +88,9 @@ pub enum Switch {
     /// AI Denoise; switching it on sets manual noise reduction to 0, as on
     /// the desktop.
     AiDenoise,
+    /// Transform's Constrain Crop: the crop shrinks, keeping its aspect, to
+    /// leave out the white a transform uncovers.
+    ConstrainCrop,
 }
 
 #[derive(uniffi::Record, Clone)]
@@ -586,6 +589,7 @@ impl Switch {
             Switch::LensProfile => "Enable Profile Corrections",
             Switch::LensChromaticAberration => "Remove Chromatic Aberration",
             Switch::AiDenoise => "AI Denoise",
+            Switch::ConstrainCrop => "Constrain Crop",
         }
     }
 
@@ -598,6 +602,7 @@ impl Switch {
             Switch::LensProfile => r.lens_profile,
             Switch::LensChromaticAberration => r.lens_ca,
             Switch::AiDenoise => r.ai_denoise.enabled,
+            Switch::ConstrainCrop => r.constrain_crop,
         })
     }
 
@@ -629,6 +634,10 @@ impl Switch {
             Switch::AiDenoise => {
                 r.switch_ai_denoise(on);
                 ("AI Denoise".into(), word.into())
+            }
+            Switch::ConstrainCrop => {
+                r.constrain_crop = on;
+                ("Constrain Crop".into(), word.into())
             }
         })
     }
@@ -968,7 +977,7 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata, start: &Recipe) -> Vec<Sect
         group(
             "Geometry",
             "Transform",
-            vec![panel_switch(Panel::Transform)],
+            vec![panel_switch(Panel::Transform), Switch::ConstrainCrop],
             params(&[
                 P::TransformVertical,
                 P::TransformHorizontal,
