@@ -183,6 +183,7 @@ them after `--`):
 | `-loupe-test` (with `-open`) | Swipes to the next photo and back, waiting for each one's own edit |
 | `-export <file>` | Exports a photo at full size, timed |
 | `-benchmark`, `-allocprobe`, `-thumbnails`, `-rate <file> <stars>` | Rendering and memory measurements, thumbnails, ratings |
+| `-denoise-measure <file>`, `-selection-measure <file>` | AI Denoise, and Select Subject and Sky, on a RAW in Documents, on the CPU and each CoreML plan (GPU, Neural Engine, both), timed and compared with the CPU (`SAFELIGHT_MEASURE=sky:NeuralNetwork` repeats some) |
 
 `-benchmark` renders each RAW in Documents on the GPU and the CPU and writes
 `<name>.ipad.ppm` for comparing with the Mac's render (`cargo run --release

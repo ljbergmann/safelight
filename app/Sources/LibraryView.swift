@@ -172,13 +172,20 @@ struct LibraryView: View {
                 path = [photo.id]
             }
             if args.contains("-benchmark") { Diagnostics.benchmark() }
-            // -denoise-measure <file in Documents>: AI Denoise on the CPU and on
-            // CoreML, timed and compared (a development measurement).
+            // -denoise-measure <file in Documents>: AI Denoise on the CPU and on each
+            // CoreML plan, timed and compared (a development measurement).
             if let i = args.firstIndex(of: "-denoise-measure"), i + 1 < args.count {
                 let raw = URL.documentsDirectory.appending(path: args[i + 1]).path
                 let scratch = URL.temporaryDirectory.appending(path: "denoise-measure").path
                 let report = await Task.detached { measureDenoiseProviders(raw: raw, model: nil, scratch: scratch) }.value
                 print("DENOISE \(report)")
+            }
+            // -selection-measure <file in Documents>: Select Subject and Select Sky
+            // on the CPU and on CoreML, timed and compared (a development measurement).
+            if let i = args.firstIndex(of: "-selection-measure"), i + 1 < args.count {
+                let raw = URL.documentsDirectory.appending(path: args[i + 1]).path
+                let report = await Task.detached { measureSelectionProviders(raw: raw) }.value
+                print("SELECT \(report)")
             }
             // -export <file name>: a full-size JPEG of it, timed, for measuring.
             if let i = args.firstIndex(of: "-export"), i + 1 < args.count,

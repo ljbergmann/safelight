@@ -393,3 +393,27 @@ folder is moved there once, by one rename, and the catalog follows it.
   Mac's tests use a data folder elsewhere and didn't see it.
 - The test leaves an empty "Safelight Test" folder: file operations never
   delete a folder.
+
+## The Neural Engine (2026-11-09)
+
+M1 iPad Pro, Release build, ONNX Runtime 1.23, a Canon CR3 (`-denoise-measure`,
+`-selection-measure`), one run each. Differences are against the CPU's output.
+
+| Model | CPU | CoreML plan | Time | Against the CPU |
+|---|---|---|---|---|
+| AI Denoise | 42.6 s | ML Program, GPU (in use) | 11.9 s | max 1.1e-6, 154 dB |
+| | | ML Program, Neural Engine | 22.1 s | max 1.6e-6, 150 dB |
+| | | ML Program, GPU and Neural Engine | 11.2 s | as the GPU's: it runs there |
+| | | NeuralNetwork, any units | 61–68 s | identical: CoreML took none of it |
+| Select Subject | 2.3–2.4 s | any | — | SAM 2's graphs do not load on CoreML |
+| | | NeuralNetwork, DETR only | 2.5–2.6 s | IoU 1.0 |
+| | | ML Program, DETR only | — | fails: a dimension fixed at 16 |
+| Select Sky | 6.5–7.0 s | ML Program, Neural Engine | 10.1 s, then 37.6 s | both empty: the photo has no sky |
+| | | ML Program, GPU or both | — | fails to build its plan |
+| | | NeuralNetwork, any units | — | the app is killed at the memory limit |
+
+The Neural Engine runs half precision only, so it takes nothing of a
+single-precision ML Program; AI Denoise's activations overflow half precision
+anyway. Nothing changes: AI Denoise stays on CoreML's GPU and the selections on
+the CPU. The DETR-only rows were measured with a build that kept SAM 2 on the
+CPU, which was not kept.
