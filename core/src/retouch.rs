@@ -49,6 +49,8 @@ pub struct RedEyeInfo {
     pub outline: Vec<f32>,
     pub pupil_size: f32,
     pub darken: f32,
+    /// A Pet Eye's catchlight as a view point; empty without one.
+    pub catchlight: Vec<f32>,
 }
 
 /// Image-space and view geometry for one recipe.
@@ -282,6 +284,10 @@ pub(crate) fn red_eyes(image: &CameraImage, r: &Recipe) -> Vec<RedEyeInfo> {
                 .collect(),
             pupil_size: op.pupil_size,
             darken: op.darken,
+            catchlight: op
+                .catchlight_at(aspect)
+                .map(|p| m.to_view(p).to_vec())
+                .unwrap_or_default(),
         })
         .collect()
 }
@@ -341,6 +347,41 @@ pub(crate) fn set_red_eye(r: &mut Recipe, index: usize, pupil_size: f32, darken:
     op.pupil_size = pupil_size;
     op.darken = darken;
     true
+}
+
+/// Gives Pet Eye correction `index` Lightroom's catchlight, or takes it
+/// away, as the desktop's Add Catchlight.
+pub(crate) fn set_catchlight(r: &mut Recipe, index: usize, on: bool) -> bool {
+    let Some(op) = r.red_eye.get_mut(index) else {
+        return false;
+    };
+    let EyeKind::Pet { catchlight } = &mut op.kind else {
+        return false;
+    };
+    if catchlight.is_some() == on {
+        return false;
+    }
+    *catchlight = on.then_some(rawmakase_model::model::red_eye::DEFAULT_CATCHLIGHT);
+    op.fit_catchlight();
+    true
+}
+
+/// Places Pet Eye correction `index`'s catchlight at view point `to`, kept
+/// within the pupil.
+pub(crate) fn move_catchlight(
+    image: &CameraImage,
+    r: &mut Recipe,
+    index: usize,
+    to: [f32; 2],
+) -> bool {
+    let m = Map::new(image, r, [1., 1.]);
+    let (at, aspect) = (m.to_image(to), m.aspect());
+    let Some(op) = r.red_eye.get_mut(index) else {
+        return false;
+    };
+    let before = op.kind;
+    op.set_catchlight(at, aspect);
+    op.kind != before
 }
 
 /// Moves correction `index` by the drag from view point `from` to `to`.
@@ -483,6 +524,46 @@ mod tests {
         assert!(!set_red_eye(&mut r, i, 0.8, 0.2), "no change");
         assert!(move_red_eye(&image, &mut r, i, [0.5, 0.5], [0.6, 0.5]));
         assert!((red_eyes(&image, &r)[0].center[0] - 0.6).abs() < 0.01);
+        r.validate().unwrap();
+    }
+
+    /// A Pet Eye's catchlight is listed where it is, can be taken away and
+    /// given back (Lightroom's), and dragged, staying within the pupil. A
+    /// Red Eye has none.
+    #[test]
+    fn a_pet_eyes_catchlight_is_switched_and_dragged() {
+        use rawmakase_model::model::red_eye::DEFAULT_CATCHLIGHT;
+        let image = face(6.);
+        let mut r = Recipe::default();
+        let shown = [1., image.height as f32 / image.width as f32];
+        let i = add_red_eye(&image, &mut r, [0.5, 0.5], 0.04, shown, false).unwrap() as usize;
+        assert!(red_eyes(&image, &r)[0].catchlight.is_empty());
+        assert!(!set_catchlight(&mut r, i, true), "a red eye has none");
+        r.red_eye[i].kind = EyeKind::Pet {
+            catchlight: Some(DEFAULT_CATCHLIGHT),
+        };
+        let at = red_eyes(&image, &r)[0].catchlight.clone();
+        assert_eq!(at.len(), 2);
+        assert!(
+            at[0] > 0.5 && at[1] < 0.5,
+            "up and right of the centre: {at:?}"
+        );
+
+        assert!(set_catchlight(&mut r, i, false));
+        assert!(red_eyes(&image, &r)[0].catchlight.is_empty());
+        assert!(!set_catchlight(&mut r, i, false), "already off");
+        assert!(set_catchlight(&mut r, i, true));
+        assert_eq!(
+            r.red_eye[i].kind,
+            EyeKind::Pet {
+                catchlight: Some(DEFAULT_CATCHLIGHT)
+            }
+        );
+
+        // Dragged far outside the pupil, it stays at the pupil's edge.
+        assert!(move_catchlight(&image, &mut r, i, [0.2, 0.5]));
+        let moved = red_eyes(&image, &r)[0].catchlight.clone();
+        assert!(moved[0] < 0.5 && moved[0] > 0.45, "{moved:?}");
         r.validate().unwrap();
     }
 

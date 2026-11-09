@@ -142,7 +142,19 @@ struct HealPane: View {
                 if done { model.refresh() }
             }
             row("Pupil Size", eye.pupilSize, 0...1, shown: percent) { v, done in set(v, eye.darken, done) }
-            row("Darken", eye.darken, 0...1, shown: percent) { v, done in set(eye.pupilSize, v, done) }
+            if eye.pet {
+                // Camera Raw's Pet Eye is black whatever Darken says; it has a catchlight instead.
+                SwiftUI.Toggle("Add Catchlight", isOn: Binding(
+                    get: { !eye.catchlight.isEmpty },
+                    set: { model.live?.setRedEyeCatchlight(index: i, on: $0); model.refresh() }
+                ))
+                if !eye.catchlight.isEmpty {
+                    Text("Drag the catchlight to place it.")
+                        .font(.caption).foregroundStyle(Theme.secondaryText)
+                }
+            } else {
+                row("Darken", eye.darken, 0...1, shown: percent) { v, done in set(eye.pupilSize, v, done) }
+            }
             HStack {
                 Spacer()
                 Button("Delete", systemImage: "trash", role: .destructive) {
@@ -224,6 +236,11 @@ struct HealOnPhoto: View {
                         model.live?.dragRedEye(index: eye.index, from: from, to: to, done: done)
                     } tapped: {
                         model.selectedEye = selected ? nil : eye.index
+                    }
+                    if selected, eye.catchlight.count == 2 {
+                        pin(at: at(eye.catchlight[0], eye.catchlight[1]), selected: false, small: true) { _, to, done in
+                            model.live?.dragRedEyeCatchlight(index: eye.index, to: to, done: done)
+                        } tapped: {}
                     }
                 }
             } else {

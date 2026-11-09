@@ -1177,6 +1177,28 @@ impl LiveView {
         });
     }
 
+    /// Gives Pet Eye correction `index` its catchlight or takes it away, one
+    /// History step.
+    pub fn set_red_eye_catchlight(&self, index: u32, on: bool) {
+        self.edit_now("Update Pet Eye Correction", |r| {
+            crate::retouch::set_catchlight(r, index as usize, on).then_some(())
+        });
+    }
+
+    /// Drags Pet Eye correction `index`'s catchlight to view point `to`;
+    /// `done` ends the drag, one History step.
+    pub fn drag_red_eye_catchlight(&self, index: u32, to: Vec<f32>, done: bool) {
+        let Some(to) = point(&to) else {
+            return;
+        };
+        self.with_image(|image, edit| {
+            edit.drag("Update Pet Eye Correction", done, |r| {
+                crate::retouch::move_catchlight(image, r, index as usize, to)
+            })
+            .then_some(())
+        });
+    }
+
     pub fn delete_red_eye(&self, index: u32) {
         self.edit_now("Delete Red Eye", |r| {
             (index < r.red_eye.len() as u32).then(|| {
