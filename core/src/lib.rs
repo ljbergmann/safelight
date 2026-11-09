@@ -19,6 +19,7 @@ mod curve;
 pub use curve::CurveState;
 mod edit;
 mod export;
+mod export_extras;
 mod files;
 mod geometry_upright;
 pub use ai::{AiModel, AiModelInfo, AiSelection, ModelInstall, ai_models};

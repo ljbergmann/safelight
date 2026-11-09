@@ -1,7 +1,8 @@
 //! Export: photos of the catalog developed to JPEG, TIFF, PNG or JPEG XL
 //! through RAWmakase's own export batch, the one the desktop's Export dialog
-//! runs: its file naming, colour spaces, metadata choices and the Simple
-//! Copyright Watermark, each photo with the catalog's edit and metadata. The
+//! runs: its file naming (with the user's own filename templates), colour
+//! spaces, metadata choices and watermarks ([`crate::export_extras`]), each
+//! photo with the catalog's edit and metadata. The
 //! app shares the files.
 //!
 //! The choices are kept as the desktop's [`ExportSettings`] (its
@@ -15,7 +16,7 @@ use rawmakase_cancel::Cancel;
 use rawmakase_catalog::catalog::PhotoId;
 use rawmakase_export::export::batch::{self, Batch, BatchPhoto, Outcome};
 use rawmakase_interop::export_settings::{
-    Destination, Existing, ExportSettings, Format, Include, NameContext, Naming,
+    Destination, Existing, ExportSettings, Format, Include, NameContext, Naming, TokenTemplate,
 };
 use rawmakase_model::color::output::OutputSpace;
 use std::path::{Path, PathBuf};
@@ -79,8 +80,20 @@ pub struct ExportChoice {
     pub metadata: ExportMetadata,
     /// Lightroom's Remove Location Info.
     pub remove_location: bool,
-    /// The Simple Copyright Watermark: each photo's copyright over it.
+    /// A filename template of the user's own, in the editor's form
+    /// (`{Filename}-{Sequence # (001)}`); empty to name by [`Self::naming`].
+    pub template: String,
+    /// A watermark: [`Self::watermark_name`]'s preset over each photo.
     pub watermark: bool,
+    /// The preset's name; empty for the Simple Copyright Watermark, each
+    /// photo's copyright.
+    pub watermark_name: String,
+}
+
+/// The Export sheet's first choices: the desktop's defaults.
+#[uniffi::export]
+pub fn default_export_choice() -> ExportChoice {
+    ExportChoice::default()
 }
 
 impl Default for ExportChoice {
@@ -123,6 +136,12 @@ impl ExportChoice {
         if s.naming() != naming(self.naming) || s.custom_tokens().is_some() {
             s.choose_naming(naming(self.naming));
         }
+        // A template of the user's own names the photos over the preset.
+        if let Ok(template) = TokenTemplate::from_display(&self.template)
+            && !self.template.trim().is_empty()
+        {
+            s.choose_tokens(&template.to_lightroom());
+        }
         s.custom_text = self.custom_text.clone();
         s.start_number = self.start_number.max(1);
         s.quality = self.quality.clamp(1, 100);
@@ -141,7 +160,11 @@ impl ExportChoice {
         s.remove_location = self.remove_location;
         s.watermark = self.watermark;
         if self.watermark {
-            s.watermark_name = rawmakase_export::watermark::SIMPLE_COPYRIGHT.into();
+            s.watermark_name = if self.watermark_name.is_empty() {
+                rawmakase_export::watermark::SIMPLE_COPYRIGHT.into()
+            } else {
+                self.watermark_name.clone()
+            };
         }
         s
     }
@@ -181,10 +204,16 @@ impl ExportChoice {
                 Include::All | Include::Custom => ExportMetadata::All,
             },
             remove_location: s.remove_location,
-            // Only the Simple Copyright Watermark: the desktop's own presets
-            // aren't on the iPad.
-            watermark: s.watermark
-                && s.watermark_name == rawmakase_export::watermark::SIMPLE_COPYRIGHT,
+            template: s
+                .custom_tokens()
+                .map(|t| TokenTemplate::parse(t).to_display())
+                .unwrap_or_default(),
+            watermark: s.watermark,
+            watermark_name: if s.watermark_name == rawmakase_export::watermark::SIMPLE_COPYRIGHT {
+                String::new()
+            } else {
+                s.watermark_name.clone()
+            },
         }
     }
 }
@@ -552,6 +581,36 @@ mod tests {
         photos.sort_by(|a, b| a.filename.cmp(&b.filename));
         let ids = photos.iter().map(|p| p.id).collect();
         (dir, library, ids)
+    }
+
+    /// A filename template of the user's own names the photos over the
+    /// Rename To preset, and comes back in the remembered choice.
+    #[test]
+    fn a_template_of_ones_own_names_the_photos() {
+        let (dir, library, ids) = two_charts();
+        let choice = ExportChoice {
+            format: ExportFormat::Png,
+            long_edge: 100,
+            template: "Mine-{Filename}".into(),
+            ..ExportChoice::default()
+        };
+        let example = library.export_example_name(choice.clone(), ids[0], 2);
+        assert!(example.starts_with("Mine-"), "{example}");
+        let out = dir.path().join("out");
+        let result = library
+            .clone()
+            .export_photos(ids, choice.clone(), out.display().to_string())
+            .unwrap();
+        assert!(
+            result.files.iter().all(|f| Path::new(f)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("Mine-")),
+            "{:?}",
+            result.files
+        );
+        assert_eq!(library.last_export_choice().template, "Mine-{Filename}");
     }
 
     #[test]

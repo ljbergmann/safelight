@@ -175,8 +175,11 @@ struct LibraryView: View {
                let photo = model.photos.first(where: { $0.filename == args[i + 1] }), let library = model.library {
                 let start = ContinuousClock.now
                 let folder = URL.temporaryDirectory.appending(path: "Export-test").path
-                let outcome = await Task.detached {
-                    Result { try library.exportPhotos(ids: [photo.id], choice: ExportChoice(format: .jpeg, quality: 90, longEdge: 0, colorSpace: .srgb, naming: .filename, customText: "", startNumber: 1, metadata: .all, removeLocation: false, watermark: false), folder: folder).files }
+                // The desktop's defaults, at full size: a JPEG named as its RAW.
+                var choice = defaultExportChoice()
+                (choice.format, choice.quality, choice.longEdge, choice.watermark) = (.jpeg, 90, 0, false)
+                let outcome = await Task.detached { [choice] in
+                    Result { try library.exportPhotos(ids: [photo.id], choice: choice, folder: folder).files }
                 }.value
                 let memory = Memory.footprint()
                 switch outcome {

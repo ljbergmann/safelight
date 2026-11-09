@@ -1,17 +1,16 @@
 import SwiftUI
 import UIKit
 
-/// Export, as Lightroom's dialog: presets, File Naming with an example,
-/// format, colour space and size, Metadata and the Simple Copyright
-/// Watermark; then the iPadOS share sheet for the files (Save to Photos,
+/// Export, as Lightroom's dialog: presets, File Naming with an example and
+/// the user's own filename templates, format, colour space and size,
+/// Metadata and watermarks (the Simple Copyright Watermark or the user's
+/// own presets); then the iPadOS share sheet for the files (Save to Photos,
 /// Files, AirDrop…). It starts from the last export's choices.
 struct ExportSheet: View {
     let library: Library
     let ids: [Int64]
     @Environment(\.dismiss) private var dismiss
-    @State private var choice = ExportChoice(format: .jpeg, quality: 90, longEdge: 0, colorSpace: .srgb,
-                                             naming: .filename, customText: "", startNumber: 1,
-                                             metadata: .all, removeLocation: false, watermark: false)
+    @State private var choice = defaultExportChoice()
     @State private var presets: [ExportPreset] = []
     @State private var naming = false
     @State private var presetName = ""
@@ -19,6 +18,10 @@ struct ExportSheet: View {
     @State private var files: [URL] = []
     @State private var problems: [String] = []
     @State private var error: String?
+    @State private var templates: [FilenameTemplate] = []
+    @State private var watermarks: [WatermarkPreset] = []
+    @State private var editingTemplate = false
+    @State private var editingWatermarks = false
 
     var body: some View {
         NavigationStack {
@@ -54,23 +57,40 @@ struct ExportSheet: View {
             .sheet(isPresented: Binding(get: { !files.isEmpty }, set: { if !$0 { files = []; if problems.isEmpty { dismiss() } } })) {
                 ShareSheet(items: files)
             }
+            .sheet(isPresented: $editingTemplate, onDismiss: reloadExtras) {
+                FilenameTemplateEditor(library: library, ids: ids, choice: $choice)
+            }
+            .sheet(isPresented: $editingWatermarks, onDismiss: reloadExtras) {
+                WatermarkEditor(chosen: $choice.watermarkName)
+            }
             .onAppear {
                 choice = library.lastExportChoice()
                 presets = library.exportPresets()
+                reloadExtras()
             }
         }
     }
 
     private var namingSection: some View {
         SwiftUI.Section("File Naming") {
-            Picker("Rename To", selection: $choice.naming) {
-                Text("Filename").tag(ExportNaming.filename)
-                Text("Filename - Sequence").tag(ExportNaming.filenameSequence)
-                Text("Filename - Custom Text").tag(ExportNaming.filenameText)
-                Text("Custom Name").tag(ExportNaming.customName)
-                Text("Custom Name - Sequence").tag(ExportNaming.customNameSequence)
-                Text("Custom Name (x of y)").tag(ExportNaming.customNameOf)
-                Text("Date - Filename").tag(ExportNaming.dateFilename)
+            Picker("Template", selection: $choice.template) {
+                Text("None").tag("")
+                ForEach(templates, id: \.name) { t in Text(t.name).tag(t.template) }
+                if !choice.template.isEmpty && !templates.contains(where: { $0.template == choice.template }) {
+                    Text(choice.template).tag(choice.template)
+                }
+            }
+            Button("Edit Template…") { editingTemplate = true }
+            if choice.template.isEmpty {
+                Picker("Rename To", selection: $choice.naming) {
+                    Text("Filename").tag(ExportNaming.filename)
+                    Text("Filename - Sequence").tag(ExportNaming.filenameSequence)
+                    Text("Filename - Custom Text").tag(ExportNaming.filenameText)
+                    Text("Custom Name").tag(ExportNaming.customName)
+                    Text("Custom Name - Sequence").tag(ExportNaming.customNameSequence)
+                    Text("Custom Name (x of y)").tag(ExportNaming.customNameOf)
+                    Text("Date - Filename").tag(ExportNaming.dateFilename)
+                }
             }
             if usesText {
                 TextField("Custom Text", text: $choice.customText)
@@ -127,16 +147,31 @@ struct ExportSheet: View {
             if choice.metadata != .copyrightOnly && choice.metadata != .copyrightAndContact {
                 SwiftUI.Toggle("Remove Location Info", isOn: $choice.removeLocation)
             }
-            SwiftUI.Toggle("Simple Copyright Watermark", isOn: $choice.watermark)
+            SwiftUI.Toggle("Watermark", isOn: $choice.watermark)
+            if choice.watermark {
+                Picker("Mark", selection: $choice.watermarkName) {
+                    Text("Simple Copyright Watermark").tag("")
+                    ForEach(watermarks, id: \.name) { w in Text(w.name).tag(w.name) }
+                }
+            }
+            Button("Edit Watermarks…") { editingWatermarks = true }
         }
     }
 
+    private func reloadExtras() {
+        templates = (try? filenameTemplates()) ?? []
+        watermarks = watermarkPresets()
+    }
+
+    /// Custom Text and Sequence apply to a template that has them too.
     private var usesText: Bool {
-        [.filenameText, .customName, .customNameSequence, .customNameOf].contains(choice.naming)
+        if !choice.template.isEmpty { return choice.template.contains("{Custom Text}") }
+        return [.filenameText, .customName, .customNameSequence, .customNameOf].contains(choice.naming)
     }
 
     private var usesSequence: Bool {
-        [.filenameSequence, .customNameSequence].contains(choice.naming)
+        if !choice.template.isEmpty { return choice.template.contains("{Sequence #") }
+        return [.filenameSequence, .customNameSequence].contains(choice.naming)
     }
 
     private var presetMenu: some View {
