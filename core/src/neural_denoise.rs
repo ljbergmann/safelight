@@ -237,8 +237,9 @@ pub(crate) fn provider() -> Provider {
 }
 
 /// AI Denoise's model loader: the bundled model on [`Provider::NeuralEngine`], and
-/// ONNX Runtime with the installed model otherwise (the CPU redoes a tile the Neural
-/// Engine answered with a value that is not finite).
+/// ONNX Runtime with the installed model otherwise. When the bundled model will not load
+/// or answers a tile with a value that is not finite, the service moves the job to
+/// CoreML's GPU, then to the CPU, so this loads those too.
 pub(crate) fn loader() -> Loader {
     Arc::new(|dir: &Path, provider: Provider| match provider {
         Provider::NeuralEngine => {
