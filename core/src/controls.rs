@@ -95,6 +95,9 @@ pub enum Switch {
     /// Transform's Constrain Crop: the crop shrinks, keeping its aspect, to
     /// leave out the white a transform uncovers.
     ConstrainCrop,
+    /// Lightroom's HDR switch (`crs:HDREditMode`): highlights above white are
+    /// kept for HDR exports; the photo shows as its SDR rendition.
+    Hdr,
 }
 
 #[derive(uniffi::Record, Clone)]
@@ -628,6 +631,7 @@ impl Switch {
             Switch::LensChromaticAberration => "Remove Chromatic Aberration",
             Switch::AiDenoise => "AI Denoise",
             Switch::ConstrainCrop => "Constrain Crop",
+            Switch::Hdr => "High Dynamic Range",
         }
     }
 
@@ -641,6 +645,7 @@ impl Switch {
             Switch::LensChromaticAberration => r.lens_ca,
             Switch::AiDenoise => r.ai_denoise.enabled,
             Switch::ConstrainCrop => r.constrain_crop,
+            Switch::Hdr => r.hdr.enabled,
         })
     }
 
@@ -676,6 +681,10 @@ impl Switch {
             Switch::ConstrainCrop => {
                 r.constrain_crop = on;
                 ("Constrain Crop".into(), word.into())
+            }
+            Switch::Hdr => {
+                r.hdr.enabled = on;
+                ("HDR".into(), word.into())
             }
         })
     }
@@ -851,7 +860,7 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata, start: &Recipe) -> Vec<Sect
         group(
             "Light",
             "Light",
-            vec![],
+            vec![Switch::Hdr],
             params(&[
                 P::Exposure,
                 P::Contrast,

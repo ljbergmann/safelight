@@ -416,6 +416,10 @@ struct EditGroup: View {
     @ViewBuilder private func controls(_ section: Section, skipping: [Switch]) -> some View {
         ForEach(section.switches.filter { !skipping.contains($0.id) }, id: \.label) { item in
             SwitchRow(item: item, model: model)
+            if item.id == .hdr, item.on, let note = model.live?.hdrNote() {
+                Text(note).font(.caption).foregroundStyle(Theme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         ForEach(section.sliders, id: \.label) { slider in
             SliderRow(slider: slider, model: model, track: SliderRow.track(for: slider.label, in: section.title))

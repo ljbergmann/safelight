@@ -1343,6 +1343,27 @@ pub(crate) mod tests {
         assert!(!edit.go_to(9), "past the last step");
     }
 
+    /// The HDR switch sits under Light, as Lightroom's, and is one step that
+    /// the desktop reads as Lightroom's `crs:HDREditMode`.
+    #[test]
+    fn the_hdr_switch_is_one_step_under_light() {
+        let dir = tempfile::tempdir().unwrap();
+        let (library, id, path) = library(dir.path());
+        let mut edit = open(&library, id, &path);
+        let light = crate::controls::sections(edit.recipe(), &edit.metadata, edit.recipe())
+            .into_iter()
+            .find(|s| s.title == "Light")
+            .unwrap();
+        assert_eq!(light.switches[0].label, "High Dynamic Range");
+        assert!(!light.switches[0].on);
+        assert!(edit.switch(Switch::Hdr, true));
+        assert!(edit.recipe().hdr.is_active());
+        assert_eq!(edit.state().steps, ["HDR On"]);
+        assert!(!edit.switch(Switch::Hdr, true), "already on");
+        // A raw photo's HDR edit renders, as on the desktop.
+        rawmakase_model::model::hdr::check_for(edit.recipe(), &edit.metadata).unwrap();
+    }
+
     #[test]
     fn a_switch_is_one_named_step() {
         let dir = tempfile::tempdir().unwrap();

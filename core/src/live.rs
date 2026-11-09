@@ -1585,6 +1585,22 @@ impl LiveView {
         Ok(issue)
     }
 
+    /// What the HDR switch shows under it, as the desktop's note: with HDR
+    /// on, that the photo shows its SDR rendition (the iPad shows no HDR
+    /// yet), and why HDR export can't render it, if it can't. `None` with
+    /// HDR off.
+    pub fn hdr_note(&self) -> Option<String> {
+        let edit = self.shared.edit();
+        let edit = edit.as_ref()?;
+        let r = edit.recipe();
+        r.hdr.is_active().then(
+            || match rawmakase_model::model::hdr::check_for(r, &edit.metadata) {
+                Err(e) => format!("Showing the SDR rendition. HDR export unavailable: {e}"),
+                Ok(()) => "Showing the SDR rendition: HDR display isn't supported yet".to_string(),
+            },
+        )
+    }
+
     /// Upright's mode, as the Transform panel shows it; `None` with no photo
     /// open.
     pub fn upright(&self) -> Option<crate::geometry_upright::Upright> {
