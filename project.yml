@@ -40,7 +40,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.ljbergmann.safelight
         INFOPLIST_KEY_CFBundleDisplayName: Safelight
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        TARGETED_DEVICE_FAMILY: "2"
+        # iPad first; on an iPhone the photo sits above the panel.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"

@@ -323,6 +323,14 @@ struct LiveEditor: View {
     var setFlag: (Int32) -> Void = { _ in }
     var showInfo: () -> Void = {}
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalClass
+
+    /// An iPhone (or a narrow window): the panel goes under the photo.
+    private var compact: Bool { sizeClass == .compact && verticalClass == .regular }
+    /// The panel's height under the photo: what Lightroom for iPhone leaves
+    /// it, about two fifths of the screen.
+    private var panelHeight: CGFloat { model.pane == .history || model.pane == .presets ? 320 : 280 }
 
 
     var body: some View {
@@ -394,7 +402,7 @@ struct LiveEditor: View {
                 // Over the photo's corner, as Lightroom shows it while editing.
                 VStack(alignment: .leading, spacing: 8) {
                     if model.pane == .edit && model.compare == .off {
-                        HistogramPanel(model: model).frame(width: 230)
+                        HistogramPanel(model: model).frame(width: compact ? 140 : 230)
                     }
                     if model.infoOverlay {
                         PhotoInfoOverlay(library: library, photo: photo)
@@ -402,8 +410,21 @@ struct LiveEditor: View {
                 }
                 .padding(12)
             }
-            DevelopPanel(model: model)
-            ToolRail(model: model, rating: rating, flag: flag, setRating: setRating, setFlag: setFlag, showInfo: showInfo)
+            if !compact {
+                DevelopPanel(model: model)
+                ToolRail(model: model, rating: rating, flag: flag, setRating: setRating, setFlag: setFlag, showInfo: showInfo)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // An iPhone: the panel under the photo, the tools along the bottom.
+            if compact {
+                VStack(spacing: 0) {
+                    DevelopPanel(model: model, fullWidth: true)
+                        .frame(height: panelHeight)
+                    ToolRail(model: model, rating: rating, flag: flag, setRating: setRating, setFlag: setFlag,
+                             showInfo: showInfo, across: true)
+                }
+            }
         }
         .background(Theme.canvas)
         .sheet(isPresented: Bindable(model).copying) { CopySettingsSheet(model: model) }

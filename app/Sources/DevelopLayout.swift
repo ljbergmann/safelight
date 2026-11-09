@@ -40,10 +40,13 @@ struct ToolRail: View {
     let setRating: (Int32) -> Void
     let setFlag: (Int32) -> Void
     let showInfo: () -> Void
+    /// Along the bottom (an iPhone) rather than down the right edge.
+    var across = false
     @State private var ratingOpen = false
 
     var body: some View {
-        VStack(spacing: 10) {
+        let stack = across ? AnyLayout(HStackLayout(spacing: 4)) : AnyLayout(VStackLayout(spacing: 10))
+        stack {
             ForEach(DevelopPane.allCases, id: \.self) { pane in
                 Button { model.pane = pane } label: {
                     Image(systemName: pane.symbol)
@@ -85,16 +88,18 @@ struct ToolRail: View {
             .accessibilityLabel("Info")
         }
         .buttonStyle(.plain)
-        .padding(.vertical, 12)
-        .frame(width: 58)
-        .frame(maxHeight: .infinity)
+        .padding(across ? .horizontal : .vertical, across ? 8 : 12)
+        .frame(width: across ? nil : 58, height: across ? 54 : nil)
+        .frame(maxWidth: across ? .infinity : nil, maxHeight: across ? nil : .infinity)
         .background(Theme.panel)
     }
 }
 
-/// The right-hand panel: the chosen pane's tools.
+/// The right-hand panel: the chosen pane's tools. On an iPhone it fills
+/// the width under the photo.
 struct DevelopPanel: View {
     let model: LiveModel
+    var fullWidth = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -130,8 +135,8 @@ struct DevelopPanel: View {
                 .padding(14)
             }
         }
-        .frame(width: 340)
-        .frame(maxHeight: .infinity)
+        .frame(width: fullWidth ? nil : 340)
+        .frame(maxWidth: fullWidth ? .infinity : nil, maxHeight: .infinity)
         .background(Theme.raised)
     }
 }

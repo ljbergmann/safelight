@@ -4,6 +4,8 @@ import SwiftUI
 /// tile, a name and a count.
 struct LibrarySidebar: View {
     @Bindable var model: LibraryModel
+    /// A row was chosen: on an iPhone, the grid shows again.
+    var chosen: () -> Void = {}
     @State private var about = ProcessInfo.processInfo.arguments.contains("-about")
 
     var body: some View {
@@ -48,7 +50,7 @@ struct LibrarySidebar: View {
     }
 
     private func row(_ source: LibrarySource, _ name: String, _ icon: String, count: Int) -> some View {
-        Button { model.source = source } label: {
+        Button { model.source = source; chosen() } label: {
             rowLabel(name, icon, detail: count.formatted(), chosen: model.source == source)
         }
         .buttonStyle(.plain)
