@@ -125,6 +125,11 @@ for group in groups {
     guard let id = group["id"] as? String, let attributes = group["attributes"] as? [String: Any] else { continue }
     let name = attributes["name"] as? String ?? id
     if attributes["isInternalGroup"] as? Bool == false { external = true }
+    // An internal group with automatic distribution has every build already.
+    if attributes["hasAccessToAllBuilds"] as? Bool == true {
+        print("\(name) gets every build automatically")
+        continue
+    }
     let (status, json) = await call("POST", "/v1/betaGroups/\(id)/relationships/builds", ["data": [["type": "builds", "id": buildID]]])
     print(status < 300 ? "Added to \(name)" : "\(name): \(status) \(errors(json))")
 }
