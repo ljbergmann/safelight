@@ -29,6 +29,7 @@ rawmakase-edit-session = { path = "../vendor/rawmakase/crates/rawmakase-edit-ses
 rawmakase-engine = { path = "../vendor/rawmakase/crates/rawmakase-engine" }
 rawmakase-export = { path = "../vendor/rawmakase/crates/rawmakase-export" }
 rawmakase-interop = { path = "../vendor/rawmakase/crates/rawmakase-interop" }
+rawmakase-lensfun = { path = "../vendor/rawmakase/crates/rawmakase-lensfun" }
 rawmakase-model = { path = "../vendor/rawmakase/crates/rawmakase-model" }
 rawmakase-protocol = { path = "../vendor/rawmakase/crates/rawmakase-protocol" }
 anyhow = "1"
@@ -48,6 +49,8 @@ serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# Lensfun's stand-in database (src/lensfun.rs).
+rawmakase-model = { path = "../vendor/rawmakase/crates/rawmakase-model", features = ["test-support"] }
 # Reading the desktop's renders in the compatibility test (src/compat.rs).
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 

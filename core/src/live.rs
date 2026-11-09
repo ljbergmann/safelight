@@ -1492,6 +1492,48 @@ impl LiveView {
         }
     }
 
+    /// What Lens Corrections offers from Lensfun for the open photo
+    /// ([`crate::lensfun`]).
+    pub fn lensfun(&self) -> crate::lensfun::LensfunOffer {
+        let db = crate::lensfun::current();
+        self.shared
+            .edit()
+            .as_ref()
+            .map(|e| crate::lensfun::offer(e.recipe(), &e.metadata, db.as_deref()))
+            .unwrap_or_default()
+    }
+
+    /// Uses Lensfun lens `index` (of the installed database) for the open
+    /// photo, or with `None` resolves or updates the lens the edit names:
+    /// one History step.
+    pub fn use_lensfun(&self, index: Option<u32>) {
+        let Some(db) = crate::lensfun::current() else {
+            return;
+        };
+        let changed = self.shared.edit().as_mut().is_some_and(|e| {
+            let mut after = e.recipe().clone();
+            let step = match index {
+                Some(i) => crate::lensfun::choose(&mut after, &e.metadata, &db, i),
+                None => crate::lensfun::resolve(&mut after, &e.metadata, &db),
+            };
+            let Some((name, value)) = step else {
+                return false;
+            };
+            if after == *e.recipe() {
+                return false;
+            }
+            e.session.finish_gesture();
+            e.session.change(
+                Some(rawmakase_edit_session::history::Step::new(name, value)),
+                |r| *r = after,
+            );
+            true
+        });
+        if changed {
+            self.shared.request(|_| {});
+        }
+    }
+
     /// Guided Upright's guides as view points (x, y of one end, then the
     /// other, for each guide), over the photo as shown.
     pub fn upright_guides(&self) -> Vec<f32> {

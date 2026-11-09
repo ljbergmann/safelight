@@ -365,7 +365,7 @@ struct EditGroup: View {
                 VStack(alignment: .leading, spacing: 6) {
                     if name == "Color" { WhiteBalanceRow(model: model) }
                     controls(main, skipping: [.monochrome])
-                    if name == "Optics" { LensProfileRow(model: model) }
+                    if name == "Optics" { LensProfileRow(model: model); LensfunCard(model: model) }
                     if name == "Light", shown.contains("Tone Curve") {
                         subsections("Tone Curve")
                     }
@@ -934,6 +934,101 @@ struct CalibrationProcess: View {
                 model.refresh()
             }
             .font(.callout)
+        }
+    }
+}
+
+/// Lensfun's community lens profiles where no imported Adobe profile fits,
+/// as the desktop's Lensfun card offers them: the download (on request, with
+/// its terms), then the lens this photo matches, a choice when the name fits
+/// several or none, and resolving or updating the lens an edit names.
+struct LensfunCard: View {
+    let model: LiveModel
+    @State private var working = false
+    @State private var said: String?
+
+    var body: some View {
+        let _ = model.edit?.applied
+        let _ = working
+        let offer = model.live?.lensfun() ?? LensfunOffer(title: "", note: "", action: .none, lenses: [], chosen: nil, installed: nil, terms: "")
+        if !offer.title.isEmpty || offer.chosen != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Lensfun").foregroundStyle(Theme.secondaryText)
+                    Spacer()
+                    if let chosen = offer.chosen { Text(chosen).lineLimit(1) }
+                    if working { ProgressView().controlSize(.small) }
+                    if offer.installed != nil {
+                        Menu {
+                            Button("Check for Newer Profiles", systemImage: "arrow.down.circle") { install() }
+                            Button("Remove Lensfun Profiles", systemImage: "trash", role: .destructive) { remove() }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                            .disabled(working)
+                    }
+                }
+                if !offer.title.isEmpty {
+                    Text(offer.title).font(.callout.weight(.semibold))
+                    Text(offer.note).font(.caption).foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                action(offer)
+                if !offer.terms.isEmpty {
+                    Text(offer.terms).font(.caption2).foregroundStyle(Theme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let said {
+                    Text(said).font(.caption).foregroundStyle(Theme.secondaryText)
+                }
+            }
+            .font(.callout)
+            .padding(10)
+            .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder private func action(_ offer: LensfunOffer) -> some View {
+        switch offer.action {
+        case .none:
+            EmptyView()
+        case .download:
+            Button("Download · 0.5 MB") { install() }.disabled(working)
+        case .use(let index):
+            Button("Use") { model.live?.useLensfun(index: index); model.refresh() }
+        case .choose:
+            Menu("Choose a Lens…") {
+                ForEach(offer.lenses, id: \.index) { lens in
+                    Button(lens.label) { model.live?.useLensfun(index: lens.index); model.refresh() }
+                }
+            }
+        case .resolve:
+            Button("Resolve") { model.live?.useLensfun(index: nil); model.refresh() }
+        case .update:
+            Button("Update") { model.live?.useLensfun(index: nil); model.refresh() }
+        }
+    }
+
+    private func install() {
+        working = true
+        said = nil
+        Task {
+            let result = await Task.detached { Result { try installLensfun() } }.value
+            switch result {
+            case .success(let text): said = text
+            case .failure(RenderError.Failed(let message)): said = "The download failed: \(message)"
+            case .failure(let error): said = "The download failed: \(error)"
+            }
+            working = false
+            model.refresh()
+        }
+    }
+
+    private func remove() {
+        working = true
+        Task {
+            let result = await Task.detached { Result { try removeLensfun() } }.value
+            if case .failure(let error) = result { said = "\(error)" } else { said = "Removed Lensfun's profiles. Edits keep their lens's calibration." }
+            working = false
+            model.refresh()
         }
     }
 }

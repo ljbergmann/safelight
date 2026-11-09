@@ -28,6 +28,7 @@ pub use files::{FileChange, FolderInfo};
 mod guides;
 mod import;
 mod lens;
+mod lensfun;
 mod library;
 pub use edit::{EditState, Orientation};
 pub use import::{ImportCandidate, ImportJob, ImportMode};
@@ -78,6 +79,25 @@ pub fn folders() -> Folders {
             .display()
             .to_string(),
     }
+}
+
+/// Downloads and installs Lensfun's lens profiles, on the user's request
+/// only; says what it did. Takes a few seconds: call it off the main thread.
+#[uniffi::export]
+pub fn install_lensfun() -> Result<String, render::RenderError> {
+    lensfun::install()
+}
+
+/// Removes Lensfun's lens profiles; edits keep their lens's calibration.
+#[uniffi::export]
+pub fn remove_lensfun() -> Result<bool, render::RenderError> {
+    lensfun::remove()
+}
+
+/// The installed Lensfun profiles' date, if any.
+#[uniffi::export]
+pub fn lensfun_installed() -> Option<String> {
+    lensfun::current().map(|i| i.manifest.date())
 }
 
 /// A greeting from Rust, to show the bridge works at all.
