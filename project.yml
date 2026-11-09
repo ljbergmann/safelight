@@ -1,6 +1,6 @@
 name: Safelight
 options:
-  bundleIdPrefix: com.ljbergmann
+  bundleIdPrefix: com.leonjbergmann
   deploymentTarget:
     iOS: "18.0"
 settings:
@@ -37,7 +37,7 @@ targets:
         codeSign: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ljbergmann.safelight
+        PRODUCT_BUNDLE_IDENTIFIER: com.leonjbergmann.safelight
         INFOPLIST_KEY_CFBundleDisplayName: Safelight
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # iPad first; on an iPhone the photo sits above the panel.
