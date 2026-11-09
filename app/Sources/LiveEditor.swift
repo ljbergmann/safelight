@@ -143,8 +143,6 @@ final class LiveModel {
     var zoom: Zoom = .fit { didSet { live?.setZoom(zoom: zoom) } }
     /// A pinch in progress, shown by scaling the last frame until it ends.
     var pinch: CGFloat = 1
-    /// The screen's pixels per point, for drawing over the photo at 1:1.
-    var displayScale: CGFloat = 2
     var pinchAnchor: UnitPoint = .center
     /// The centre a drag started from.
     var dragStart: (Float, Float)?
@@ -222,7 +220,7 @@ final class LiveModel {
         let (x, y) = (location.x * scale - area[0], location.y * scale - area[1])
         switch zoom {
         case .fit:
-            let s = min(w / fw, h / fh, fitMax)
+            let s = min(w / fw, h / fh)
             let (left, top) = ((w - fw * s) / 2, (h - fh * s) / 2)
             return (Float(min(max((x - left) / (fw * s), 0), 1)), Float(min(max((y - top) / (fh * s), 0), 1)))
         case .actual(let cx, let cy):
@@ -236,7 +234,7 @@ final class LiveModel {
     /// Screen pixels per photo pixel now: Fit's, 1 at 100%, or the zoom's.
     func zoomScale(in size: CGSize, scale: CGFloat) -> CGFloat? {
         guard let stats = live?.stats(), stats.fullWidth > 0 else { return nil }
-        let fit = min(size.width * scale / CGFloat(stats.fullWidth), size.height * scale / CGFloat(stats.fullHeight), fitMax)
+        let fit = min(size.width * scale / CGFloat(stats.fullWidth), size.height * scale / CGFloat(stats.fullHeight))
         switch zoom {
         case .fit: return fit
         case .actual: return 1
@@ -247,8 +245,6 @@ final class LiveModel {
     /// Fit ↔ 100% at `location`.
     func toggleZoom(at location: CGPoint, in size: CGSize, scale: CGFloat) {
         guard !cropping && tool == .none else { return }
-        // A photo that shows whole at 100% or more has nowhere closer to go.
-        if case .fit = zoom, let fit = zoomScale(in: size, scale: scale), fit >= 1 { return }
         if case .fit = zoom, let (x, y) = photoPoint(at: location, in: size, scale: scale) {
             zoom = .actual(centerX: x, centerY: y)
         } else {
@@ -262,15 +258,12 @@ final class LiveModel {
         defer { pinch = 1 }
         guard !cropping && tool == .none, let stats = live?.stats(), stats.fullWidth > 0,
               let now = zoomScale(in: size, scale: scale) else { return }
-        let fit = min(size.width * scale / CGFloat(stats.fullWidth), size.height * scale / CGFloat(stats.fullHeight), fitMax)
+        let fit = min(size.width * scale / CGFloat(stats.fullWidth), size.height * scale / CGFloat(stats.fullHeight))
         let target = now * pinch
         let anchor = CGPoint(x: pinchAnchor.x * size.width, y: pinchAnchor.y * size.height)
         guard let (x, y) = photoPoint(at: anchor, in: size, scale: scale) else { return }
-        if fit >= 1 {
-            // The whole photo already shows at 100% or more: Fit is as close as it goes.
-            zoom = .fit
-        } else if target <= fit * 1.02 {
-            zoom = .fit
+        if target <= fit * 1.02 || fit >= 1 {
+            zoom = target >= 1 ? .actual(centerX: x, centerY: y) : .fit
         } else if target >= 0.98 {
             zoom = .actual(centerX: x, centerY: y)
         } else {
@@ -356,11 +349,7 @@ struct LiveEditor: View {
                     MagnifyGesture()
                         .onChanged { value in
                             model.pinchAnchor = value.startAnchor
-                            // Not past 1:1 while the fingers move either:
-                            // a pinch ends at 100% (or Fit, when larger) at most.
-                            let now = model.zoomScale(in: geometry.size, scale: displayScale) ?? 1
-                            let most = max(1, model.fitMax)
-                            model.pinch = min(value.magnification, max(1, most / max(now, 0.0001)))
+                            model.pinch = value.magnification
                         }
                         .onEnded { _ in model.endPinch(in: geometry.size, scale: displayScale) }
                 )
@@ -451,7 +440,6 @@ struct LiveEditor: View {
             model.photo = photo
         }
         .onChange(of: photo.id) { model.photo = photo }
-        .onChange(of: displayScale, initial: true) { model.displayScale = displayScale }
     }
 
     /// Launch options for checking edits without touching the screen: once
@@ -882,7 +870,7 @@ extension LiveEditor {
 extension FrameStats {
     static let empty = FrameStats(
         frames: 0, renderMs: 0, presentMs: 0, meanRenderMs: 0, backend: "", width: 0, height: 0,
-        fullWidth: 0, fullHeight: 0, decodeScale: 1, frameWidth: 0, frameHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
+        fullWidth: 0, fullHeight: 0, frameWidth: 0, frameHeight: 0, zoom: .fit, camera: "", decodeMs: 0, loading: false, error: nil)
 }
 
 struct SwitchRow: View {

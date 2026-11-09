@@ -144,7 +144,7 @@ struct CropOverlay: View {
     /// The straightened photo fitted in the view, as the core draws it.
     private func fitted(_ frame: CGSize) -> CGRect {
         guard frame.width > 0, frame.height > 0 else { return CGRect(origin: .zero, size: size) }
-        let s = min(size.width / frame.width, size.height / frame.height, model.fitLimit(frameWidth: frame.width))
+        let s = min(size.width / frame.width, size.height / frame.height)
         let w = frame.width * s, h = frame.height * s
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
     }

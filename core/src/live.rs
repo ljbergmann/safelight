@@ -121,9 +121,6 @@ pub struct FrameStats {
     /// shows a pixel of.
     pub full_width: u32,
     pub full_height: u32,
-    /// The file's pixels per pixel of that resolution: 2 for a half-size
-    /// decode. Fit never draws the photo larger than the file's own pixels.
-    pub decode_scale: f32,
     /// The straightened photo's width and height before cropping, which the
     /// crop's 0–1 coordinates span.
     pub frame_width: f32,
@@ -2380,7 +2377,6 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
                     s.height = frame.height;
                     s.full_width = frame.full[0];
                     s.full_height = frame.full[1];
-                    s.decode_scale = frame.decode_scale;
                     s.zoom = frame.zoom;
                     s.frame_width = frame.frame[0];
                     s.frame_height = frame.frame[1];
@@ -2394,25 +2390,6 @@ fn run(shared: &Arc<Shared>, layer: usize) -> anyhow::Result<()> {
             render_one_preview(shared, p);
         }
     }
-}
-
-/// Screen pixels per texture pixel for a side drawn into a pane `[w, h]`
-/// pixels large: 1 for a view drawn 1:1 (100% or zoomed out), else the
-/// whole photo fitted to the pane but never past `limit`, the file's own
-/// pixels at 1:1, as Lightroom's Fit: a photo smaller than the view shows
-/// at its size, not enlarged.
-fn blit_scale([w, h]: [f32; 2], [tw, th]: [f32; 2], actual: bool, limit: f32) -> f32 {
-    if actual {
-        1.
-    } else {
-        (w / tw).min(h / th).min(limit.max(f32::MIN_POSITIVE))
-    }
-}
-
-/// The file's pixels per decoded pixel: 2 for a half-size decode, 1 at full
-/// size.
-fn decode_scale(image: &CameraImage) -> f32 {
-    (image.metadata.width as f32 / image.width.max(1) as f32).max(1.)
 }
 
 /// The edit as the view shows it: with the Crop tool open, the whole
@@ -2593,7 +2570,6 @@ fn current_size(shared: &Shared) -> [u32; 2] {
 }
 
 struct Shown {
-    decode_scale: f32,
     render_ms: f64,
     present_ms: f64,
     backend: &'static str,
@@ -2643,10 +2619,6 @@ struct BeforeKey {
 struct Side {
     texture: wgpu::Texture,
     actual: bool,
-    /// The most screen pixels per texture pixel Fit may draw it at: the
-    /// file's own pixels at 1:1 (a half-size decode's twice, a render
-    /// smaller than the decode's more).
-    limit: f32,
     /// For a zoomed-out view, the whole photo at its scale: the point drawn
     /// at the view's centre, as fractions of the texture.
     center: Option<[f32; 2]>,
@@ -2938,7 +2910,6 @@ impl Screen {
         }
         self.draw(&paints);
         Ok(Shown {
-            decode_scale: decode_scale(&p.image),
             render_ms,
             present_ms: t.elapsed().as_secs_f64() * 1000.,
             backend,
@@ -3054,10 +3025,7 @@ impl Screen {
                 )
             }
         };
-        let decoded = decode_scale(&p.image);
-        let long = texture.width().max(texture.height()).max(1) as f32;
         let side = Side {
-            limit: decoded * g.width.max(g.height) as f32 / long,
             texture,
             actual: region.is_some() || whole.is_some(),
             center: whole.map(|(_, c)| c),
@@ -3144,7 +3112,11 @@ impl Screen {
                 let [_, _, w, h] = paint.pane.area;
                 let texture = &paint.side.texture;
                 let (tw, th) = (texture.width() as f32, texture.height() as f32);
-                let scale = blit_scale([w, h], [tw, th], paint.side.actual, paint.side.limit);
+                let scale = if paint.side.actual {
+                    1.
+                } else {
+                    (w / tw).min(h / th)
+                };
                 let (sx, sy) = (tw * scale / w, th * scale / h);
                 // A zoomed-out view's centre point at the view's centre.
                 let offset = paint.side.center.map_or([0., 0.], |[cx, cy]| {
@@ -3226,18 +3198,6 @@ impl Screen {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Fit shrinks a photo larger than the view and never enlarges one
-    /// smaller than it past the file's own pixels; views drawn 1:1 stay so.
-    #[test]
-    fn fit_never_enlarges_past_one_to_one() {
-        assert_eq!(blit_scale([1000., 800.], [2000., 1000.], false, 1.), 0.5);
-        assert_eq!(blit_scale([1600., 1200.], [970., 742.], false, 1.), 1.);
-        assert_eq!(blit_scale([1600., 1200.], [970., 742.], true, 1.), 1.);
-        assert_eq!(blit_scale([500., 1200.], [970., 742.], false, 1.), 500. / 970.);
-        // A half-size decode of a small file: up to the file's own size.
-        assert_eq!(blit_scale([2400., 1800.], [485., 371.], false, 2.), 2.);
-    }
 
     #[test]
     fn visualize_range_shows_one_swatchs_selection_without_changing_the_edit() {

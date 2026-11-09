@@ -27,21 +27,9 @@ extension LiveModel {
     func photoRect(in size: CGSize) -> CGRect {
         guard let s = live?.stats(), s.width > 0, s.height > 0 else { return CGRect(origin: .zero, size: size) }
         let w = CGFloat(s.width), h = CGFloat(s.height)
-        let k = min(size.width / w, size.height / h, fitLimit(frameWidth: w))
+        let k = min(size.width / w, size.height / h)
         return CGRect(x: (size.width - w * k) / 2, y: (size.height - h * k) / 2, width: w * k, height: h * k)
     }
-
-    /// The most points per pixel of a frame `frameWidth` pixels wide that
-    /// Fit draws: the file's own pixels at 1:1, as the core's `blit_scale`.
-    /// A photo smaller than the view shows at its size, not enlarged.
-    func fitLimit(frameWidth: CGFloat) -> CGFloat {
-        guard let s = live?.stats(), s.fullWidth > 0, frameWidth > 0 else { return .infinity }
-        return CGFloat(max(s.decodeScale, 1)) * CGFloat(s.fullWidth) / frameWidth / displayScale
-    }
-
-    /// Fit's most screen pixels per pixel of the decode's full resolution
-    /// (where 100% is 1): the file's own pixels at 1:1.
-    var fitMax: CGFloat { CGFloat(max(live?.stats().decodeScale ?? 1, 1)) }
 
     /// A point of the view as fractions across the photo as shown.
     func viewPoint(_ p: CGPoint, in rect: CGRect) -> [Float] {
