@@ -3,7 +3,6 @@ import SwiftUI
 /// What a photo's menu asked to do to its file, waiting for a name or a yes.
 enum FileRequest: Identifiable {
     case rename(LibraryPhoto)
-    case newFolder([Int64])
     case remove([Int64])
     case delete([Int64])
     case emptyDeleted
@@ -11,7 +10,6 @@ enum FileRequest: Identifiable {
     var id: String {
         switch self {
         case .rename(let p): "rename-\(p.id)"
-        case .newFolder(let ids): "folder-\(ids)"
         case .remove(let ids): "remove-\(ids)"
         case .delete(let ids): "delete-\(ids)"
         case .emptyDeleted: "empty"
@@ -32,7 +30,6 @@ extension LibraryModel {
             self.error = "\(error)"
         }
         await reload()
-        folders = (try? library.folders()) ?? []
         deletedFiles = library.recentlyDeletedSize().first ?? 0
     }
 
@@ -71,12 +68,6 @@ struct FileMenu: View {
         if let photo, !photo.isCopy {
             Button("Rename…", systemImage: "character.cursor.ibeam") { model.fileRequest = .rename(photo) }
         }
-        Menu("Move to Folder", systemImage: "folder") {
-            Button("New Folder…", systemImage: "folder.badge.plus") { model.fileRequest = .newFolder(ids) }
-            ForEach(model.folders, id: \.path) { folder in
-                Button(folder.path) { Task { await model.fileChange("Moved") { try $0.movePhotos(photos: ids, folder: folder.path) } } }
-            }
-        }
         Button("Remove from Library…", systemImage: "minus.circle") { model.fileRequest = .remove(ids) }
         Button("Delete…", systemImage: "trash", role: .destructive) { model.fileRequest = .delete(ids) }
     }
@@ -110,7 +101,7 @@ struct FileAlerts: ViewModifier {
 
     private var asksName: Bool {
         switch model.fileRequest {
-        case .rename, .newFolder: true
+        case .rename: true
         default: false
         }
     }
@@ -118,7 +109,6 @@ struct FileAlerts: ViewModifier {
     private var title: String {
         switch model.fileRequest {
         case .rename: "Rename Photo"
-        case .newFolder: "New Folder"
         case .remove(let ids): "Remove \(ids.count) photo\(ids.count == 1 ? "" : "s") from the library?"
         case .delete(let ids): "Delete \(ids.count) photo\(ids.count == 1 ? "" : "s")?"
         case .emptyDeleted: "Empty Recently Deleted?"
@@ -150,7 +140,6 @@ struct FileAlerts: ViewModifier {
         Task {
             switch request {
             case .rename(let p): await model.fileChange("Renamed") { try $0.renamePhoto(photo: p.id, stem: name) }
-            case .newFolder(let ids): await model.fileChange("Moved") { try $0.newFolder(parent: "", name: name, photos: ids) }
             case .remove(let ids): await model.fileChange("Removed") { try $0.removeFromCatalog(photos: ids) }
             case .delete(let ids): await model.fileChange("Deleted") { try $0.deletePhotos(photos: ids) }
             case .emptyDeleted:

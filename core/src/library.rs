@@ -145,6 +145,18 @@ impl Library {
         })
     }
 
+    /// The photos the last import added, as the desktop's Previous Import
+    /// (the catalog's newest import batch): a photo already in the catalog
+    /// isn't in it again.
+    pub fn last_import(&self) -> Result<Vec<i64>, RenderError> {
+        Ok(self
+            .catalog()
+            .previous_import()?
+            .into_iter()
+            .map(|p| p.0)
+            .collect())
+    }
+
     /// Every photo, oldest capture first.
     pub fn photos(&self) -> Result<Vec<LibraryPhoto>, RenderError> {
         let catalog = self.catalog();

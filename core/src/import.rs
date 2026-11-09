@@ -571,6 +571,34 @@ mod tests {
         assert_eq!(library.photos().unwrap().len(), 2);
     }
 
+    /// Last Import is what the newest import added: the first import's
+    /// photos, then only the second's.
+    #[test]
+    fn last_import_is_what_the_newest_import_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let card = card(dir.path());
+        let charts =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../vendor/rawmakase/tests/corpus/charts");
+        let first = vec![
+            card.join("DCIM/100CANON/canon-eos-r100-d65.dng")
+                .display()
+                .to_string(),
+        ];
+        let job = ImportJob::start(library.clone(), first, ImportMode::Copy, true);
+        wait(&job);
+        let after_first = library.last_import().unwrap();
+        assert_eq!(after_first.len(), 1);
+
+        let second = vec![charts.join("canon-eos-r7-d65.dng").display().to_string()];
+        let job = ImportJob::start(library.clone(), second, ImportMode::Copy, true);
+        wait(&job);
+        let after_second = library.last_import().unwrap();
+        assert_eq!(after_second.len(), 1);
+        assert_ne!(after_second, after_first);
+        assert_eq!(library.photos().unwrap().len(), 2);
+    }
+
     #[test]
     fn photos_imported_before_checksums_were_kept_count_as_duplicates() {
         let dir = tempfile::tempdir().unwrap();

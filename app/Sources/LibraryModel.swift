@@ -24,9 +24,11 @@ final class LibraryModel {
 
     /// The photos the filters let through, in the chosen order.
     var shown: [LibraryPhoto] {
-        let members: Set<Int64>? = if case .collection(let id) = source {
-            collections.first { $0.id == id }.map { Set($0.photos) } ?? []
-        } else { nil }
+        let members: Set<Int64>? = switch source {
+        case .collection(let id): collections.first { $0.id == id }.map { Set($0.photos) } ?? []
+        case .lastImport: lastImported
+        default: nil
+        }
         let kept = photos.filter { p in
             !p.hiddenInStack
                 && source.admits(p, members: members)
@@ -46,8 +48,9 @@ final class LibraryModel {
     var removingCopy: LibraryPhoto?
     /// A file operation waiting for a name or a yes.
     var fileRequest: FileRequest?
-    /// The library's folders, for Move to Folder, and what Recently Deleted holds.
-    var folders: [FolderInfo] = []
+    /// The photos the last import added (Last Import), and what Recently
+    /// Deleted holds.
+    var lastImported: Set<Int64> = []
     var deletedFiles: UInt64 = 0
     /// Compare or Survey, open for the photos chosen.
     var choosing: ChoosingRequest?
@@ -89,7 +92,7 @@ final class LibraryModel {
         do {
             photos = try await Task.detached { try library.photos() }.value
             collections = try await Task.detached { try library.collections() }.value
-            folders = (try? library.folders()) ?? []
+            lastImported = Set((try? library.lastImport()) ?? [])
             deletedFiles = library.recentlyDeletedSize().first ?? 0
             resort()
         } catch {
@@ -163,6 +166,8 @@ final class LibraryModel {
         importing = nil
         importProgress = nil
         await reload()
+        // What came in, as Lightroom shows Previous Import after an import.
+        if job.imported() > 0 { source = .lastImport }
         var notes = ["\(job.imported()) imported"]
         if job.skipped() > 0 { notes.append("\(job.skipped()) already in the catalog") }
         if job.done() < job.total() && job.error() == nil { notes.append("cancelled") }
@@ -341,18 +346,17 @@ enum LibrarySource: Hashable {
     case edited
     case unedited
     case collection(Int64)
-    /// A folder of the photo folder, by its path in it ("2026/2026-11-08"),
-    /// with the folders inside it.
-    case folder(String)
+    /// The photos the last import added, as the desktop's Previous Import.
+    case lastImport
 
-    /// Whether `photo` is shown; `members` are a collection's photos.
+    /// Whether `photo` is shown; `members` are a collection's or the last
+    /// import's photos.
     func admits(_ photo: LibraryPhoto, members: Set<Int64>?) -> Bool {
         switch self {
         case .all: true
         case .edited: photo.edited
         case .unedited: !photo.edited
-        case .collection: members?.contains(photo.id) ?? false
-        case .folder(let folder): photo.folderPath.hasPrefix(folder + "/") || photo.folderPath == folder
+        case .collection, .lastImport: members?.contains(photo.id) ?? false
         }
     }
 }

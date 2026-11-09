@@ -15,6 +15,9 @@ struct LibrarySidebar: View {
                 row(.all, "All photos", "photo", count: model.photos.count)
                 row(.edited, "Edited", "pencil", count: model.editedCount)
                 row(.unedited, "Unedited", "pencil.slash", count: model.photos.count - model.editedCount)
+                if !model.lastImported.isEmpty {
+                    row(.lastImport, "Last Import", "square.and.arrow.down", count: model.lastImported.count)
+                }
                 if model.deletedFiles > 0 {
                     Button { model.fileRequest = .emptyDeleted } label: {
                         rowLabel("Recently deleted", "trash", detail: "\(model.deletedFiles) · tap to empty", chosen: false)
@@ -25,12 +28,6 @@ struct LibrarySidebar: View {
                     Text("Collections").font(.title3).padding(.horizontal, 12).padding(.top, 20).padding(.bottom, 6)
                     ForEach(model.collections, id: \.id) { c in
                         row(.collection(c.id), c.name, c.quick ? "circle.inset.filled" : "rectangle.stack", count: c.photos.count)
-                    }
-                }
-                if !model.folders.isEmpty {
-                    Text("Folders").font(.title3).padding(.horizontal, 12).padding(.top, 20).padding(.bottom, 6)
-                    ForEach(model.folders, id: \.path) { f in
-                        row(.folder(f.path), f.path, "folder", count: Int(f.photos))
                     }
                 }
             }
@@ -79,7 +76,7 @@ extension LibrarySource {
         case .edited: "Edited"
         case .unedited: "Unedited"
         case .collection(let id): model.collections.first { $0.id == id }?.name ?? "Collection"
-        case .folder(let path): (path as NSString).lastPathComponent
+        case .lastImport: "Last Import"
         }
     }
 }
