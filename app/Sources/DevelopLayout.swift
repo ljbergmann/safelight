@@ -426,7 +426,7 @@ struct EditGroup: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        ForEach(section.sliders, id: \.label) { slider in
+        ForEach(section.sliders, id: \.control) { slider in
             SliderRow(slider: slider, model: model, track: SliderRow.track(for: slider.label, in: section.title))
         }
         if section.title == "AI Denoise" { AiDenoiseStatus(model: model) }
@@ -703,7 +703,7 @@ struct CropPane: View {
                     UprightRow(model: model)
                     ForEach(geometry.dropFirst(), id: \.title) { section in
                         ForEach(section.switches, id: \.label) { SwitchRow(item: $0, model: model) }
-                        ForEach(section.sliders, id: \.label) { SliderRow(slider: $0, model: model) }
+                        ForEach(section.sliders, id: \.control) { SliderRow(slider: $0, model: model) }
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 14)
@@ -849,12 +849,12 @@ struct AspectShape: View {
     }
 }
 
-/// A slider as the panel shows it: a thin track and a small knob. A drag
-/// moves the value by how far the finger goes, wherever it starts, so a
-/// touch never jumps it; one drag is one History step. Two touches that
-/// don't move, close together, are a double tap and call `reset`: told
-/// apart here, by the one gesture that takes every touch on the track,
-/// rather than by a second recognizer that touch would have to win.
+/// A slider as the panel shows it: a thin track and a small knob. A
+/// sideways drag moves the value by how far the finger goes, wherever it
+/// starts, so a touch never jumps it; one drag is one History step. Only a
+/// sideways drag: one that starts upwards or downwards scrolls the panel,
+/// as in Lightroom, so a column of sliders still scrolls. A double tap
+/// calls `reset`.
 struct ThinSlider: View {
     let value: Float
     let range: ClosedRange<Float>
@@ -863,14 +863,8 @@ struct ThinSlider: View {
     var reset: (() -> Void)?
     let changed: (Float, Bool) -> Void
     @State private var start: Float?
-    /// When a touch that didn't move last ended, for the double tap.
-    @State private var lastTap: Date?
 
     private static let knob: CGFloat = 16
-    /// How far a touch may move and still be a tap, in points.
-    private static let tapSlop: CGFloat = 6
-    /// How soon the second tap must follow the first.
-    private static let doubleTap: TimeInterval = 0.45
 
     var body: some View {
         GeometryReader { geometry in
@@ -888,26 +882,12 @@ struct ThinSlider: View {
             }
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { drag in
-                        if start == nil { start = value }
-                        changed(moved(drag.translation.width, travel: travel, span: span), false)
-                    }
-                    .onEnded { drag in
-                        let tapped = abs(drag.translation.width) < Self.tapSlop
-                            && abs(drag.translation.height) < Self.tapSlop
-                        if tapped, let last = lastTap, Date().timeIntervalSince(last) < Self.doubleTap, let reset {
-                            lastTap = nil
-                            start = nil
-                            reset()
-                            return
-                        }
-                        lastTap = tapped ? Date() : nil
-                        changed(moved(drag.translation.width, travel: travel, span: span), true)
-                        start = nil
-                    }
-            )
+            .gesture(SidewaysDrag { dx, done in
+                if start == nil { start = value }
+                changed(moved(dx, travel: travel, span: span), done)
+                if done { start = nil }
+            })
+            .onTapGesture(count: 2) { reset?() }
         }
         .frame(height: 26)
     }
@@ -1033,6 +1013,39 @@ struct LensfunCard: View {
             if case .failure(let error) = result { said = "\(error)" } else { said = "Removed Lensfun's profiles. Edits keep their lens's calibration." }
             working = false
             model.refresh()
+        }
+    }
+}
+
+/// A pan that begins only when it starts sideways, so a vertical swipe on
+/// a slider scrolls whatever it sits in. Reports the horizontal distance
+/// from where it began, in points, and whether the drag ended.
+struct SidewaysDrag: UIGestureRecognizerRepresentable {
+    let moved: (CGFloat, Bool) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.maximumNumberOfTouches = 1
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
+        let dx = pan.translation(in: pan.view).x
+        switch pan.state {
+        case .changed: moved(dx, false)
+        case .ended, .cancelled: moved(dx, true)
+        default: break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+            guard let pan = gesture as? UIPanGestureRecognizer else { return true }
+            let v = pan.velocity(in: pan.view)
+            return abs(v.x) > abs(v.y)
         }
     }
 }

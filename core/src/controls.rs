@@ -981,28 +981,43 @@ pub(crate) fn sections(r: &Recipe, photo: &Metadata, start: &Recipe) -> Vec<Sect
                 P::GrainRoughness,
             ]),
         ),
-        group(
-            "Detail",
-            "AI Denoise",
-            vec![Switch::AiDenoise],
-            params(&[P::AiDenoiseAmount]),
-        ),
+        // As Lightroom's Detail panel: its switch, then Sharpening, Noise
+        // Reduction and Color Noise Reduction under headings of their own,
+        // so their three Detail sliders can be told apart.
         group(
             "Detail",
             "Detail",
             vec![panel_switch(Panel::Detail)],
+            vec![],
+        ),
+        group(
+            "Detail",
+            "Sharpening",
+            vec![],
             params(&[
                 P::SharpeningAmount,
                 P::SharpeningRadius,
                 P::SharpeningDetail,
                 P::SharpeningMasking,
-                P::LuminanceNoise,
-                P::LuminanceDetail,
-                P::LuminanceContrast,
-                P::ColorNoise,
-                P::ColorNoiseDetail,
-                P::ColorNoiseSmoothness,
             ]),
+        ),
+        group(
+            "Detail",
+            "Noise Reduction",
+            vec![],
+            params(&[P::LuminanceNoise, P::LuminanceDetail, P::LuminanceContrast]),
+        ),
+        group(
+            "Detail",
+            "Color Noise Reduction",
+            vec![],
+            params(&[P::ColorNoise, P::ColorNoiseDetail, P::ColorNoiseSmoothness]),
+        ),
+        group(
+            "Detail",
+            "AI Denoise",
+            vec![Switch::AiDenoise],
+            params(&[P::AiDenoiseAmount]),
         ),
         group(
             "Optics",
@@ -1176,6 +1191,35 @@ mod tests {
         assert_eq!(r.effects.global_grade[0], 0.5);
         assert_eq!(r.effects.gray_mix[4], 0.4);
         r.validate().unwrap();
+    }
+
+    /// Detail's three Detail sliders sit under the headings that tell them
+    /// apart, as in Lightroom: Sharpening, Noise Reduction, Color Noise
+    /// Reduction; the panel's switch stays on Detail itself.
+    #[test]
+    fn details_sliders_sit_under_their_own_headings() {
+        let r = Recipe::default();
+        let detail: Vec<Section> = sections(&r, &Metadata::default(), &r)
+            .into_iter()
+            .filter(|s| s.group == "Detail")
+            .collect();
+        let titles: Vec<&str> = detail.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            [
+                "Detail",
+                "Sharpening",
+                "Noise Reduction",
+                "Color Noise Reduction",
+                "AI Denoise"
+            ]
+        );
+        assert_eq!(detail[0].switches.len(), 1);
+        assert!(detail[0].sliders.is_empty());
+        for s in &detail[1..4] {
+            let details = s.sliders.iter().filter(|c| c.label == "Detail").count();
+            assert_eq!(details, 1, "{}", s.title);
+        }
     }
 
     #[test]

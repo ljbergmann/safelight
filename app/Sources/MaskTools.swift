@@ -295,7 +295,7 @@ struct MaskSettings: View {
         let sections = model.edit == nil ? [] : (model.live?.maskSections(index: mask) ?? [])
         VStack(alignment: .leading, spacing: 0) {
             ForEach(sections.filter { $0.group == "Mask" }, id: \.title) { section in
-                ForEach(section.sliders, id: \.label) { SliderRow(slider: $0, model: model) }
+                ForEach(section.sliders, id: \.control) { SliderRow(slider: $0, model: model) }
             }
             ForEach(sections.filter { $0.group != "Mask" }, id: \.title) { section in
                 Rectangle().fill(Theme.line).frame(height: 0.5).padding(.top, 8)
@@ -314,7 +314,7 @@ struct MaskSettings: View {
                 }
                 .buttonStyle(.plain)
                 if open.contains(section.title) {
-                    ForEach(section.sliders, id: \.label) { slider in
+                    ForEach(section.sliders, id: \.control) { slider in
                         SliderRow(slider: slider, model: model, track: SliderRow.track(for: slider.label, in: section.title))
                     }
                 }

@@ -389,7 +389,7 @@ struct PointColorView: View {
                 .frame(height: 18)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .accessibilityLabel("The sampled colour, and what it becomes")
-                ForEach(chosen.sliders, id: \.label) { SliderRow(slider: $0, model: model) }
+                ForEach(chosen.sliders, id: \.control) { SliderRow(slider: $0, model: model) }
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { showRanges.toggle() }
                 } label: {
