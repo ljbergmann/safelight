@@ -85,6 +85,13 @@ enum PhotosStaging {
         return staged
     }
 
+    /// `name` as a file name in the staging folder: its last component only,
+    /// never empty, `.` or `..`, so a name from Photos can't write elsewhere.
+    nonisolated static func safeName(_ name: String, or fallback: String) -> String {
+        let last = (name as NSString).lastPathComponent
+        return [".", "..", "", "/"].contains(last) ? fallback : last
+    }
+
     /// The provider's file of `type`, copied into `target` (the file Photos
     /// hands over lasts only as long as the callback).
     @MainActor private static func load(_ provider: NSItemProvider, type: UTType, named suggested: String?,
@@ -94,7 +101,7 @@ enum PhotosStaging {
                 done.resume(returning: Result {
                     guard let url else { throw error ?? CocoaError(.fileReadUnknown) }
                     let name = suggested.map { "\($0).\(url.pathExtension)" } ?? url.lastPathComponent
-                    let file = target.appending(path: name)
+                    let file = target.appending(path: safeName(name, or: "photo.\(url.pathExtension)"))
                     try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
                     try FileManager.default.copyItem(at: url, to: file)
                     return file.path
@@ -114,7 +121,7 @@ enum PhotosStaging {
                   UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) ?? false
               })
         else { return nil }
-        let file = target.appending(path: resource.originalFilename)
+        let file = target.appending(path: safeName(resource.originalFilename, or: "photo.\(UTType(resource.uniformTypeIdentifier)?.preferredFilenameExtension ?? "raw")"))
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
         do {
