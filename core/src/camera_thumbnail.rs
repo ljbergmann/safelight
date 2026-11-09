@@ -72,6 +72,7 @@ mod tests {
             Err(RenderError::Failed { message }) => {
                 assert!(message.starts_with("No camera thumbnail"), "{message}")
             }
+            Err(other) => panic!("{other}"),
         }
         let big = bounded(image::RgbImage::new(6000, 4000));
         assert_eq!((big.width(), big.height()), (4096, 2730));

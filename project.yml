@@ -22,6 +22,11 @@ targets:
       # AI Denoise on the Neural Engine (app/Models/README.md); Xcode compiles
       # it into RawNIND-ANE.mlmodelc, which the core loads by name.
       - app/Models/RawNIND-ANE.mlpackage
+      # Select Sky on the Neural Engine, made by scripts/convert-sky-ane.py
+      # (233 MB, too large for the repository). Without it, Sky runs on the
+      # CPU with the downloaded model, as before.
+      - path: build/Sky-ANE.mlpackage
+        optional: true
     # A full-size decode of a 45 MP RAW and its 100% view need more than the
     # default limit on an 8 GB iPad (MEASUREMENTS.md).
     entitlements:

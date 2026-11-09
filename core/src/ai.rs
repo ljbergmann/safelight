@@ -14,6 +14,7 @@
 //! in RAWmakase on a computer.
 
 use crate::library::Library;
+use crate::neural_sky::NeuralSky;
 use crate::render::RenderError;
 use rawmakase_ai::ai_denoise::Service;
 use rawmakase_ai::model_install::{self, InstallError, Pack, Progress};
@@ -181,6 +182,8 @@ pub(crate) struct Ai {
     pub(crate) denoise: Service,
     subject: Mutex<Option<Session>>,
     sky: Mutex<Option<SkySession>>,
+    /// Select Sky on the Neural Engine, when the app bundles its model.
+    sky_neural: Mutex<Option<NeuralSky>>,
 }
 
 impl Ai {
@@ -196,6 +199,7 @@ impl Ai {
             ),
             subject: Mutex::new(None),
             sky: Mutex::new(None),
+            sky_neural: Mutex::new(None),
         }
     }
 
@@ -268,8 +272,13 @@ pub(crate) fn select(
     what: AiSelection,
 ) -> Result<Generated, RenderError> {
     let pack = what.pack();
-    if !pack.is_installed() {
-        return Err(failed(format!(
+    let needed = || RenderError::ModelNeeded {
+        model: if what == AiSelection::Sky {
+            AiModel::Sky
+        } else {
+            AiModel::Subject
+        },
+        message: format!(
             "Install the {} model to select {}.",
             if what == AiSelection::Sky {
                 "Sky"
@@ -277,7 +286,11 @@ pub(crate) fn select(
                 "Subject"
             },
             what.name().to_lowercase()
-        )));
+        ),
+    };
+    // Sky may not need it: the app's own model covers most photos' shapes.
+    if what != AiSelection::Sky && !pack.is_installed() {
+        return Err(needed());
     }
     let input = rawmakase_engine::develop::masks::selection_input(
         image,
@@ -296,19 +309,42 @@ pub(crate) fn select(
     let options = selection::load_options();
     let (coverage, prompt) = match what {
         AiSelection::Sky => {
-            let mut sky = library
-                .ai
-                .sky
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if sky.is_none() {
-                *sky = Some(Sky::load_with(&dir, &options).map_err(inference)?);
-            }
-            let coverage = sky
-                .as_mut()
-                .expect("loaded above")
-                .select(&rgb, Cancel::NEVER)
-                .map_err(inference)?;
+            // The bundled model on the Neural Engine first; the installed ONNX model on
+            // the CPU for a shape it has no function for, or when it fails.
+            let neural = {
+                let mut neural = library
+                    .ai
+                    .sky_neural
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                if neural.is_none() {
+                    *neural = NeuralSky::bundled();
+                }
+                neural.as_mut().map(|n| n.select(&rgb))
+            };
+            let coverage = match neural {
+                Some(Ok(Some(coverage))) => coverage,
+                neural => {
+                    if !pack.is_installed() {
+                        return Err(match neural {
+                            Some(Err(e)) => inference(e),
+                            _ => needed(),
+                        });
+                    }
+                    let mut sky = library
+                        .ai
+                        .sky
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    if sky.is_none() {
+                        *sky = Some(Sky::load_with(&dir, &options).map_err(inference)?);
+                    }
+                    sky.as_mut()
+                        .expect("loaded above")
+                        .select(&rgb, Cancel::NEVER)
+                        .map_err(inference)?
+                }
+            };
             (coverage, "sky")
         }
         AiSelection::Subject | AiSelection::Background => {

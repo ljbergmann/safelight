@@ -438,3 +438,22 @@ subnormal, which the Neural Engine flushes: 15 dB). Same iPad, same CR3:
 All 77 tiles of the photo stay finite on the Neural Engine (on the Mac, the
 conversion script's check). The app's memory peaked at 3.4 GB during the run in
 the app.
+
+### Select Sky on the Neural Engine, converted
+
+Select Sky's model rebuilt in PyTorch from its ONNX weights (within 1e-7 of ONNX
+Runtime) and converted to a half-precision Core ML model with one function per
+shape (app/Models/README.md). M1 iPad Pro:
+
+| | Per photo | Against the CPU |
+|---|---|---|
+| Neural Engine, 1024×683 (8 desktop pictures) | 390 ms | mask IoU 0.997 at worst, probabilities within 0.011 |
+| GPU (half precision) | 792 ms | IoU 0.999 |
+| Core ML on the CPU | 1,952 ms | IoU 0.986 |
+| ONNX Runtime CPU (until now) | 6.2–7.0 s | — |
+| In the app (`-selection-measure measure.CR3`, `sky:bundled`) | 0.35 s; the first 6.8 s after installing, 0.73 s after a relaunch | — |
+
+The first selection after installing compiles the photo shape's function for the
+Neural Engine; iOS keeps it compiled. Eight-bit weights halve the 233 MB but lose
+too much: linear 8-bit to IoU 0.964 (probabilities 0.12 off), a palette of 256 to
+0.980 on the Neural Engine and a broken answer on the GPU.

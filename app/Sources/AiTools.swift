@@ -7,11 +7,11 @@ extension AiModel: Identifiable {
 extension LiveModel {
     /// Selects the photo's subject, sky or background as a new mask. The
     /// model runs off the main thread; without the model installed, the
-    /// download is offered first.
+    /// download is offered first. Sky asks the core: the app's own model
+    /// covers most photos, and the download is offered only for the others.
     func select(_ what: AiSelection) {
-        let needs: AiModel = what == .sky ? .sky : .subject
-        guard aiModels().first(where: { $0.model == needs })?.installed == true else {
-            offeredModel = needs
+        if what != .sky, aiModels().first(where: { $0.model == .subject })?.installed != true {
+            offeredModel = .subject
             return
         }
         guard let live, selecting == nil else { return }
@@ -27,6 +27,8 @@ extension LiveModel {
                         self.selectedMask = index
                         self.tool = .none
                     }
+                case .failure(RenderError.ModelNeeded(let model, _)):
+                    self.offeredModel = model
                 case .failure(let error):
                     self.selectionError = "\(error)"
                 }

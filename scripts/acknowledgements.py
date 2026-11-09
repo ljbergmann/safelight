@@ -95,6 +95,9 @@ def main() -> int:
     notice = (models / "RawNIND-ANE.NOTICE").read_text().strip()
     texts.setdefault(notice + "\n\n" + (models / "RawNIND-ANE.LICENSE").read_text().strip(), []).append(
         "RawNIND UtNet2 (Bayer), converted for the Neural Engine")
+    # Select Sky's model, made into build/ by scripts/convert-sky-ane.py.
+    texts.setdefault((models / "Sky-ANE.NOTICE").read_text().strip(), []).append(
+        "UperNet ConvNeXt-base (Select Sky), converted for the Neural Engine")
 
     lines = [
         "Safelight is built on RAWmakase and on the open-source software below.",

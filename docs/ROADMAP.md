@@ -125,10 +125,13 @@ and no soft proofing, so they aren't gaps.
       bundled with the app (app/Models), about 6× faster than CoreML's GPU
       (a 45 MP photo ready in about 5 s), 89.7 dB from the CPU's output; a
       progress bar while it runs
-- [ ] Select Subject, Sky and Background on the Neural Engine: through ONNX
-      Runtime none is faster (CoreML cannot load SAM 2's graphs; Sky is
-      slower there and too large to compile for the GPU); try Sky converted
-      as AI Denoise was
+- [x] Select Sky on the Neural Engine: a half-precision Core ML conversion
+      bundled with the app, made at build time (scripts/convert-sky-ane.py),
+      about 18× faster than the CPU for 3:2, 4:3, 16:9 and square photos;
+      other shapes stay on the CPU, and no download is needed for the ones it
+      covers; it falls back to the GPU, then the CPU
+- [ ] Select Subject and Background on the Neural Engine: SAM 2's graphs do
+      not load on CoreML through ONNX Runtime; try them converted as Sky was
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views
 

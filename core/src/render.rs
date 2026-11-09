@@ -54,6 +54,12 @@ pub struct Rendering {
 pub enum RenderError {
     #[error("{message}")]
     Failed { message: String },
+    /// The model pack must be installed first: the app offers its download.
+    #[error("{message}")]
+    ModelNeeded {
+        model: crate::ai::AiModel,
+        message: String,
+    },
 }
 
 impl From<anyhow::Error> for RenderError {

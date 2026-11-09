@@ -17,6 +17,7 @@ git clone --recurse-submodules https://github.com/ljbergmann/safelight
 rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim
 scripts/build-core.sh    # the Rust core and its Swift bindings
 scripts/build-ort.sh     # ONNX Runtime for iOS, for the AI features
+scripts/convert-sky-ane.py  # Select Sky for the Neural Engine (needs uv; a few minutes)
 xcodegen generate
 open Safelight.xcodeproj
 ```

@@ -293,6 +293,40 @@ fn measure_selection(raw: &Path) -> anyhow::Result<serde_json::Value> {
             };
             runs.push(entry);
         }
+        // Sky: the app's own model on the Neural Engine, as Select Sky runs it
+        // (`SAFELIGHT_MEASURE=sky:bundled` measures it alone, with the CPU).
+        if pack == Pack::Sky && (only_plan.is_empty() || only_plan == "bundled") {
+            let entry = match crate::neural_sky::NeuralSky::bundled() {
+                None => serde_json::json!({ "plan": "NeuralEngine", "error": "no bundled model" }),
+                Some(mut neural) => {
+                    let mut timed = || -> anyhow::Result<(f64, Option<Coverage>)> {
+                        let started = Instant::now();
+                        let coverage = neural.select(rgb)?;
+                        Ok((started.elapsed().as_secs_f64(), coverage))
+                    };
+                    match (timed(), timed()) {
+                        (Ok((first, _)), Ok((again, Some(coverage)))) => {
+                            let iou = iou(&reference, &coverage);
+                            println!(
+                                "SELECT sky NeuralEngine (bundled): {first:.2} s, again {again:.2} s, IoU {iou:.4}"
+                            );
+                            serde_json::json!({
+                                "plan": "NeuralEngine", "first_s": first, "again_s": again,
+                                "iou": iou, "covered": covered(&coverage),
+                                "max_coverage_diff": max_diff(&reference, &coverage),
+                            })
+                        }
+                        (Ok(_), Ok((_, None))) => serde_json::json!({
+                            "plan": "NeuralEngine", "error": "the photo's shape has no function",
+                        }),
+                        (Err(e), _) | (_, Err(e)) => {
+                            serde_json::json!({ "plan": "NeuralEngine", "error": format!("{e:#}") })
+                        }
+                    }
+                }
+            };
+            runs.push(entry);
+        }
         report.insert(name.into(), runs.into());
     }
     Ok(report.into())
