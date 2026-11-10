@@ -67,26 +67,13 @@ xcodegen generate -q
 xcodebuild archive -project Safelight.xcodeproj -scheme Safelight -configuration Release \
     -destination 'generic/platform=iOS' -archivePath build/archive/Safelight.xcarchive \
     -derivedDataPath build/DerivedData -allowProvisioningUpdates DEVELOPMENT_TEAM="$team" -quiet
-# The upload signs in with the App Store Connect API key when there is one (the
-# same key scripts/testflight-groups.swift uses), else with Xcode's account,
-# whose sign-in expires. A failed upload stops here: nothing would arrive to wait for.
-asc=$HOME/.config/safelight/asc.env
-key_id=${ASC_KEY_ID:-$( [ -f "$asc" ] && sed -n 's/^ASC_KEY_ID=//p' "$asc" || true)}
-issuer=${ASC_ISSUER_ID:-$( [ -f "$asc" ] && sed -n 's/^ASC_ISSUER_ID=//p' "$asc" || true)}
-key_path=${ASC_KEY_PATH:-$( [ -f "$asc" ] && sed -n 's/^ASC_KEY_PATH=//p' "$asc" || true)}
-key_path=${key_path:-$HOME/.appstoreconnect/private_keys/AuthKey_$key_id.p8}
-case $key_path in "~/"*) key_path=$HOME/${key_path#"~/"} ;; esac
-export_archive() {
-    xcodebuild -exportArchive -archivePath build/archive/Safelight.xcarchive \
-        -exportOptionsPlist "$root/scripts/UploadOptions.plist" -exportPath build/archive/upload \
-        -allowProvisioningUpdates "$@" > build/export.log 2>&1
-}
-if [ -n "$key_id" ] && [ -n "$issuer" ] && [ -f "$key_path" ]; then
-    export_archive -authenticationKeyPath "$key_path" -authenticationKeyID "$key_id" \
-        -authenticationKeyIssuerID "$issuer"
-else
-    export_archive
-fi || {
+# The upload signs and signs in with the Apple account in Xcode's settings (the
+# API key can't: cloud signing needs an Admin key). When that sign-in has
+# expired, the export fails with "Failed to Use Accounts". A failed upload stops
+# here: nothing would arrive to wait for.
+xcodebuild -exportArchive -archivePath build/archive/Safelight.xcarchive \
+    -exportOptionsPlist "$root/scripts/UploadOptions.plist" -exportPath build/archive/upload \
+    -allowProvisioningUpdates > build/export.log 2>&1 || {
     grep -E "error:|EXPORT" build/export.log >&2
     echo "testflight: the upload of build $next failed" >&2
     exit 1
