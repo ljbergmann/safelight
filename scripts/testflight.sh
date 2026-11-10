@@ -67,9 +67,31 @@ xcodegen generate -q
 xcodebuild archive -project Safelight.xcodeproj -scheme Safelight -configuration Release \
     -destination 'generic/platform=iOS' -archivePath build/archive/Safelight.xcarchive \
     -derivedDataPath build/DerivedData -allowProvisioningUpdates DEVELOPMENT_TEAM="$team" -quiet
-xcodebuild -exportArchive -archivePath build/archive/Safelight.xcarchive \
-    -exportOptionsPlist "$root/scripts/UploadOptions.plist" -exportPath build/archive/upload \
-    -allowProvisioningUpdates 2>&1 | grep -E "error:|Uploaded|EXPORT" || true
+# The upload signs in with the App Store Connect API key when there is one (the
+# same key scripts/testflight-groups.swift uses), else with Xcode's account,
+# whose sign-in expires. A failed upload stops here: nothing would arrive to wait for.
+asc=$HOME/.config/safelight/asc.env
+key_id=${ASC_KEY_ID:-$( [ -f "$asc" ] && sed -n 's/^ASC_KEY_ID=//p' "$asc" || true)}
+issuer=${ASC_ISSUER_ID:-$( [ -f "$asc" ] && sed -n 's/^ASC_ISSUER_ID=//p' "$asc" || true)}
+key_path=${ASC_KEY_PATH:-$( [ -f "$asc" ] && sed -n 's/^ASC_KEY_PATH=//p' "$asc" || true)}
+key_path=${key_path:-$HOME/.appstoreconnect/private_keys/AuthKey_$key_id.p8}
+case $key_path in "~/"*) key_path=$HOME/${key_path#"~/"} ;; esac
+export_archive() {
+    xcodebuild -exportArchive -archivePath build/archive/Safelight.xcarchive \
+        -exportOptionsPlist "$root/scripts/UploadOptions.plist" -exportPath build/archive/upload \
+        -allowProvisioningUpdates "$@" > build/export.log 2>&1
+}
+if [ -n "$key_id" ] && [ -n "$issuer" ] && [ -f "$key_path" ]; then
+    export_archive -authenticationKeyPath "$key_path" -authenticationKeyID "$key_id" \
+        -authenticationKeyIssuerID "$issuer"
+else
+    export_archive
+fi || {
+    grep -E "error:|EXPORT" build/export.log >&2
+    echo "testflight: the upload of build $next failed" >&2
+    exit 1
+}
+grep -E "Uploaded|EXPORT" build/export.log || true
 
 app=build/archive/Safelight.xcarchive/Products/Applications/Safelight.app
 if xcrun devicectl list devices 2>/dev/null | grep "$ipad" | grep -q connected; then
