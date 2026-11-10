@@ -51,13 +51,16 @@ git -c protocol.file.allow=always submodule update -q --init \
     --reference "$root/vendor/rawmakase" vendor/rawmakase
 mkdir -p build
 cp -R "$root/build/onnxruntime.xcframework" build/
-# Select Sky's Neural Engine model, made by scripts/convert-sky-ane.py: too large for
-# the repository, and a release without it would select sky on the CPU only.
-[ -d "$root/build/Sky-ANE.mlpackage" ] || {
-    echo "build/Sky-ANE.mlpackage is missing: run scripts/convert-sky-ane.py first" >&2
-    exit 1
-}
-cp -R "$root/build/Sky-ANE.mlpackage" build/
+# Select Sky's and Select Subject's Neural Engine models, made by
+# scripts/convert-sky-ane.py and scripts/convert-subject-coreml.py: too large for the
+# repository, and a release without them would select on the CPU only.
+for model in Sky-ANE:convert-sky-ane.py Subject-CoreML:convert-subject-coreml.py; do
+    [ -d "$root/build/${model%%:*}.mlpackage" ] || {
+        echo "build/${model%%:*}.mlpackage is missing: run scripts/${model#*:} first" >&2
+        exit 1
+    }
+    cp -R "$root/build/${model%%:*}.mlpackage" build/
+done
 
 scripts/build-core.sh > build/core.log 2>&1 || { tail -20 build/core.log; exit 1; }
 xcodegen generate -q

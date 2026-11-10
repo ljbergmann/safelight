@@ -293,6 +293,44 @@ fn measure_selection(raw: &Path) -> anyhow::Result<serde_json::Value> {
             };
             runs.push(entry);
         }
+        // Subject: the app's own encoder and DETR with Core ML, with the CPU's
+        // decoder, as Select Subject runs them (`subject:bundled` alone, with the CPU).
+        if pack == Pack::Subject && (only_plan.is_empty() || only_plan == "bundled") {
+            let entry = match crate::subject_coreml::CoreMLSubject::bundled() {
+                None => serde_json::json!({ "plan": "NeuralEngine", "error": "no bundled model" }),
+                Some(mut neural) => {
+                    let mut session = Subject::load_with(&dir, &options(Provider::Cpu, None))?;
+                    let mut timed = || -> anyhow::Result<(f64, Option<Coverage>)> {
+                        let started = Instant::now();
+                        let Some((embedding, labels)) = neural.inputs(rgb)? else {
+                            return Ok((0., None));
+                        };
+                        let analysis = session.analyze_from(embedding, labels, Cancel::NEVER)?;
+                        Ok((started.elapsed().as_secs_f64(), Some(analysis.subject()?)))
+                    };
+                    match (timed(), timed()) {
+                        (Ok((first, _)), Ok((again, Some(coverage)))) => {
+                            let iou = iou(&reference, &coverage);
+                            println!(
+                                "SELECT subject Core ML (bundled): {first:.2} s, again {again:.2} s, IoU {iou:.4}"
+                            );
+                            serde_json::json!({
+                                "plan": "NeuralEngine", "first_s": first, "again_s": again,
+                                "iou": iou, "covered": covered(&coverage),
+                                "max_coverage_diff": max_diff(&reference, &coverage),
+                            })
+                        }
+                        (Ok(_), Ok((_, None))) => serde_json::json!({
+                            "plan": "NeuralEngine", "error": "the photo's shape has no DETR function",
+                        }),
+                        (Err(e), _) | (_, Err(e)) => {
+                            serde_json::json!({ "plan": "NeuralEngine", "error": format!("{e:#}") })
+                        }
+                    }
+                }
+            };
+            runs.push(entry);
+        }
         // Sky: the app's own model on the Neural Engine, as Select Sky runs it
         // (`SAFELIGHT_MEASURE=sky:bundled` measures it alone, with the CPU).
         if pack == Pack::Sky && (only_plan.is_empty() || only_plan == "bundled") {

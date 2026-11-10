@@ -98,6 +98,9 @@ def main() -> int:
     # Select Sky's model, made into build/ by scripts/convert-sky-ane.py.
     texts.setdefault((models / "Sky-ANE.NOTICE").read_text().strip(), []).append(
         "UperNet ConvNeXt-base (Select Sky), converted for the Neural Engine")
+    # Select Subject's, by scripts/convert-subject-coreml.py.
+    texts.setdefault((models / "Subject-CoreML.NOTICE").read_text().strip(), []).append(
+        "SAM 2.1 small's image encoder and DETR (Select Subject), converted for Core ML")
 
     lines = [
         "Safelight is built on RAWmakase and on the open-source software below.",

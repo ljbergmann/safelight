@@ -457,3 +457,23 @@ The first selection after installing compiles the photo shape's function for the
 Neural Engine; iOS keeps it compiled. Eight-bit weights halve the 233 MB but lose
 too much: linear 8-bit to IoU 0.964 (probabilities 0.12 off), a palette of 256 to
 0.980 on the Neural Engine and a broken answer on the GPU.
+
+### Select Subject with Core ML on the GPU
+
+SAM 2.1 small's image encoder and DETR rebuilt in PyTorch from RAWmakase's ONNX
+files and converted to Core ML (app/Models/README.md); SAM 2's decoder stays on
+the CPU (about 10 ms a call). On the Mac, by network: the encoder 0.53 s on the
+CPU, 0.13 s on the Neural Engine, 0.09 s on the GPU; DETR 0.76 s, 0.06 s, 0.07 s.
+On the M1 iPad, loading either for the Neural Engine took the app down (signal
+9, no memory report) and left `ANECompilerService` busy for minutes, slowing
+the CPU's run to 5–6 s; on the GPU:
+
+| | Per selection | Against the CPU |
+|---|---|---|
+| CPU (until now) | 2.5–3.3 s | — |
+| GPU (`-selection-measure measure.CR3`, `subject:bundled`) | 0.59 s; the first 13.4 s after installing, 1.1 s after a relaunch | IoU 0.999 |
+
+DETR at the photo's own shape matters: resizing the CR3's 800×534 to 800×533
+moved a segment across DETR's threshold (IoU 0.905); Core ML and ONNX Runtime
+agree at the same size.
+

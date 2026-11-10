@@ -27,6 +27,10 @@ targets:
       # CPU with the downloaded model, as before.
       - path: build/Sky-ANE.mlpackage
         optional: true
+      # Select Subject's SAM 2 encoder and DETR on the GPU, made by
+      # scripts/convert-subject-coreml.py (161 MB). Without it, they run on the CPU.
+      - path: build/Subject-CoreML.mlpackage
+        optional: true
     # A full-size decode of a 45 MP RAW and its 100% view need more than the
     # default limit on an 8 GB iPad (MEASUREMENTS.md).
     entitlements:

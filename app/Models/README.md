@@ -40,8 +40,8 @@ Select Sky then runs on the CPU with the downloaded model, as before.
   around its weights; it answers within 1e-7 of ONNX Runtime.
 - **What was changed:** converted to a half-precision ML Program with one function per
   input shape, sharing one copy of the weights: the long edge at 1024 px and the short one
-  for 3:2, 4:3 and 16:9 photos, both ways round, and square ones. Any other shape stays on
-  the CPU. Eight-bit weights halve the size but lose too much (mask IoU 0.96–0.98, and
+  for 3:2, 4:3 and 16:9 photos, with one pixel either side (cameras' sensors are a hair off
+  those proportions), both ways round, and square ones. Any other shape stays on the CPU. Eight-bit weights halve the size but lose too much (mask IoU 0.96–0.98, and
   broken on the GPU), so the weights stay in half precision.
 - **Checked:** every function on the Mac's Neural Engine against ONNX Runtime's CPU on 12
   of macOS's desktop pictures. The sky's probabilities, which the app's soft mask is made of,
@@ -50,3 +50,30 @@ Select Sky then runs on the CPU with the downloaded model, as before.
   is unsure of (as many pixels near 0.5 as sky), a few of them crossing 0.5 bring it to 0.73.
 - **Measured:** on an M1 iPad Pro, 390 ms per photo against about 7 s on the CPU, worst
   mask IoU 0.997 ([MEASUREMENTS.md](../../MEASUREMENTS.md)).
+
+## Subject-CoreML.mlpackage (made at build time)
+
+Select Subject's SAM 2.1 small image encoder and DETR's panoptic segmentation (both
+Apache-2.0; [Subject-CoreML.NOTICE](Subject-CoreML.NOTICE)), which take nearly all of its
+time. SAM 2's decoder, about 10 ms a call, stays on the CPU with the downloaded model, so
+Select Subject still needs that download. At 246 MB the model is made into `build/` by
+[`scripts/convert-subject-coreml.py`](../../scripts/convert-subject-coreml.py), as Sky's is.
+
+- **Source:** RAWmakase's `sam2.1-hiera-small-v1` files (pinned by SHA-256), the PyTorch
+  models rebuilt around their weights: the encoder within 2e-5 of ONNX Runtime, DETR as
+  close as its half-precision ONNX file allows.
+- **What was changed:** the encoder in half precision; DETR in single precision (in half,
+  a few pixels of an animal's outline crossed its thresholds), with one function per
+  shape: the long edge at 800 px and the short one for 3:2, 4:3 and 16:9 photos with one
+  pixel either side, both ways round, and square ones. The photo is never resized to a
+  function: by one pixel, DETR's segments moved enough to drop an IoU to 0.905.
+- **Runs on the GPU:** on an M1 iPad, loading either network for the Neural Engine takes
+  the app down, and keeps the Neural Engine's compiler busy for minutes after.
+- **Checked:** on the Mac's GPU against ONNX Runtime's CPU on macOS's desktop pictures:
+  SAM 2's mask for a box prompt within 0.006 (0.0004 on average), and DETR finding the same
+  people and animals. On seven photos of people and cats, the whole selection agrees at
+  IoU 0.996 or better, except one cat at 0.989, as far as the CPU's own half-precision DETR
+  allows.
+- **Measured:** on an M1 iPad Pro, 0.59 s per selection against 3.3 s on the CPU, IoU
+  0.999 on a 45 MP CR3 ([MEASUREMENTS.md](../../MEASUREMENTS.md)).
+

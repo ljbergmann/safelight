@@ -138,8 +138,10 @@ and no soft proofing, so they aren't gaps.
       training our own is out. Okeinla (same input and output, tuned for
       detail) is the one to watch, but its weights are GPLv3 only; the
       strong alternatives (LED, CycleISP, DualDn) are non-commercial
-- [ ] Select Subject and Background on the Neural Engine: SAM 2's graphs do
-      not load on CoreML through ONNX Runtime; try them converted as Sky was
+- [x] Select Subject and Background with Core ML: SAM 2's encoder and DETR
+      converted and bundled (scripts/convert-subject-coreml.py), on the GPU,
+      about 5× faster than the CPU; the decoder stays on the CPU. Not on the
+      Neural Engine: loading them for it takes the app down on an M1
 - [ ] Hand testing on the device: the Pencil, the Files and Photos pickers, the import screen,
       a real SD card, the Before/After views
 

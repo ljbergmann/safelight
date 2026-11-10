@@ -127,20 +127,130 @@ impl Model {
                 .ok_or_else(|| {
                     InferenceError::ModelInvalid(format!("the model has no output {output}"))
                 })?;
-            read(&answer, expected, scale)
+            read(&answer, Some(expected), scale).map(|(_, data)| data)
+        })
+    }
+
+    /// Runs the model on `inputs` and answers each of `outputs`, its shape and its values
+    /// as contiguous `f32`s.
+    // `dataPointer`: see `predict`.
+    #[allow(deprecated)]
+    pub(crate) fn run(
+        &mut self,
+        inputs: &[Input<'_>],
+        outputs: &[&str],
+    ) -> Result<Vec<Answer>, InferenceError> {
+        autoreleasepool(|_| {
+            let mut keys = Vec::with_capacity(inputs.len());
+            let mut values = Vec::with_capacity(inputs.len());
+            for input in inputs {
+                let numbers: Vec<Retained<NSNumber>> = input
+                    .shape
+                    .iter()
+                    .map(|&n| NSNumber::new_usize(n))
+                    .collect();
+                let kind = match input.values {
+                    Values::F32(_) => MLMultiArrayDataType::Float32,
+                    Values::I32(_) => MLMultiArrayDataType::Int32,
+                };
+                let array = unsafe {
+                    MLMultiArray::initWithShape_dataType_error(
+                        MLMultiArray::alloc(),
+                        &NSArray::from_retained_slice(&numbers),
+                        kind,
+                    )
+                }
+                .map_err(|e| failed(&e))?;
+                let count: usize = input.shape.iter().product();
+                // SAFETY: a new array of this shape is contiguous values of its type, as
+                // many as the shape holds; each input is checked to be as long.
+                match input.values {
+                    Values::F32(data) if data.len() == count => unsafe {
+                        std::slice::from_raw_parts_mut(
+                            array.dataPointer().cast::<f32>().as_ptr(),
+                            count,
+                        )
+                    }
+                    .copy_from_slice(data),
+                    Values::I32(data) if data.len() == count => unsafe {
+                        std::slice::from_raw_parts_mut(
+                            array.dataPointer().cast::<i32>().as_ptr(),
+                            count,
+                        )
+                    }
+                    .copy_from_slice(data),
+                    _ => {
+                        return Err(InferenceError::OutputInvalid(format!(
+                            "the input {} does not fill {:?}",
+                            input.name, input.shape
+                        )));
+                    }
+                }
+                keys.push(NSString::from_str(input.name));
+                values.push(unsafe { MLFeatureValue::featureValueWithMultiArray(&array) });
+            }
+            let keys: Vec<&NSString> = keys.iter().map(|k| &**k).collect();
+            let values: Vec<&AnyObject> = values.iter().map(|v| v.as_ref()).collect();
+            let features = NSDictionary::<NSString, AnyObject>::from_slices(&keys, &values);
+            let provider = unsafe {
+                MLDictionaryFeatureProvider::initWithDictionary_error(
+                    MLDictionaryFeatureProvider::alloc(),
+                    &features,
+                )
+            }
+            .map_err(|e| failed(&e))?;
+            let result = unsafe {
+                self.0
+                    .predictionFromFeatures_error(ProtocolObject::from_ref(&*provider))
+            }
+            .map_err(|e| failed(&e))?;
+            outputs
+                .iter()
+                .map(|output| {
+                    let answer = unsafe { result.featureValueForName(&NSString::from_str(output)) }
+                        .and_then(|v| unsafe { v.multiArrayValue() })
+                        .ok_or_else(|| {
+                            InferenceError::ModelInvalid(format!(
+                                "the model has no output {output}"
+                            ))
+                        })?;
+                    read(&answer, None, 1.)
+                })
+                .collect()
         })
     }
 }
 
-/// `array`, which must be `expected` in shape, as contiguous `f32`s times `scale`. The
-/// Neural Engine answers in half precision and may pad rows: read by the strides.
+/// One output of [`Model::run`]: its shape, and its values as contiguous `f32`s.
+pub(crate) type Answer = (Vec<usize>, Vec<f32>);
+
+/// One input of [`Model::run`].
+pub(crate) struct Input<'a> {
+    pub name: &'a str,
+    pub shape: &'a [usize],
+    pub values: Values<'a>,
+}
+
+/// An input's values, of its type.
+pub(crate) enum Values<'a> {
+    F32(&'a [f32]),
+    I32(&'a [i32]),
+}
+
+/// `array` (which must be `expected` in shape, when given), its shape and its values as
+/// contiguous `f32`s times `scale`. The Neural Engine answers in half precision and may
+/// pad rows: read by the strides.
 #[allow(deprecated)] // `dataPointer`: see `Model::predict`.
-fn read(array: &MLMultiArray, expected: &[usize], scale: f32) -> Result<Vec<f32>, InferenceError> {
+fn read(
+    array: &MLMultiArray,
+    expected: Option<&[usize]>,
+    scale: f32,
+) -> Result<(Vec<usize>, Vec<f32>), InferenceError> {
     let numbers = |list: Retained<NSArray<NSNumber>>| -> Vec<usize> {
         list.iter().map(|n| n.as_usize()).collect()
     };
     let shape = numbers(unsafe { array.shape() });
-    if shape != expected || shape.is_empty() || shape.contains(&0) {
+    if expected.is_some_and(|e| e != shape) || shape.is_empty() || shape.contains(&0) {
         return Err(InferenceError::OutputInvalid(format!(
             "the model answered with shape {shape:?}, expected {expected:?}"
         )));
@@ -191,7 +301,7 @@ fn read(array: &MLMultiArray, expected: &[usize], scale: f32) -> Result<Vec<f32>
             )));
         }
     }
-    Ok(out)
+    Ok((shape, out))
 }
 
 fn message(e: &NSError) -> String {

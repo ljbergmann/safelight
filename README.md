@@ -108,6 +108,7 @@ rustup target add --toolchain stable aarch64-apple-ios aarch64-apple-ios-sim
 scripts/build-core.sh    # the Rust core and its Swift bindings
 scripts/build-ort.sh     # Microsoft's ONNX Runtime for iOS, for the AI features
 scripts/convert-sky-ane.py  # Select Sky for the Neural Engine (needs uv; a few minutes)
+scripts/convert-subject-coreml.py  # Select Subject for Core ML (likewise)
 xcodegen generate
 open Safelight.xcodeproj
 ```
@@ -185,7 +186,7 @@ them after `--`):
 | `-loupe-test` (with `-open`) | Swipes to the next photo and back, waiting for each one's own edit |
 | `-export <file>` | Exports a photo at full size, timed |
 | `-benchmark`, `-allocprobe`, `-thumbnails`, `-rate <file> <stars>` | Rendering and memory measurements, thumbnails, ratings |
-| `-denoise-measure <file>`, `-selection-measure <file>` | AI Denoise, and Select Subject and Sky, on a RAW in Documents, on the CPU and each CoreML plan (GPU, Neural Engine, both), timed and compared with the CPU (`SAFELIGHT_MEASURE=sky:NeuralNetwork` repeats some; `sky:bundled`, the app's own Sky model alone) |
+| `-denoise-measure <file>`, `-selection-measure <file>` | AI Denoise, and Select Subject and Sky, on a RAW in Documents, on the CPU and each CoreML plan (GPU, Neural Engine, both), timed and compared with the CPU (`SAFELIGHT_MEASURE=sky:NeuralNetwork` repeats some; `sky:bundled` or `subject:bundled`, the app's own model alone) |
 
 `-benchmark` renders each RAW in Documents on the GPU and the CPU and writes
 `<name>.ipad.ppm` for comparing with the Mac's render (`cargo run --release

@@ -16,11 +16,12 @@
 use crate::library::Library;
 use crate::neural_sky::NeuralSky;
 use crate::render::RenderError;
+use crate::subject_coreml::CoreMLSubject;
 use rawmakase_ai::ai_denoise::Service;
 use rawmakase_ai::model_install::{self, InstallError, Pack, Progress};
 use rawmakase_ai::selection::{self, ModelId};
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{Prompt, RgbImage, Session, Sky, SkySession, Subject};
+use rawmakase_inference::{Analysis, Prompt, RgbImage, Session, Sky, SkySession, Subject};
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::masks::{
     BITMAP_SAMPLING, BitmapMask, BitmapSource, FEATURE_SKY, FEATURE_SUBJECT, MAX_GROUPS,
@@ -184,6 +185,8 @@ pub(crate) struct Ai {
     sky: Mutex<Option<SkySession>>,
     /// Select Sky on the Neural Engine, when the app bundles its model.
     sky_neural: Mutex<Option<NeuralSky>>,
+    /// Select Subject's encoder and DETR with Core ML, likewise.
+    subject_coreml: Mutex<Option<CoreMLSubject>>,
 }
 
 impl Ai {
@@ -200,6 +203,7 @@ impl Ai {
             subject: Mutex::new(None),
             sky: Mutex::new(None),
             sky_neural: Mutex::new(None),
+            subject_coreml: Mutex::new(None),
         }
     }
 
@@ -356,11 +360,7 @@ pub(crate) fn select(
             if subject.is_none() {
                 *subject = Some(Subject::load_with(&dir, &options).map_err(inference)?);
             }
-            let analysis = subject
-                .as_mut()
-                .expect("loaded above")
-                .analyze(&rgb, Cancel::NEVER)
-                .map_err(inference)?;
+            let analysis = analyze(library, subject.as_mut().expect("loaded above"), &rgb)?;
             (analysis.subject().map_err(inference)?, "subject")
         }
     };
@@ -394,6 +394,33 @@ pub(crate) fn select(
         }),
     });
     Ok(Generated { shape, id })
+}
+
+/// Subject's analysis of `rgb`: SAM 2's encoder and DETR with Core ML on the GPU when the
+/// app bundles them and they take the photo's shape, with `session`'s decoder; all of it on
+/// the CPU otherwise, or when they fail.
+fn analyze(
+    library: &Library,
+    session: &mut Session,
+    rgb: &RgbImage,
+) -> Result<Analysis, RenderError> {
+    let neural = {
+        let mut neural = library
+            .ai
+            .subject_coreml
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if neural.is_none() {
+            *neural = CoreMLSubject::bundled();
+        }
+        neural.as_mut().map(|n| n.inputs(rgb))
+    };
+    if let Some(Ok(Some((embedding, labels)))) = neural {
+        return session
+            .analyze_from(embedding, labels, Cancel::NEVER)
+            .map_err(inference);
+    }
+    session.analyze(rgb, Cancel::NEVER).map_err(inference)
 }
 
 /// Refines a Subject selection with taps, as the desktop's refining does:
@@ -450,7 +477,7 @@ pub(crate) fn refine(
         );
     }
     let session = subject.as_mut().expect("loaded above");
-    let analysis = session.analyze(&rgb, Cancel::NEVER).map_err(inference)?;
+    let analysis = analyze(library, session, &rgb)?;
     let coverage = session
         .segment(analysis.embedding(), &prompt, Cancel::NEVER)
         .map_err(inference)?;
