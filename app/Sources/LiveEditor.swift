@@ -598,6 +598,37 @@ struct LiveEditor: View {
             model.refresh()
             print("TESTS DONE: back to the edit as opened (\(opened) steps applied)")
         }
+        // -sky-test: Select Sky, then the mask's Exposure raised, as a user does,
+        // with the time and memory of each.
+        if args.contains("-sky-test"), let live = model.live {
+            func frame() async {
+                let frames = live.stats().frames
+                for _ in 0..<100 where live.stats().frames == frames { try? await Task.sleep(for: .milliseconds(100)) }
+            }
+            func footprint() -> String { "footprint \(Memory.mb(Memory.footprint().current)), peak \(Memory.mb(Memory.footprint().peak))" }
+            print("SKY TEST opened: \(footprint())")
+            for info in aiModels() where info.model == .sky && !info.installed {
+                let install = ModelInstall.start(model: info.model)
+                while !install.finished() { try? await Task.sleep(for: .milliseconds(500)) }
+                print("SKY TEST install: \(install.error() ?? "done")")
+            }
+            let start = Date()
+            let outcome = await Task.detached { Result { try live.selectMask(what: .sky) } }.value
+            print("SKY TEST select: \(outcome) in \(Int(Date().timeIntervalSince(start) * 1000)) ms, \(footprint())")
+            if case .success(let index?) = outcome,
+               let exposure = live.maskSliders(index: index).first(where: { $0.label == "Exposure" }) {
+                let overlay = await Task.detached { live.maskOverlay(index: index, maxEdge: 2048) }.value
+                print("SKY TEST overlay \(overlay?.width ?? 0)x\(overlay?.height ?? 0), \(footprint())")
+                // A drag: a value every 16 ms, as a finger moves the slider.
+                for step in 1...60 {
+                    live.setControl(control: exposure.control, value: Float(step) / 30, done: step == 60)
+                    try? await Task.sleep(for: .milliseconds(16))
+                    if step % 15 == 0 { print("SKY TEST drag \(Float(step) / 30): frames \(live.stats().frames), \(footprint())") }
+                }
+                await frame()
+                print("SKY TEST done: frames \(live.stats().frames), \(footprint())")
+            }
+        }
         if args.contains("-loupe-test") { await loupeTest() }
         if args.contains("-ai-test"), let live = model.live {
             await aiTest(live)
