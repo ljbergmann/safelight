@@ -1745,23 +1745,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rawmakase-ai"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "image",
- "rawmakase-cancel",
- "rawmakase-decode",
- "rawmakase-engine",
- "rawmakase-inference",
- "rawmakase-model",
- "serde_json",
- "sha2",
- "tempfile",
- "ureq",
-]
-
-[[package]]
 name = "rawmakase-cancel"
 version = "0.1.0"
 
@@ -2140,7 +2123,6 @@ dependencies = [
  "objc2-core-ml",
  "objc2-foundation",
  "pollster",
- "rawmakase-ai",
  "rawmakase-cancel",
  "rawmakase-catalog",
  "rawmakase-decode",

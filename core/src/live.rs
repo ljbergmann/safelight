@@ -13,9 +13,9 @@
 use crate::ai::AiSelection;
 use crate::controls::{Control, Switch};
 use crate::edit::{EditState, OpenEdit, Orientation};
+use crate::from_desktop::ai_denoise::{Request as AiRequest, State as AiState};
 use crate::library::Library;
 use crate::render::{DecodeSize, RenderError, STACK_BYTES, on_core_thread};
-use rawmakase_ai::ai_denoise::{Request as AiRequest, State as AiState};
 use rawmakase_cancel::Cancel;
 use rawmakase_engine::develop::gpu::{self, Display, Processor, Slot};
 use rawmakase_engine::develop::quality::Output;
@@ -2242,7 +2242,7 @@ fn ai_denoise(shared: &Arc<Shared>, p: &Photo, recipe: &Recipe) -> Option<AiSour
             return None;
         };
         let service = library.ai.denoise();
-        if !rawmakase_ai::model_install::Pack::Denoise.is_installed() {
+        if !crate::from_desktop::model_install::Pack::Denoise.is_installed() {
             ai.status = Some("Install the AI Denoise model to use it.".into());
             return None;
         }
@@ -2273,7 +2273,7 @@ fn ai_denoise(shared: &Arc<Shared>, p: &Photo, recipe: &Recipe) -> Option<AiSour
 
 /// An update from the service: kept when it is for the image asked for, which
 /// renders again with it.
-fn ai_update(shared: &Shared, update: rawmakase_ai::ai_denoise::Update) {
+fn ai_update(shared: &Shared, update: crate::from_desktop::ai_denoise::Update) {
     {
         let mut ai = shared.ai.lock().unwrap_or_else(PoisonError::into_inner);
         let current = ai

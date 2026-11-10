@@ -9,7 +9,7 @@
 //! the ONNX model it was made from, which must be the one RAWmakase installs.
 
 use crate::coreml::{self, Model, Units};
-use rawmakase_ai::ai_denoise::{Loader, load_model};
+use crate::from_desktop::ai_denoise::{Loader, load_model};
 use rawmakase_cancel::Cancel;
 use rawmakase_inference::denoise::TileModel;
 use rawmakase_inference::{InferenceError, Provider, RAWNIND};
@@ -100,7 +100,7 @@ pub(crate) fn provider() -> Provider {
     if cfg!(target_os = "ios") {
         Provider::NeuralEngine
     } else {
-        rawmakase_ai::ai_denoise::preferred_provider()
+        crate::from_desktop::ai_denoise::preferred_provider()
     }
 }
 

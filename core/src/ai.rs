@@ -1,7 +1,7 @@
 //! Stage 7 of the features: AI Denoise, and the Select Subject, Select Sky and
 //! Select Background masks.
 //!
-//! The models are the desktop's, installed by `rawmakase-ai`'s
+//! The models are the desktop's, installed by Safelight's copy of its
 //! [`model_install`] into this device's data folder on the user's choice, each
 //! file checked against the release's SHA-256 before it counts. ONNX Runtime
 //! is Microsoft's iOS build, embedded in the app (scripts/build-ort.sh) and
@@ -13,13 +13,13 @@
 //! provenance the desktop records, so a mask made on the iPad reads the same
 //! in RAWmakase on a computer.
 
+use crate::from_desktop::ai_denoise::Service;
+use crate::from_desktop::model_install::{self, InstallError, Pack, Progress};
+use crate::from_desktop::selection::{self, ModelId};
 use crate::library::Library;
 use crate::neural_sky::NeuralSky;
 use crate::render::RenderError;
 use crate::subject_coreml::CoreMLSubject;
-use rawmakase_ai::ai_denoise::Service;
-use rawmakase_ai::model_install::{self, InstallError, Pack, Progress};
-use rawmakase_ai::selection::{self, ModelId};
 use rawmakase_cancel::Cancel;
 use rawmakase_inference::{Analysis, Prompt, RgbImage, Session, Sky, SkySession, Subject};
 use rawmakase_model::camera_data::CameraImage;

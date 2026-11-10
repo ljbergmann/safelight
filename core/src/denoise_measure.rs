@@ -5,8 +5,8 @@
 //! docs/rendering-quality.md); these measure the iPad before a plan is chosen
 //! there.
 
-use rawmakase_ai::ai_denoise::{Command, Loader, command, load_model_with};
-use rawmakase_ai::model_install::Pack;
+use crate::from_desktop::ai_denoise::{Command, Loader, command, load_model_with};
+use crate::from_desktop::model_install::Pack;
 use rawmakase_cancel::Cancel;
 use rawmakase_inference::{
     CoreMLFormat, CoreMLPlan, CoreMLUnits, Coverage, LoadOptions, Provider, RgbImage, Sky, Subject,
@@ -216,7 +216,7 @@ fn measure_selection(raw: &Path) -> anyhow::Result<serde_json::Value> {
     let input = rawmakase_engine::develop::masks::selection_input(
         &image,
         &recipe,
-        rawmakase_ai::selection::INPUT_EDGE,
+        crate::from_desktop::selection::INPUT_EDGE,
         Cancel::NEVER,
     )?;
     let rgb = RgbImage {
@@ -238,21 +238,33 @@ fn measure_selection(raw: &Path) -> anyhow::Result<serde_json::Value> {
         // As Masks > Select Subject's download does, when the model is missing.
         if !pack.is_installed() {
             println!("SELECT installing the {name} model");
-            rawmakase_ai::model_install::install(pack, None, &Default::default())
+            crate::from_desktop::model_install::install(pack, None, &Default::default())
                 .map_err(|e| anyhow::anyhow!("installing the {name} model: {e:?}"))?;
         }
         let dir = pack.installed_dir();
         // Loads the model and selects twice: the first run on CoreML pays for
         // compiling the graph, the second is what each later photo costs.
-        let select = |options: &LoadOptions| -> anyhow::Result<(f64, f64, f64, Coverage)> {
+        // `plan` holds for the loads below only, and is cleared after them.
+        let select = |options: &LoadOptions,
+                      plan: Option<CoreMLPlan>|
+         -> anyhow::Result<(f64, f64, f64, Coverage)> {
+            rawmakase_inference::measure_with_coreml(plan);
             let started = Instant::now();
-            let mut run: Box<dyn FnMut() -> anyhow::Result<Coverage> + '_> = if pack == Pack::Sky {
-                let mut sky = Sky::load_with(&dir, options)?;
-                Box::new(move || Ok(sky.select(rgb, Cancel::NEVER)?))
+            let loaded: anyhow::Result<Box<dyn FnMut() -> anyhow::Result<Coverage> + '_>> = if pack
+                == Pack::Sky
+            {
+                Sky::load_with(&dir, options).map(|mut sky| {
+                    Box::new(move || Ok(sky.select(rgb, Cancel::NEVER)?)) as Box<dyn FnMut() -> _>
+                })
             } else {
-                let mut subject = Subject::load_with(&dir, options)?;
-                Box::new(move || Ok(subject.analyze(rgb, Cancel::NEVER)?.subject()?))
-            };
+                Subject::load_with(&dir, options).map(|mut subject| {
+                    Box::new(move || Ok(subject.analyze(rgb, Cancel::NEVER)?.subject()?))
+                        as Box<dyn FnMut() -> _>
+                })
+            }
+            .map_err(Into::into);
+            rawmakase_inference::measure_with_coreml(None);
+            let mut run = loaded?;
             let load = started.elapsed().as_secs_f64();
             let started = Instant::now();
             run()?;
@@ -261,19 +273,18 @@ fn measure_selection(raw: &Path) -> anyhow::Result<serde_json::Value> {
             let coverage = run()?;
             Ok((load, first, started.elapsed().as_secs_f64(), coverage))
         };
-        let options = |provider, coreml| LoadOptions {
+        let options = |provider| LoadOptions {
             provider: Some(provider),
-            coreml,
-            ..rawmakase_ai::selection::load_options()
+            ..crate::from_desktop::selection::load_options()
         };
-        let (load, first, again, reference) = select(&options(Provider::Cpu, None))?;
+        let (load, first, again, reference) = select(&options(Provider::Cpu), None)?;
         println!("SELECT {name} CPU: load {load:.1} s, {first:.2} s, again {again:.2} s");
         let mut runs = vec![serde_json::json!({
             "plan": "CPU", "load_s": load, "first_s": first, "again_s": again,
             "covered": covered(&reference),
         })];
         for plan in PLANS.into_iter().filter(|p| p.name().contains(only_plan)) {
-            let entry = match select(&options(Provider::CoreML, Some(plan))) {
+            let entry = match select(&options(Provider::CoreML), Some(plan)) {
                 Ok((load, first, again, coverage)) => {
                     let iou = iou(&reference, &coverage);
                     println!(
@@ -299,7 +310,7 @@ fn measure_selection(raw: &Path) -> anyhow::Result<serde_json::Value> {
             let entry = match crate::subject_coreml::CoreMLSubject::bundled() {
                 None => serde_json::json!({ "plan": "NeuralEngine", "error": "no bundled model" }),
                 Some(mut neural) => {
-                    let mut session = Subject::load_with(&dir, &options(Provider::Cpu, None))?;
+                    let mut session = Subject::load_with(&dir, &options(Provider::Cpu))?;
                     let mut timed = || -> anyhow::Result<(f64, Option<Coverage>)> {
                         let started = Instant::now();
                         let Some((embedding, labels)) = neural.inputs(rgb)? else {
