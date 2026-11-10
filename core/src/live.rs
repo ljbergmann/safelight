@@ -1355,7 +1355,7 @@ impl LiveView {
         let bounds = points
             .iter()
             .all(|(_, add)| !add)
-            .then(|| rawmakase_model::storage::mask_assets::raster_extent(&bitmap.id))
+            .then(|| crate::from_desktop::masks::raster_extent(&bitmap.id))
             .flatten();
         let masks = recipe.masks.clone();
         let generated =
@@ -2017,9 +2017,9 @@ impl LiveView {
             .as_ref()
             .and_then(|e| e.recipe().point_colors.get(swatch as usize).copied())
             .zip(crate::point_color::RANGES.get(which as usize))
-            .map(|(p, &w)| p.range_points(w));
+            .map(|(p, &w)| crate::from_desktop::point_color::range_points(&p, w));
         points.map_or(0, |p| {
-            rawmakase_model::model::point_color::nearest_point(&p, t) as u32
+            crate::from_desktop::point_color::nearest_point(&p, t) as u32
         })
     }
 

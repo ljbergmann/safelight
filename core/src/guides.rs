@@ -1,8 +1,8 @@
 //! The Crop tool's guide overlays, as the desktop's: their names, how many
 //! ways each turns, and their lines over a crop, from
-//! [`rawmakase_model::model::crop_guides`].
+//! [`crate::from_desktop::crop_guides`].
 
-use rawmakase_model::model::crop_guides::Guide;
+use crate::from_desktop::crop_guides::Guide;
 
 /// A guide overlay the Crop tool offers.
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]

@@ -1,6 +1,6 @@
 //! The Tone Curve's parametric graph and Point Curve menu, as the desktop's:
 //! the curve as it renders ([`rawmakase_engine::develop::parametric::samples`]),
-//! its region splits (kept apart by [`Effects::move_split`]), which region a
+//! its region splits (kept apart by [`move_split`](crate::from_desktop::geometry::move_split)), which region a
 //! point of the graph falls in, and Lightroom's built-in curves with the
 //! curves saved beside them ([`rawmakase_interop::presets::curves`]).
 

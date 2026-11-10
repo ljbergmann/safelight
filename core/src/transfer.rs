@@ -255,10 +255,10 @@ pub(crate) fn update_preset(
 #[uniffi::export]
 pub fn import_presets(paths: Vec<String>) -> crate::profile::ImportSummary {
     let picks: Vec<std::path::PathBuf> = paths.iter().map(Into::into).collect();
-    let summary = rawmakase_interop::bulk_import::run(
-        rawmakase_interop::bulk_import::ImportKind::Presets,
+    let summary = crate::from_desktop::bulk_import::run(
+        crate::from_desktop::bulk_import::ImportKind::Presets,
         &picks,
-        &rawmakase_interop::bulk_import::ImportProgress::default(),
+        &crate::from_desktop::bulk_import::ImportProgress::default(),
     );
     (&summary).into()
 }

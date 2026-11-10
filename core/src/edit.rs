@@ -98,7 +98,7 @@ pub(crate) struct OpenEdit {
     pub(crate) before: Option<Recipe>,
     /// The Color Grading wheel being dragged, and its color when the drag
     /// began, which History names the change from.
-    pub(crate) wheel: Option<(u32, rawmakase_model::model::grading::HueSat)>,
+    pub(crate) wheel: Option<(u32, crate::from_desktop::grading::HueSat)>,
     /// The Targeted Adjustment Tool's drag under way.
     pub(crate) targeted: Option<crate::targeted::TargetDrag>,
 }
@@ -386,7 +386,7 @@ impl OpenEdit {
         offset: Option<[f32; 2]>,
         done: bool,
     ) -> bool {
-        use rawmakase_model::model::grading::{HueSat, wheel_step};
+        use crate::from_desktop::grading::{HueSat, wheel_step};
         let Some((_, word)) = crate::controls::REGIONS.get(region as usize) else {
             return false;
         };
@@ -749,7 +749,7 @@ impl OpenEdit {
             return false;
         };
         let current = self.session.recipe().straighten;
-        match rawmakase_model::model::transform::ruler_angle(from, to, current) {
+        match crate::from_desktop::geometry::ruler_angle(from, to, current) {
             Some(angle) => self.set(Control::Param { index }, angle, true),
             None => false,
         }
@@ -760,7 +760,6 @@ impl OpenEdit {
     /// editor frame; `done` ends the drag, one History step. The panel turns
     /// on, as any change to it does.
     pub(crate) fn set_parametric_split(&mut self, i: usize, t: Option<f32>, done: bool) -> bool {
-        use rawmakase_model::model::effects::Effects;
         use rawmakase_model::model::panels::{Panel, PanelState};
         if i > 2 {
             return false;
@@ -768,8 +767,8 @@ impl OpenEdit {
         let frame = self.session.begin();
         let r = self.session.recipe_mut();
         match t {
-            Some(t) => r.effects.move_split(i, t),
-            None => r.effects.splits[i] = Effects::DEFAULT_SPLITS[i],
+            Some(t) => crate::from_desktop::geometry::move_split(&mut r.effects, i, t),
+            None => r.effects.splits[i] = crate::from_desktop::geometry::DEFAULT_SPLITS[i],
         }
         r.panels.set(Panel::ToneCurve, PanelState::On);
         self.session
@@ -803,7 +802,7 @@ impl OpenEdit {
     /// the copy's index; `None` when there is no such mask or no room.
     pub(crate) fn duplicate_mask(&mut self, index: usize) -> Option<usize> {
         let mut after = self.session.recipe().clone();
-        let copy = rawmakase_model::model::masks::duplicate(&mut after.masks, index)?;
+        let copy = crate::from_desktop::masks::duplicate(&mut after.masks, index)?;
         self.change("Duplicate Mask", "", |r| *r = after);
         Some(copy)
     }
@@ -859,11 +858,10 @@ impl OpenEdit {
         let frame = self.session.begin();
         let p = &mut self.session.recipe_mut().point_colors[swatch];
         match point {
-            Some(k) => p.move_range_point(which, k, t),
-            None => p.reset_range(which),
+            Some(k) => crate::from_desktop::point_color::move_range_point(p, which, k, t),
+            None => crate::from_desktop::point_color::reset_range(p, which),
         }
-        let shown: Vec<String> = p
-            .range_points(which)
+        let shown: Vec<String> = crate::from_desktop::point_color::range_points(p, which)
             .iter()
             .map(|v| format!("{:.0}", v * 100.))
             .collect();

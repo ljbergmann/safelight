@@ -7,17 +7,15 @@
 //! Sizes arriving from the view are fractions of the view's long edge;
 //! the model keeps them as fractions of the image's long edge.
 
+use crate::from_desktop::retouch::{add_dab, fallback_offset};
 use rawmakase_engine::develop::ViewMapping;
-use rawmakase_engine::develop::red_eye;
 use rawmakase_engine::develop::retouch::find_source;
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::model::red_eye::{
     DEFAULT_DARKEN, DEFAULT_PUPIL_SIZE, EyeKind, MAX_OPS as MAX_EYES,
 };
-use rawmakase_model::model::retouch::{
-    MAX_OPS as MAX_SPOTS, RetouchMode, RetouchOp, RetouchShape, add_dab,
-};
+use rawmakase_model::model::retouch::{MAX_OPS as MAX_SPOTS, RetouchMode, RetouchOp, RetouchShape};
 
 /// A Heal or Clone spot, for drawing it over the photo.
 #[derive(uniffi::Record)]
@@ -177,7 +175,7 @@ pub(crate) fn add_spot(
         opacity: opacity.clamp(0., 1.),
         offset: [0., 0.],
     };
-    op.offset = find_source(image, &op, &r.retouch, &[]).unwrap_or_else(|| op.fallback_offset());
+    op.offset = find_source(image, &op, &r.retouch, &[]).unwrap_or_else(|| fallback_offset(&op));
     op.validate().ok()?;
     r.add_retouch(op);
     Some(r.retouch.len() as u32 - 1)
@@ -316,7 +314,7 @@ pub(crate) fn add_red_eye(
         EyeKind::Red
     };
     let size = m.size_in_image(at, view_size);
-    let op = red_eye::correction(
+    let op = crate::from_desktop::retouch::correction(
         image,
         m.to_image(at),
         size,
@@ -324,14 +322,14 @@ pub(crate) fn add_red_eye(
         DEFAULT_PUPIL_SIZE,
         DEFAULT_DARKEN,
     )
-    .map_err(|_| {
+    .ok_or_else(|| {
         format!(
             "Unable to find {}. Be sure to use an area that includes the entire eye.",
             kind.name().to_lowercase()
         )
     })?;
     op.validate().map_err(|e| e.to_string())?;
-    r.add_red_eye(op);
+    crate::from_desktop::retouch::add_red_eye(r, op);
     Ok(r.red_eye.len() as u32 - 1)
 }
 

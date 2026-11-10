@@ -90,7 +90,7 @@ impl Library {
             _ => match crate::render::on_core_thread({
                 let path = path.clone();
                 move || {
-                    Ok(rawmakase_decode::photo_info::read_info(
+                    Ok(crate::from_desktop::photo_info::read_info(
                         &path,
                         crate::library::local,
                     ))

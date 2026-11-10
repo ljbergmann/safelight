@@ -27,6 +27,7 @@ mod edit_session;
 mod export;
 mod export_extras;
 mod files;
+mod from_desktop;
 mod geometry_upright;
 pub use ai::{AiModel, AiModelInfo, AiSelection, ModelInstall, ai_models};
 pub use controls::{Control, Section, SliderState, Switch, SwitchState};

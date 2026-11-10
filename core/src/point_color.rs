@@ -5,8 +5,9 @@
 //! swatch's sliders are [`Control::PointColor`].
 
 use crate::controls::{Control, SliderState};
+use crate::from_desktop::point_color::{SwatchRange, range_points};
 use rawmakase_model::camera_data::Metadata;
-use rawmakase_model::model::point_color::{PointColor, SwatchRange};
+use rawmakase_model::model::point_color::PointColor;
 use rawmakase_model::model::recipe::Recipe;
 
 /// A swatch as the Point Color panel shows it.
@@ -107,7 +108,7 @@ pub(crate) fn swatches(r: &Recipe, photo: &Metadata) -> Vec<SwatchInfo> {
                 .iter()
                 .map(|&which| RangeInfo {
                     label: which.label().into(),
-                    points: p.range_points(which).to_vec(),
+                    points: range_points(p, which).to_vec(),
                     rail: rail(p, which),
                 })
                 .collect(),

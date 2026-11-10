@@ -127,7 +127,7 @@ pub fn import_profiles(paths: Vec<String>) -> ImportSummary {
 
 pub(crate) fn import_into(paths: &[String], destination: &std::path::Path) -> ImportSummary {
     let picks: Vec<std::path::PathBuf> = paths.iter().map(Into::into).collect();
-    let summary = rawmakase_interop::bulk_import::import_profiles_into(
+    let summary = crate::from_desktop::bulk_import::import_profiles_into(
         &picks,
         rawmakase_model::camera_profiles::LutSpace::default(),
         destination,
@@ -135,8 +135,8 @@ pub(crate) fn import_into(paths: &[String], destination: &std::path::Path) -> Im
     ImportSummary::from(&summary)
 }
 
-impl From<&rawmakase_interop::bulk_import::Summary> for ImportSummary {
-    fn from(summary: &rawmakase_interop::bulk_import::Summary) -> Self {
+impl From<&crate::from_desktop::bulk_import::Summary> for ImportSummary {
+    fn from(summary: &crate::from_desktop::bulk_import::Summary) -> Self {
         Self {
             done: summary.done() as u32,
             failed: summary.failures() as u32,
@@ -191,7 +191,7 @@ mod tests {
         std::fs::write(pack.join("Warm/Glow.xmp"), PRESET).unwrap();
         let (presets, profiles) = (dir.path().join("presets"), dir.path().join("profiles"));
         let import = || {
-            ImportSummary::from(&rawmakase_interop::bulk_import::import_presets_into(
+            ImportSummary::from(&crate::from_desktop::bulk_import::import_presets_into(
                 &[pack.clone()],
                 &presets,
                 &profiles,
