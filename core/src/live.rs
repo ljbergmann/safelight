@@ -729,31 +729,9 @@ impl LiveView {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()?;
         let recipe = self.shared.edit().as_ref()?.recipe().clone();
-        on_core_thread(move || {
-            let out = rawmakase_engine::develop::render(
-                &image,
-                &recipe.checked()?,
-                max_edge,
-                Cancel::NEVER,
-            )?;
-            let weights = rawmakase_engine::develop::masks::overlay_weights(
-                &image,
-                &recipe,
-                index as usize,
-                &out,
-                None,
-            );
-            Ok(weights.map(|w| MaskOverlay {
-                width: out.width,
-                height: out.height,
-                alpha: w
-                    .iter()
-                    .map(|v| (v.clamp(0., 1.) * 255.).round() as u8)
-                    .collect(),
-            }))
-        })
-        .ok()
-        .flatten()
+        on_core_thread(move || Ok(mask_overlay(&image, &recipe, index as usize, max_edge)?))
+            .ok()
+            .flatten()
     }
 
     /// Lightroom's Visualize Spots for the photo as shown (Fit, cropped), at
@@ -770,12 +748,7 @@ impl LiveView {
             .clone()?;
         let recipe = self.shared.edit().as_ref()?.recipe().clone();
         on_core_thread(move || {
-            let out = rawmakase_engine::develop::render(
-                &image,
-                &recipe.checked()?,
-                max_edge,
-                Cancel::NEVER,
-            )?;
+            let out = reduced_render(&image, &recipe, max_edge)?;
             let rgb = rawmakase_engine::develop::retouch::visualize_spots(&out, threshold);
             Ok(MaskOverlay {
                 width: out.width,
@@ -3317,6 +3290,45 @@ impl Screen {
     }
 }
 
+/// Mask `index`'s coverage over the photo as Fit shows it, at most `max_edge`
+/// pixels, from [`reduced_render`].
+fn mask_overlay(
+    image: &CameraImage,
+    recipe: &Recipe,
+    index: usize,
+    max_edge: u32,
+) -> anyhow::Result<Option<MaskOverlay>> {
+    let out = reduced_render(image, recipe, max_edge)?;
+    let weights =
+        rawmakase_engine::develop::masks::overlay_weights(image, recipe, index, &out, None);
+    Ok(weights.map(|w| MaskOverlay {
+        width: out.width,
+        height: out.height,
+        alpha: w
+            .iter()
+            .map(|v| (v.clamp(0., 1.) * 255.).round() as u8)
+            .collect(),
+    }))
+}
+
+/// The photo as Fit shows it, at most `max_edge` pixels, developed from a copy
+/// reduced to a pixel per output pixel inside the crop. Developing every
+/// sensor pixel only to keep a few hundred thousand took the iPad longer than
+/// Select Sky itself, with gigabytes it couldn't spare while the editor holds
+/// the photo; and so did building Fit's whole pyramid for one small image.
+fn reduced_render(
+    image: &CameraImage,
+    recipe: &Recipe,
+    max_edge: u32,
+) -> anyhow::Result<rawmakase_model::rendered::Rendered> {
+    let shown = Geometry::new(image, recipe, 0);
+    let long = image.width.max(image.height) as u64;
+    let shown_long = shown.width.max(shown.height).max(1) as u64;
+    let edge = (max_edge as u64 * long).div_ceil(shown_long) as u32;
+    let reduced = rawmakase_engine::develop::preview(image, edge.max(1));
+    rawmakase_engine::develop::render(&reduced, &recipe.checked()?, max_edge, Cancel::NEVER)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3432,5 +3444,53 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn a_mask_overlay_covers_what_the_full_render_covers() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../vendor/rawmakase/tests/corpus/charts/canon-eos-r100-d65.dng");
+        let raw = rawmakase_decode::photo::open(&path).unwrap();
+        let image = raw.develop(Decode::Half, Cancel::NEVER).unwrap();
+        // As shown, and cropped to a small part, which needs more of the photo.
+        for crop in [[0., 0., 1., 1.], [0.2, 0.25, 0.6, 0.7]] {
+            let mut recipe = Recipe {
+                crop,
+                ..Recipe::default()
+            };
+            let index = crate::masks::new_mask(
+                &image,
+                &mut recipe,
+                crate::masks::NewMask::Radial,
+                [0.3, 0.3],
+                [0.6, 0.7],
+            )
+            .unwrap() as usize;
+            let shown = mask_overlay(&image, &recipe, index, 640).unwrap().unwrap();
+            // What the overlay drew before: every sensor pixel developed.
+            let full = rawmakase_engine::develop::render(
+                &image,
+                &recipe.checked().unwrap(),
+                640,
+                Cancel::NEVER,
+            )
+            .unwrap();
+            let before = rawmakase_engine::develop::masks::overlay_weights(
+                &image, &recipe, index, &full, None,
+            )
+            .unwrap();
+            assert_eq!((shown.width, shown.height), (full.width, full.height));
+            let worst = shown
+                .alpha
+                .iter()
+                .zip(&before)
+                .map(|(a, b)| (*a as f32 / 255. - b).abs())
+                .fold(0f32, f32::max);
+            assert!(
+                worst < 2. / 255.,
+                "crop {crop:?}: overlay differs by {worst}"
+            );
+            assert!(shown.alpha.iter().any(|a| *a > 200) && shown.alpha.contains(&0));
+        }
     }
 }

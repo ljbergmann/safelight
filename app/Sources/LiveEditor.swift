@@ -617,8 +617,13 @@ struct LiveEditor: View {
             print("SKY TEST select: \(outcome) in \(Int(Date().timeIntervalSince(start) * 1000)) ms, \(footprint())")
             if case .success(let index?) = outcome,
                let exposure = live.maskSliders(index: index).first(where: { $0.label == "Exposure" }) {
-                let overlay = await Task.detached { live.maskOverlay(index: index, maxEdge: 2048) }.value
-                print("SKY TEST overlay \(overlay?.width ?? 0)x\(overlay?.height ?? 0), \(footprint())")
+                // The sizes the mask list's thumbnail, the overlay and a zoomed
+                // overlay ask for.
+                for edge: UInt32 in [96, 640, 2048] {
+                    let start = Date()
+                    let overlay = await Task.detached { live.maskOverlay(index: index, maxEdge: edge) }.value
+                    print("SKY TEST overlay \(overlay?.width ?? 0)x\(overlay?.height ?? 0) in \(Int(Date().timeIntervalSince(start) * 1000)) ms, \(footprint())")
+                }
                 // A drag: a value every 16 ms, as a finger moves the slider.
                 for step in 1...60 {
                     live.setControl(control: exposure.control, value: Float(step) / 30, done: step == 60)
