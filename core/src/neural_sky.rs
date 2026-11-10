@@ -48,8 +48,12 @@ impl NeuralSky {
         let input = preprocess_sized(image, width, height, SKY.mean, SKY.std)?;
         let mut answer = None;
         for units in [Units::CPUAndNeuralEngine, Units::CPUAndGPU] {
+            // Asking for the Neural Engine would drop the GPU's function, loaded already.
+            if units == Units::CPUAndNeuralEngine && coreml::neural_engine_stalled() {
+                continue;
+            }
             let Some(model) = self.function(width, height, units) else {
-                return Ok(None);
+                continue;
             };
             let run = model.predict(
                 "pixel_values",
@@ -73,6 +77,9 @@ impl NeuralSky {
             }
         }
         let Some(probability) = answer else {
+            if self.missing.contains(&(width, height)) {
+                return Ok(None);
+            }
             return Err(InferenceError::Failed(
                 "the sky model failed on the Neural Engine and the GPU".into(),
             ));
@@ -81,7 +88,9 @@ impl NeuralSky {
     }
 
     /// The function for `width` x `height` on `units`, loaded if it is not, or `None`
-    /// when the model has none (or it will not load, or was made from another model).
+    /// when it will not load (the model has none, or was made from another model, or the
+    /// units fail). A shape is given up on, for the CPU's model, only when the last
+    /// units fail too: a Neural Engine that will not load leaves the photo to the GPU.
     fn function(&mut self, width: usize, height: usize, units: Units) -> Option<&mut Model> {
         let shape = (width, height);
         if self.missing.contains(&shape) {
@@ -100,7 +109,9 @@ impl NeuralSky {
             match model {
                 Some(model) => self.loaded = Some((shape, units, model)),
                 None => {
-                    self.missing.insert(shape);
+                    if units == Units::CPUAndGPU {
+                        self.missing.insert(shape);
+                    }
                     return None;
                 }
             }

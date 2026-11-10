@@ -12,6 +12,9 @@ use objc2_core_ml::{
 };
 use objc2_foundation::{NSArray, NSBundle, NSDictionary, NSError, NSNumber, NSString, NSURL};
 use rawmakase_inference::InferenceError;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::time::Duration;
 
 pub(crate) use objc2_core_ml::MLComputeUnits as Units;
 
@@ -36,9 +39,48 @@ pub(crate) fn at(path: &std::path::Path) -> Option<Retained<NSURL>> {
     NSURL::from_file_path(path)
 }
 
+/// How long a load for the Neural Engine may take. The first load after installing
+/// compiles the function for it: 7 to 10 s for Select Sky's on the M1 iPad Pro. When
+/// `ANECompilerService` is stuck (as after a model took the app down while it
+/// compiled), the load never returns; after this, the GPU is used instead.
+const NEURAL_ENGINE_LOAD_LIMIT: Duration = Duration::from_secs(60);
+
+/// Set once a load for the Neural Engine outlasts its limit. The compiler is then
+/// stuck until the device restarts, so later loads go straight to the next units.
+static NEURAL_ENGINE_STALLED: AtomicBool = AtomicBool::new(false);
+
+/// Whether a load for the Neural Engine has outlasted its limit in this process.
+pub(crate) fn neural_engine_stalled() -> bool {
+    NEURAL_ENGINE_STALLED.load(Ordering::Relaxed)
+}
+
 impl Model {
-    /// The model at `url` on `units`; `function`, for a model with several.
+    /// The model at `url` on `units`; `function`, for a model with several. A load for
+    /// the Neural Engine fails after [`NEURAL_ENGINE_LOAD_LIMIT`], and at once for the
+    /// rest of the process after one has.
     pub(crate) fn load(
+        url: &NSURL,
+        units: MLComputeUnits,
+        function: Option<&str>,
+    ) -> Result<Self, String> {
+        if units != MLComputeUnits::CPUAndNeuralEngine && units != MLComputeUnits::All {
+            return Self::load_now(url, units, function);
+        }
+        let path = url
+            .to_file_path()
+            .ok_or("the model's URL is not a file path")?;
+        let function = function.map(str::to_owned);
+        within(
+            NEURAL_ENGINE_LOAD_LIMIT,
+            &NEURAL_ENGINE_STALLED,
+            move || {
+                let url = at(&path).ok_or("the model's path is not a URL")?;
+                Self::load_now(&url, units, function.as_deref())
+            },
+        )
+    }
+
+    fn load_now(
         url: &NSURL,
         units: MLComputeUnits,
         function: Option<&str>,
@@ -304,10 +346,75 @@ fn read(
     Ok((shape, out))
 }
 
+/// `load` on a thread of its own, given up after `limit`: Core ML's load cannot be
+/// cancelled, so a load that never returns keeps its thread, and `stalled` is set so
+/// that later calls fail at once.
+fn within<T: Send + 'static>(
+    limit: Duration,
+    stalled: &'static AtomicBool,
+    load: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    if stalled.load(Ordering::Relaxed) {
+        return Err("an earlier load for the Neural Engine never finished".into());
+    }
+    let (send, answer) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("coreml-load".into())
+        .spawn(move || {
+            // The receiver is gone when the load came too late; its model is dropped.
+            let _ = send.send(load());
+        })
+        .map_err(|e| format!("no thread for the model's load: {e}"))?;
+    match answer.recv_timeout(limit) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            stalled.store(true, Ordering::Relaxed);
+            Err(format!(
+                "the load for the Neural Engine took over {} s",
+                limit.as_secs()
+            ))
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err("the model's load ended without an answer".into())
+        }
+    }
+}
+
 fn message(e: &NSError) -> String {
     e.localizedDescription().to_string()
 }
 
 fn failed(e: &NSError) -> InferenceError {
     InferenceError::Failed(message(e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_load_that_never_returns_fails_after_its_limit_and_later_loads_fail_at_once() {
+        static STALLED: AtomicBool = AtomicBool::new(false);
+        let start = std::time::Instant::now();
+        let hung = within(Duration::from_millis(100), &STALLED, || {
+            std::thread::sleep(Duration::from_secs(3600));
+            Ok(())
+        });
+        assert!(hung.is_err());
+        assert!(start.elapsed() < Duration::from_secs(5));
+        let start = std::time::Instant::now();
+        assert!(within(Duration::from_secs(60), &STALLED, || Ok(1)).is_err());
+        assert!(start.elapsed() < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn a_load_within_its_limit_answers_and_its_error_passes_through() {
+        static STALLED: AtomicBool = AtomicBool::new(false);
+        assert_eq!(within(Duration::from_secs(5), &STALLED, || Ok(7)), Ok(7));
+        assert_eq!(
+            within::<()>(Duration::from_secs(5), &STALLED, || Err("bad".into())),
+            Err("bad".into())
+        );
+        assert!(!STALLED.load(Ordering::Relaxed));
+    }
 }

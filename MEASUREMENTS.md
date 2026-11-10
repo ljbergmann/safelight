@@ -454,7 +454,11 @@ shape (app/Models/README.md). M1 iPad Pro:
 | In the app (`-selection-measure measure.CR3`, `sky:bundled`) | 0.35 s; the first 6.8 s after installing, 0.73 s after a relaunch | — |
 
 The first selection after installing compiles the photo shape's function for the
-Neural Engine; iOS keeps it compiled. Eight-bit weights halve the 233 MB but lose
+Neural Engine; iOS keeps it compiled. A load for the Neural Engine that takes over
+60 s is abandoned for the GPU, for the rest of the session: on 2026-11-10 the iPad's
+`ANECompilerService`, stuck since the Subject models took the app down, held Select
+Sky's first load for over 16 minutes until the iPad was restarted (then 9.8 s on the
+Leica Q2's 1024×684, and 2.0 s for the whole selection after). Eight-bit weights halve the 233 MB but lose
 too much: linear 8-bit to IoU 0.964 (probabilities 0.12 off), a palette of 256 to
 0.980 on the Neural Engine and a broken answer on the GPU.
 
