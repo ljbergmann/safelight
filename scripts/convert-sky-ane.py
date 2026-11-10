@@ -23,8 +23,8 @@ ONNX Runtime.
 
 It is converted to a half-precision ML Program with one function per input shape, sharing
 one copy of the weights (about 233 MB): the long edge at 1024 px, as Select Sky feeds it,
-and the short one for 3:2, 4:3 and 16:9 photos, both ways round, and square ones. A photo of
-any other proportion is selected on the CPU as before. The function names, the source's
+and the short one for 3:2, 4:3 and 16:9 photos (with one pixel either side), both ways round,
+and square ones. A photo of any other shape is selected on the CPU as before. The function names, the source's
 SHA-256 and the long edge are in the model's metadata.
 
 The script then checks every shape against ONNX Runtime's CPU on macOS's desktop pictures:
@@ -41,6 +41,7 @@ Without a path, the file is downloaded from RAWmakase's pinned mirror into build
 This takes a few minutes and needs about 8 GB of memory.
 """
 
+import gc
 import hashlib
 import re
 import subprocess
@@ -145,12 +146,17 @@ def rebuild(path: Path) -> nn.Module:
 
 
 def shapes() -> list[tuple[int, int]]:
-    """(width, height) of each function: landscape, portrait, then square."""
+    """(width, height) of each function: landscape, portrait, then square. Each short side
+    with one either side of it: a camera's sensor is a hair off its proportions (a 6000 x
+    4000 photo gives 682, an 8191 x 5463 one 683), and the app runs the photo at its own."""
     found = []
     for short in SHORT_EDGES:
-        for shape in ((LONG_EDGE, short), (short, LONG_EDGE)):
-            if shape not in found:
-                found.append(shape)
+        for side in (short - 1, short, short + 1):
+            if side > LONG_EDGE:
+                continue
+            for shape in ((LONG_EDGE, side), (side, LONG_EDGE)):
+                if shape not in found:
+                    found.append(shape)
     return found
 
 
@@ -253,6 +259,10 @@ def check(path: Path) -> None:
                 worst = min(worst, float((want & have).sum() / (want | have).sum()))
         print(f"checked {width}x{height}: largest difference {farthest:.3f}, mean {mean:.4f}, "
               f"worst IoU {worst:.4f} so far", flush=True)
+        # Core ML crashes loading many functions into one process while the others are
+        # still alive: let each go before the next.
+        del engine
+        gc.collect()
     if farthest > MOST_DIFFERENCE or mean > MOST_MEAN_DIFFERENCE:
         sys.exit(f"the Neural Engine's answers are too far from the CPU's: largest difference "
                  f"{farthest:.3f}, mean {mean:.4f}")
