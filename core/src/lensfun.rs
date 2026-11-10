@@ -7,12 +7,12 @@
 //! What is offered mirrors the desktop's Lensfun card
 //! (`src/app/develop/panels/inspector/lensfun.rs`, egui-bound there); the
 //! matching, the choice and the install are RAWmakase's ([`matching`],
-//! [`LensfunChoice`], `rawmakase_lensfun`). The database lives where
+//! [`LensfunChoice`], [`crate::lensfun_install`]). The database lives where
 //! RAWmakase's crates read it ([`installed::dir`]), so presets and pasted
 //! settings resolve against it too.
 
+use crate::lensfun_install::{Installed as Done, Progress, Source};
 use crate::render::RenderError;
-use rawmakase_lensfun::{Installed as Done, Progress, Source};
 use rawmakase_model::camera_data::Metadata;
 use rawmakase_model::lens::lensfun::choice::{camera_for, frame_size, photo_of};
 use rawmakase_model::lens::lensfun::installed::{self, Installed};
@@ -323,8 +323,8 @@ pub(crate) fn install() -> Result<String, RenderError> {
     };
     let dir = installed::dir();
     std::fs::create_dir_all(&dir).map_err(|e| failed(e.into()))?;
-    let done =
-        rawmakase_lensfun::install(&dir, &Source::Lensfun, &Progress::default()).map_err(failed)?;
+    let done = crate::lensfun_install::install(&dir, &Source::Lensfun, &Progress::default())
+        .map_err(failed)?;
     Ok(match done {
         Done::New(m) => format!("Installed Lensfun's profiles of {}", m.date()),
         Done::Current(m) => format!("Lensfun's profiles of {} are current", m.date()),
@@ -333,7 +333,7 @@ pub(crate) fn install() -> Result<String, RenderError> {
 
 /// Removes the installed database. Edits keep their lens's calibration.
 pub(crate) fn remove() -> Result<bool, RenderError> {
-    rawmakase_lensfun::remove(&installed::dir(), &Progress::default()).map_err(|e| {
+    crate::lensfun_install::remove(&installed::dir(), &Progress::default()).map_err(|e| {
         RenderError::Failed {
             message: format!("{e:#}"),
         }

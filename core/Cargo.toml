@@ -25,14 +25,20 @@ rawmakase-cancel = { path = "../vendor/rawmakase/crates/rawmakase-cancel" }
 rawmakase-inference = { path = "../vendor/rawmakase/crates/rawmakase-inference" }
 rawmakase-catalog = { path = "../vendor/rawmakase/crates/rawmakase-catalog" }
 rawmakase-decode = { path = "../vendor/rawmakase/crates/rawmakase-decode" }
-rawmakase-edit-session = { path = "../vendor/rawmakase/crates/rawmakase-edit-session" }
 rawmakase-engine = { path = "../vendor/rawmakase/crates/rawmakase-engine" }
 rawmakase-export = { path = "../vendor/rawmakase/crates/rawmakase-export" }
 rawmakase-interop = { path = "../vendor/rawmakase/crates/rawmakase-interop" }
-rawmakase-lensfun = { path = "../vendor/rawmakase/crates/rawmakase-lensfun" }
 rawmakase-model = { path = "../vendor/rawmakase/crates/rawmakase-model" }
 rawmakase-protocol = { path = "../vendor/rawmakase/crates/rawmakase-protocol" }
 anyhow = "1"
+# Lensfun's database installer (src/lensfun_install), at the versions
+# RAWmakase's workspace uses: the archive comes as a .tar.bz2, read in pure
+# Rust, and over HTTPS only.
+sha2 = "0.11"
+tempfile = "3"
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+bzip2-rs = "0.1"
+tar = { version = "0.4", default-features = false }
 # mmap and munmap for image-sized blocks (src/alloc.rs).
 libc = "0.2"
 bytemuck = "1"

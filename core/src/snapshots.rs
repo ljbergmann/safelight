@@ -7,9 +7,9 @@
 //! [`Catalog::add_snapshot`]: rawmakase_catalog::catalog::Catalog::add_snapshot
 
 use crate::edit::OpenEdit;
+use crate::edit_session::history::Step;
 use anyhow::{Context, Result};
 use rawmakase_catalog::catalog::{PhotoId, Snapshot, SnapshotSettings};
-use rawmakase_edit_session::history::Step;
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::recipe::Recipe;
 

@@ -5,12 +5,12 @@
 //! the desktop: the photo's starting settings (its raw defaults) until the
 //! edit, a History state or a snapshot is copied to it. It never takes
 //! edits; framing it like the edit and the Copy and Swap commands are
-//! RAWmakase's ([`rawmakase_edit_session::before_after`]). Where the two sides
+//! RAWmakase's ([`crate::edit_session::before_after`]). Where the two sides
 //! go on screen is [`panes`], which the live view draws with and the app maps
 //! touches with.
 
 use crate::edit::OpenEdit;
-use rawmakase_edit_session::before_after::{self, Transfer};
+use crate::edit_session::before_after::{self, Transfer};
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::recipe::Recipe;
 

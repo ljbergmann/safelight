@@ -788,10 +788,10 @@ pub struct SortChoice {
 }
 
 /// Lightroom's sort orders, in its menu's order (RAWmakase's
-/// [`Sort`](rawmakase_catalog::catalog::sort::Sort)).
+/// [`Sort`](crate::library_sort::Sort)).
 #[uniffi::export]
 pub fn sort_orders() -> Vec<SortChoice> {
-    rawmakase_catalog::catalog::sort::Sort::ALL
+    crate::library_sort::Sort::ALL
         .iter()
         .enumerate()
         .map(|(i, s)| SortChoice {
@@ -807,7 +807,7 @@ impl Library {
     /// other way round when `reverse`, as the desktop's grid sorts: photos
     /// alike in it stay in capture order.
     pub fn photo_order(&self, sort: u32, reverse: bool) -> Result<Vec<i64>, RenderError> {
-        use rawmakase_catalog::catalog::sort::Sort;
+        use crate::library_sort::Sort;
         let sort = Sort::ALL.get(sort as usize).copied().unwrap_or_default();
         let catalog = self.catalog();
         let mut photos = catalog.photos()?;

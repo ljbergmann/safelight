@@ -20,6 +20,10 @@ mod curve;
 mod denoise_measure;
 pub use curve::CurveState;
 mod edit;
+// Copies of RAWmakase code kept as upstream has them (docs/FORK.md), so
+// what Safelight doesn't call stays in, to compare easily.
+#[allow(dead_code)]
+mod edit_session;
 mod export;
 mod export_extras;
 mod files;
@@ -32,7 +36,15 @@ mod guides;
 mod import;
 mod lens;
 mod lensfun;
+// Copies of RAWmakase code kept as upstream has them (docs/FORK.md), so
+// what Safelight doesn't call stays in, to compare easily.
+#[allow(dead_code)]
+mod lensfun_install;
 mod library;
+// Copies of RAWmakase code kept as upstream has them (docs/FORK.md), so
+// what Safelight doesn't call stays in, to compare easily.
+#[allow(dead_code)]
+mod library_sort;
 pub use edit::{EditState, Orientation};
 pub use import::{ImportCandidate, ImportJob, ImportMode};
 mod live;

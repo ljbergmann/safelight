@@ -8,11 +8,11 @@
 //! catalog the way the desktop resolves them, and save back in one transaction.
 
 use crate::controls::{Control, Section, Switch};
+use crate::edit_session::history::Step;
+use crate::edit_session::{EditSession, Gesture};
 use crate::library::Library;
 use crate::render::RenderError;
 use rawmakase_catalog::catalog::{HistoryUpdate, PhotoId};
-use rawmakase_edit_session::history::Step;
-use rawmakase_edit_session::{EditSession, Gesture};
 use rawmakase_interop::export_settings::ExportOptions;
 use rawmakase_model::camera_data::Metadata;
 use rawmakase_model::model::recipe::Recipe;
@@ -173,7 +173,7 @@ impl OpenEdit {
             Gesture::Held
         };
         let outcome = self.session.finish(frame, gesture);
-        outcome == rawmakase_edit_session::FrameOutcome::Edited
+        outcome == crate::edit_session::FrameOutcome::Edited
     }
 
     /// Turns a panel switch or option on or off, as one History step.
@@ -422,7 +422,7 @@ impl OpenEdit {
         } else {
             Gesture::Held
         };
-        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+        self.session.finish(frame, gesture) == crate::edit_session::FrameOutcome::Edited
     }
 
     /// Sets the crop as one editor frame; `done` ends the drag, which becomes
@@ -444,7 +444,7 @@ impl OpenEdit {
         } else {
             Gesture::Held
         };
-        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+        self.session.finish(frame, gesture) == crate::edit_session::FrameOutcome::Edited
     }
 
     /// Edits point curve `channel` as one editor frame: adds a point at `at`
@@ -603,7 +603,7 @@ impl OpenEdit {
         } else {
             Gesture::Held
         };
-        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+        self.session.finish(frame, gesture) == crate::edit_session::FrameOutcome::Edited
     }
 
     /// Saves this photo's settings in `groups` as a new preset, as the
@@ -729,7 +729,7 @@ impl OpenEdit {
             Gesture::Held
         };
         let edited =
-            self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited;
+            self.session.finish(frame, gesture) == crate::edit_session::FrameOutcome::Edited;
         if !done {
             self.targeted = Some(crate::targeted::TargetDrag {
                 last: self.session.recipe().clone(),
@@ -779,7 +779,7 @@ impl OpenEdit {
         } else {
             Gesture::Held
         };
-        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+        self.session.finish(frame, gesture) == crate::edit_session::FrameOutcome::Edited
     }
 
     /// Gives the photo the Point Curve menu's curve `index` (built-in ones
@@ -876,7 +876,7 @@ impl OpenEdit {
         } else {
             Gesture::Held
         };
-        self.session.finish(frame, gesture) == rawmakase_edit_session::FrameOutcome::Edited
+        self.session.finish(frame, gesture) == crate::edit_session::FrameOutcome::Edited
     }
 
     /// Deletes swatch `index`, or all of them: one History step.

@@ -1523,7 +1523,7 @@ impl LiveView {
             }
             e.session.finish_gesture();
             e.session.change(
-                Some(rawmakase_edit_session::history::Step::new(name, value)),
+                Some(crate::edit_session::history::Step::new(name, value)),
                 |r| *r = after,
             );
             true
@@ -1565,7 +1565,7 @@ impl LiveView {
             }
             e.session.finish_gesture();
             e.session.change(
-                Some(rawmakase_edit_session::history::Step::new(name, value)),
+                Some(crate::edit_session::history::Step::new(name, value)),
                 |r| *r = after,
             );
             true

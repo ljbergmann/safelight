@@ -1819,14 +1819,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rawmakase-edit-session"
-version = "0.1.0"
-dependencies = [
- "rawmakase-interop",
- "rawmakase-model",
-]
-
-[[package]]
 name = "rawmakase-engine"
 version = "0.1.0"
 dependencies = [
@@ -1899,20 +1891,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "rawmakase-lensfun"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bzip2-rs",
- "rawmakase-model",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "ureq",
 ]
 
 [[package]]
@@ -2154,6 +2132,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
+ "bzip2-rs",
  "half",
  "image",
  "libc",
@@ -2165,19 +2144,20 @@ dependencies = [
  "rawmakase-cancel",
  "rawmakase-catalog",
  "rawmakase-decode",
- "rawmakase-edit-session",
  "rawmakase-engine",
  "rawmakase-export",
  "rawmakase-inference",
  "rawmakase-interop",
- "rawmakase-lensfun",
  "rawmakase-model",
  "rawmakase-protocol",
  "serde",
  "serde_json",
+ "sha2",
+ "tar",
  "tempfile",
  "thiserror",
  "uniffi",
+ "ureq",
  "wgpu",
 ]
 

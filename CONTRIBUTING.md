@@ -60,15 +60,17 @@ RAWmakase's rules apply here as they are (saved edits keep working, domain
 code stays free of the UI, background work always finishes, refactors apart
 from behaviour changes, rendering references are evidence). On top of them:
 
-- **One owner for each rule.** When the iPad needs something the desktop's
-  app crate has (a step name, what Auto takes from its estimate), move it
-  into a crate both use rather than copying it, as `rawmakase-edit-session`
-  and `rawmakase-ai` were. The few places that still mirror the desktop say
-  so in a comment.
-- **Keep the fork small.** Changes under `vendor/rawmakase` go to the fork's
+- **Safelight can always take RAWmakase's newest version.** So Safelight's
+  needs are met in Safelight's core, not in RAWmakase's code. When the iPad
+  needs something only the desktop's app crate has (a step name, what Auto
+  takes from its estimate), copy it into the core, as
+  [docs/FORK.md](docs/FORK.md) describes, rather than moving it into a crate
+  on the fork. Each copy says where it came from, and FORK.md lists them.
+- **The fork only adds things, and only when agreed.** A change under
+  `vendor/rawmakase` is agreed with the maintainer first. It adds code rather
+  than moving or changing upstream's code. It goes to the fork's
   `ios/build-crates` branch, one concern per commit, each passing that
-  repository's `make check`, so RAWmakase's own updates still merge. Prefer
-  moving code over changing it.
+  repository's `make check`, and gets a line in FORK.md.
 - **The catalog stays the desktop's.** A catalog made on the iPad must open
   in RAWmakase on a computer, and its edits render the same there;
   `scripts/compat-check.sh` proves it, pixel for pixel. Nothing only Safelight
@@ -97,7 +99,9 @@ At each RAWmakase release, and when an upstream fix Safelight wants lands:
 2. Rebase `ios/build-crates` onto RAWmakase's `main`. Commits RAWmakase
    took drop out. Where upstream changed code a commit moved, redo the move
    on upstream's version: keep its behaviour, re-apply only the move, and
-   fold any fix into the commit it belongs to.
+   fold any fix into the commit it belongs to. Port what upstream changed in
+   the originals of Safelight's copies ([docs/FORK.md](docs/FORK.md) has the
+   command) and raise the commit they name.
 3. Run the fork's `make check`, `cargo test` in `core/` (adapting the core
    to upstream's API) and `scripts/compat-check.sh`; build the app and look
    at it on the simulator. Compare what is left of each of Safelight's
