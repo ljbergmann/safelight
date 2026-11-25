@@ -310,10 +310,10 @@ pub(crate) fn select(
         data: input.rgb8(),
     };
     let model = what.model();
-    let key = selection::input_key(&rgb, model);
+    let key = selection::image_key(&rgb);
     let dir = pack.installed_dir();
     let options = selection::load_options();
-    let (coverage, prompt) = match what {
+    let coverage = match what {
         AiSelection::Sky => {
             // The bundled model on the Neural Engine first; the installed ONNX model on
             // the CPU for a shape it has no function for, or when it fails.
@@ -351,7 +351,7 @@ pub(crate) fn select(
                         .map_err(inference)?
                 }
             };
-            (coverage, "sky")
+            coverage
         }
         AiSelection::Subject | AiSelection::Background => {
             let mut subject = library
@@ -363,7 +363,7 @@ pub(crate) fn select(
                 *subject = Some(Subject::load_with(&dir, &options).map_err(inference)?);
             }
             let analysis = analyze(library, subject.as_mut().expect("loaded above"), &rgb)?;
-            (analysis.subject().map_err(inference)?, "subject")
+            analysis.subject().map_err(inference)?
         }
     };
     if coverage.data.iter().all(|v| *v == 0) {
@@ -392,7 +392,7 @@ pub(crate) fn select(
             }
             .into(),
             model: model.provenance(),
-            input: selection::prompt_key(&key, prompt, &Prompt::default()),
+            input: selection::input_identity(&key, model, None),
         }),
     });
     Ok(Generated { shape, id })
@@ -454,7 +454,7 @@ pub(crate) fn refine(
         data: input.rgb8(),
     };
     let model = AiSelection::Subject.model();
-    let key = selection::input_key(&rgb, model);
+    let key = selection::image_key(&rgb);
     let prompt = Prompt {
         points: points
             .iter()
@@ -502,7 +502,7 @@ pub(crate) fn refine(
         source: Some(BitmapSource {
             feature: FEATURE_SUBJECT.into(),
             model: model.provenance(),
-            input: selection::prompt_key(&key, "click", &prompt),
+            input: selection::input_identity(&key, model, Some(&prompt)),
         }),
     });
     Ok(Generated { shape, id })

@@ -16,13 +16,8 @@ pub fn can_read(path: &Path) -> bool {
 }
 
 /// The file's info: `None` when it cannot be read now, `Some(None)` when it
-/// has none. A RAW for which `header_only` holds (the app's choice: one on a
-/// network volume) is read from its header alone, the whole RAW being most of
-/// the cost and none of the info.
-pub fn read_info(
-    path: &Path,
-    header_only: impl FnOnce(&Path) -> bool,
-) -> Option<Option<PhotoInfo>> {
+/// has none.
+pub fn read_info(path: &Path) -> Option<Option<PhotoInfo>> {
     if !can_read(path) {
         return None;
     }
@@ -33,12 +28,11 @@ pub fn read_info(
         if let Some(undecoded) = raw::undecoded(path) {
             return (undecoded.info != PhotoInfo::default()).then_some(Some(undecoded.info));
         }
-        // From the header alone when asked, else, or when that can't be
-        // read, from the file opened whole. A RAW that cannot be opened now
-        // (still copying, a network error) is tried again later.
-        let header = header_only(path)
-            .then(|| photo::header_metadata(path).ok())
-            .flatten();
+        // From the header alone: the whole RAW is most of the cost and none of
+        // the info. When that can't be read, from the file opened whole. A RAW
+        // that cannot be opened now (still copying, a network error) is tried
+        // again later.
+        let header = photo::header_metadata(path).ok();
         let metadata = match header {
             Some(metadata) => metadata,
             None => photo::open(path).ok()?.metadata,

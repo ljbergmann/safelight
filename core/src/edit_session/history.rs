@@ -393,7 +393,10 @@ impl History {
 fn describe(before: &Recipe, after: &Recipe) -> Step {
     let (b, a) = (before, after);
     if a.preset_name != b.preset_name && !a.preset_name.is_empty() {
-        return Step::new("Preset", rawmakase_interop::presets::display_name(&a.preset_name));
+        return Step::new(
+            "Preset",
+            rawmakase_interop::presets::display_name(&a.preset_name),
+        );
     }
     let profile = |r: &Recipe| r.profile.as_ref().map(|p| p.name.clone());
     if profile(a) != profile(b) {
@@ -702,17 +705,19 @@ mod tests {
     fn retouch_and_mask_edits_have_lightroom_names() {
         let before = Recipe::default();
         let mut after = before.clone();
-        after.retouch.push(rawmakase_model::model::retouch::RetouchOp {
-            mode: rawmakase_model::model::retouch::RetouchMode::Heal,
-            shape: rawmakase_model::model::retouch::RetouchShape::Spot {
-                center: [0.5, 0.5],
-                radius: 0.01,
-            },
-            feather: 0.5,
-            opacity: 1.,
-            offset: [0.02, 0.],
-            patch: None,
-        });
+        after
+            .retouch
+            .push(rawmakase_model::model::retouch::RetouchOp {
+                mode: rawmakase_model::model::retouch::RetouchMode::Heal,
+                shape: rawmakase_model::model::retouch::RetouchShape::Spot {
+                    center: [0.5, 0.5],
+                    radius: 0.01,
+                },
+                feather: 0.5,
+                opacity: 1.,
+                offset: [0.02, 0.],
+                patch: None,
+            });
         assert_eq!(describe(&before, &after).name, "Spot Removal");
         assert_eq!(describe(&after, &before).name, "Delete Spot");
         let mut masked = before.clone();

@@ -89,12 +89,7 @@ impl Library {
             // core's thread: opening a RAW needs more stack than Swift's.
             _ => match crate::render::on_core_thread({
                 let path = path.clone();
-                move || {
-                    Ok(crate::from_desktop::photo_info::read_info(
-                        &path,
-                        crate::library::local,
-                    ))
-                }
+                move || Ok(crate::from_desktop::photo_info::read_info(&path))
             })? {
                 Some(read) => {
                     // A failed write only means it is read again next time.

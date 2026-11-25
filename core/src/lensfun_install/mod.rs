@@ -1,5 +1,5 @@
 // Safelight's copy of RAWmakase's `src/lensfun_install.rs` (upstream at
-// ea3d0634), with only paths and visibility changed: the desktop app's crate
+// 9d17dc99, v0.8.0), with only paths and visibility changed: the desktop app's crate
 // doesn't build for iOS. Keep it in step with upstream: docs/FORK.md lists the
 // copies and how to check them.
 //! Installing, updating and removing Lensfun's lens database (#662), on the user's
@@ -38,7 +38,8 @@ pub const VERSIONS_URL: &str = "https://lensfun.github.io/db/versions.json";
 pub const ARCHIVE_URL: &str = rawmakase_model::lens::lensfun::choice::SOURCE_URL;
 /// The database format this release reads.
 pub const FORMAT: u64 = 2;
-/// Largest archive downloaded, `versions.json` read, and unpacked total.
+/// The largest archive accepted, downloaded or read from a file. The unpacked
+/// total and `versions.json` have limits of their own.
 pub const MAX_ARCHIVE: u64 = 8 << 20;
 const MAX_VERSIONS: u64 = 64 << 10;
 /// About what Lensfun's archive weighs, for messages before downloading.
@@ -347,9 +348,16 @@ fn publish(
     progress: &Progress,
 ) -> Result<()> {
     let target = dir.join(Manifest::folder(unpacked.version));
+    // A folder is only ever renamed into place whole, but a removal cut short
+    // (its manifest gone first) leaves part of one, which may still read: it
+    // is used again only if it holds exactly this archive's files. The
+    // manifest doesn't name it, or this version would be current, so no
+    // reader uses it.
+    if target.is_dir() && !holds(&target, &unpacked.files) {
+        std::fs::remove_dir_all(&target)
+            .with_context(|| format!("Could not replace {}", target.display()))?;
+    }
     if target.is_dir() {
-        // Written whole by an earlier install (a folder is only ever renamed into
-        // place complete) and never changed since; checked again all the same.
         installed::read_folder(&target).with_context(|| {
             format!(
                 "{} is damaged; remove Lensfun profiles and install again",
@@ -399,6 +407,22 @@ fn publish(
         .context("Could not record the installed version")?;
     let _ = rawmakase_model::storage::sync_dir(dir);
     Ok(())
+}
+
+/// Whether `folder` holds exactly `files`, by name and content.
+fn holds(folder: &Path, files: &[(String, Vec<u8>)]) -> bool {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return false;
+    };
+    let names: std::collections::BTreeSet<String> = entries
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.len() == files.len()
+        && files.iter().all(|(name, bytes)| {
+            names.contains(name)
+                && std::fs::read(folder.join(name)).is_ok_and(|on_disk| on_disk == *bytes)
+        })
 }
 
 /// A reader that fails, rather than ends, past its limit: a stream cut there would

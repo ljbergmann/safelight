@@ -1,17 +1,17 @@
 // Safelight's copy of RAWmakase's `src/app/library/sort.rs` (upstream at
-// ea3d0634), with only paths and visibility changed: the desktop app's crate
+// 9d17dc99, v0.8.0), with only paths and visibility changed: the desktop app's crate
 // doesn't build for iOS. Keep it in step with upstream: docs/FORK.md lists the
 // copies and how to check them.
-//! Lightroom's sort orders for a grid of photos. Photos come from the
+//! Lightroom's sort orders for the grid and filmstrip. Photos come from the
 //! catalog in capture order; another order sorts them by its key, stably,
-//! so photos alike in it stay in capture order. Edit time and aspect ratio
-//! are not on `Photo` and are read from the catalog as they are needed.
-use rawmakase_catalog::catalog::{Catalog, Photo, PhotoId};
+//! so photos alike in it stay in capture order. Edit time, aspect ratio and
+//! a collection's custom order are not on `Photo` and are read from the
+//! catalog as they are needed.
+use rawmakase_catalog::catalog::{Catalog, CollectionId, Photo, PhotoId};
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
-/// Lightroom's colour labels, in its order.
-pub const LABELS: [&str; 5] = ["Red", "Yellow", "Green", "Blue", "Purple"];
+use rawmakase_model::collection_rules::LABELS;
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Sort {
@@ -26,6 +26,10 @@ pub enum Sort {
     FileName,
     Extension,
     AspectRatio,
+    /// Lightroom's Custom Order: a collection's own order, which dragging
+    /// photos in the grid changes. Only a plain collection has one, so it
+    /// isn't among [`Sort::ALL`], the orders every source offers.
+    Custom,
 }
 impl Sort {
     pub const ALL: [Self; 10] = [
@@ -52,13 +56,52 @@ impl Sort {
             Self::FileName => "File Name",
             Self::Extension => "File Extension",
             Self::AspectRatio => "Aspect Ratio",
+            Self::Custom => "Custom Order",
         }
     }
-    /// Reads what this order needs beyond `Photo` from the catalog.
-    pub fn keys(self, catalog: &Catalog) -> Keys {
+    /// The `sortType` Lightroom Classic stores for this order in a
+    /// collection's options, each measured in 15.6 (#998). Lightroom's other
+    /// orders (Edit Count, Pixel Dimension, File Type, City, State,
+    /// Country, Aperture, Focal Length, Shutter Speed, ISO Speed) aren't
+    /// RAWmakase's; a collection kept in one shows in Capture Time.
+    pub fn lightroom(self) -> &'static str {
+        match self {
+            Self::CaptureTime => "captureTime",
+            Self::Custom => "positionInCollection",
+            Self::AddedOrder => "addedOrder",
+            Self::EditTime => "touchTime",
+            Self::Rating => "rating",
+            Self::Pick => "pick",
+            Self::LabelColor => "labelColor",
+            // Lightroom's Label Text sorts by the label's text.
+            Self::LabelText => "colorLabels",
+            Self::FileName => "fileName",
+            Self::Extension => "extension",
+            Self::AspectRatio => "aspectRatioCache",
+        }
+    }
+    /// The order a collection's stored `sortType` names, if RAWmakase has it.
+    pub fn from_lightroom(sort: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .chain([Self::Custom])
+            .find(|s| s.lightroom() == sort)
+    }
+    /// Reads what this order needs beyond `Photo` from the catalog; Custom
+    /// Order, the custom order of `collection`.
+    pub fn keys(self, catalog: &Catalog, collection: Option<CollectionId>) -> Keys {
         match self {
             Self::EditTime => Keys::EditTimes(catalog.edit_times().unwrap_or_default()),
             Self::AspectRatio => Keys::Aspects(catalog.aspect_ratios().unwrap_or_default()),
+            Self::Custom => Keys::Positions(
+                collection
+                    .and_then(|c| catalog.collection_order(c).ok())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(at, photo)| (photo, at))
+                    .collect(),
+            ),
             _ => Keys::None,
         }
     }
@@ -102,6 +145,16 @@ impl Sort {
             Self::LabelText => caseless(&a.label, &b.label),
             Self::FileName => natural(&a.filename, &b.filename),
             Self::Extension => caseless(extension(&a.filename), extension(&b.filename)),
+            Self::Custom => {
+                let at = |p: &Photo| match keys {
+                    Keys::Positions(at) => at.get(&p.id).copied(),
+                    _ => None,
+                };
+                // A photo not in the order (none should be) goes last.
+                at(a)
+                    .unwrap_or(usize::MAX)
+                    .cmp(&at(b).unwrap_or(usize::MAX))
+            }
             Self::AspectRatio => {
                 let aspect = |p: &Photo| match keys {
                     Keys::Aspects(aspects) => aspects.get(&p.id).copied(),
@@ -124,9 +177,11 @@ pub enum Keys {
     None,
     EditTimes(HashMap<PhotoId, String>),
     Aspects(HashMap<PhotoId, f32>),
+    /// Each photo's place in the collection's custom order.
+    Positions(HashMap<PhotoId, usize>),
 }
 
-/// Lightroom's label colour order: red, yellow, green, blue, purple, then
+/// Lightroom's label color order: red, yellow, green, blue, purple, then
 /// other labels, then none.
 fn label_rank(label: &str) -> usize {
     match LABELS.iter().position(|l| *l == label) {
@@ -148,7 +203,7 @@ fn caseless(a: &str, b: &str) -> Ordering {
 }
 /// File names as people read them: case aside, and runs of digits by value,
 /// so IMG_9 comes before IMG_10. Compares in place, without allocating.
-fn natural(text_a: &str, text_b: &str) -> Ordering {
+pub fn natural(text_a: &str, text_b: &str) -> Ordering {
     let (a, b) = (text_a.as_bytes(), text_b.as_bytes());
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
@@ -188,8 +243,39 @@ fn digits(s: &[u8], from: usize) -> (&[u8], usize) {
     (&s[start..end], end)
 }
 
+/// Lightroom's `sortDirection` for `reverse`.
+pub fn lightroom_direction(reverse: bool) -> &'static str {
+    if reverse { "descending" } else { "ascending" }
+}
+
 #[cfg(test)]
 mod tests {
+    /// Lightroom Classic 15.6's sortType for each order RAWmakase has
+    /// (measured, #998), both ways.
+    #[test]
+    fn orders_read_and_write_lightroom_sort_types() {
+        use super::Sort;
+        for (sort, stored) in [
+            (Sort::CaptureTime, "captureTime"),
+            (Sort::AddedOrder, "addedOrder"),
+            (Sort::EditTime, "touchTime"),
+            (Sort::Rating, "rating"),
+            (Sort::Pick, "pick"),
+            (Sort::LabelColor, "labelColor"),
+            (Sort::LabelText, "colorLabels"),
+            (Sort::FileName, "fileName"),
+            (Sort::Extension, "extension"),
+            (Sort::AspectRatio, "aspectRatioCache"),
+            (Sort::Custom, "positionInCollection"),
+        ] {
+            assert_eq!(sort.lightroom(), stored);
+            assert_eq!(Sort::from_lightroom(stored), Some(sort));
+        }
+        // Lightroom's orders RAWmakase hasn't.
+        assert_eq!(Sort::from_lightroom("touchCount"), None);
+        assert_eq!(super::lightroom_direction(true), "descending");
+    }
+
     use super::*;
 
     #[test]

@@ -1,6 +1,6 @@
 //! Masks: duplicating one, and where a selection's pixels lie.
 use rawmakase_model::model::masks::{MAX_GROUPS, MaskGroup};
-use rawmakase_model::storage::mask_assets::resolve;
+use rawmakase_model::storage::mask_assets::resolve_coverage;
 
 /// Duplicates mask `index` as the next mask, as Lightroom's Duplicate
 /// does: a named mask's copy is named "… copy". Returns the copy's index;
@@ -21,7 +21,8 @@ pub fn duplicate(groups: &mut Vec<MaskGroup>, index: usize) -> Option<usize> {
 /// of raster `id`'s selected pixels (half or more); `None` for an empty or
 /// unknown one. What a refinement that only leaves things out works within.
 pub fn raster_extent(id: &str) -> Option<[f32; 4]> {
-    let raster = resolve(id).ok()?;
+    // Selections only: AI Remove patches share the store.
+    let raster = resolve_coverage(id).ok()?;
     let (w, h) = (raster.width as usize, raster.height as usize);
     let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
     for (i, v) in raster.data.iter().enumerate() {

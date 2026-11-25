@@ -1,5 +1,5 @@
 // Safelight's copy of what RAWmakase's `src/app/develop/before_after.rs`
-// (upstream at ea3d0634) does to settings, without its window code. Keep it in
+// (upstream at 9d17dc99, v0.8.0) does to settings, without its window code. Keep it in
 // step with upstream: docs/FORK.md lists the copies and how to check them.
 //! Lightroom's Before/After settings: what Before shows beside the edit, and
 //! the commands that copy or swap settings between them. Before belongs to the

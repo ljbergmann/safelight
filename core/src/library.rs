@@ -214,10 +214,7 @@ impl Library {
             Ok(todo
                 .into_iter()
                 .filter_map(|(id, path)| {
-                    Some((
-                        id,
-                        crate::from_desktop::photo_info::read_info(&path, local)?,
-                    ))
+                    Some((id, crate::from_desktop::photo_info::read_info(&path)?))
                 })
                 .collect::<Vec<_>>())
         })?;
@@ -512,13 +509,6 @@ fn fit(width: u32, height: u32, edge: u32) -> (u32, u32) {
 }
 
 /// FNV-1a, to name a cache file after a path.
-/// For [`crate::from_desktop::photo_info::read_info`]: the app's photos are in its
-/// own storage, never on a network volume, so a RAW is read whole, never from
-/// its header alone.
-pub(crate) fn local(_: &Path) -> bool {
-    false
-}
-
 pub(crate) fn fnv(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
@@ -825,7 +815,8 @@ impl Library {
         let mut photos = catalog.photos()?;
         // Capture order first, as the desktop's catalog lists them.
         photos.sort_by(|a, b| (&a.captured, &a.filename).cmp(&(&b.captured, &b.filename)));
-        let keys = sort.keys(&catalog);
+        // Custom Order needs an album; the grid has none (`ALL` leaves it out).
+        let keys = sort.keys(&catalog, None);
         drop(catalog);
         let mut indices: Vec<usize> = (0..photos.len()).collect();
         sort.sort(&photos, &mut indices, &keys, reverse);

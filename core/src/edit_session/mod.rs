@@ -8,8 +8,8 @@ pub mod before_after;
 pub(crate) mod history;
 pub(crate) mod save_state;
 
-use rawmakase_model::model::recipe::Recipe;
 use history::{History, Step};
+use rawmakase_model::model::recipe::Recipe;
 use save_state::SaveState;
 
 /// Whether a drag, a wheel scroll or a dial turn is still changing the settings.
@@ -148,7 +148,10 @@ impl EditSession {
         self.history.take_recorded()
     }
     /// The History read back from `saved`, for the current settings.
-    pub(crate) fn restore_history(&mut self, saved: rawmakase_model::model::saved_history::SavedHistory) {
+    pub(crate) fn restore_history(
+        &mut self,
+        saved: rawmakase_model::model::saved_history::SavedHistory,
+    ) {
         self.history = History::restored(saved, &self.recipe);
     }
     /// Returns the settings to `target`, the state History has at `at`, as the step

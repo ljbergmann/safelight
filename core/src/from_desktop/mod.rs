@@ -1,6 +1,6 @@
 //! Safelight's copies of code that RAWmakase keeps in its desktop app, whose
 //! crate doesn't build for iOS. Each is upstream's logic as it stood at
-//! `ea3d0634`, taken out of its window code, with methods on RAWmakase's types
+//! `9d17dc99` (0.8.0), taken out of its window code, with methods on RAWmakase's types
 //! written as functions. Keep them in step with upstream: docs/FORK.md lists
 //! where each came from and how to check it.
 //!
