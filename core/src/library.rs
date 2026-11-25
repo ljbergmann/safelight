@@ -9,7 +9,9 @@
 //! empty.
 
 use crate::render::{RenderError, on_core_thread};
-use rawmakase_catalog::catalog::{Catalog, CollectionId, NewPhotoDefaults, PhotoId};
+use rawmakase_catalog::catalog::{
+    Catalog, CollectionId, CollectionKind, NewPhotoDefaults, PhotoId,
+};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
@@ -102,8 +104,6 @@ impl Library {
                 Catalog::create(&file)?
             };
             follow_container(&mut catalog, &photos, &data)?;
-            // A catalog made before raster masks existed can't keep a selection.
-            catalog.upgrade_for_raster_masks()?;
             Ok((catalog, photos))
         });
         let (catalog, photos) = catalog?;
@@ -303,7 +303,15 @@ impl Library {
     ) -> Result<i64, RenderError> {
         Ok(self
             .catalog()
-            .create_collection(&name, parent.map(CollectionId), folder)?
+            .create_collection(
+                if folder {
+                    CollectionKind::Set
+                } else {
+                    CollectionKind::Collection
+                },
+                &name,
+                parent.map(CollectionId),
+            )?
             .0)
     }
 
@@ -321,16 +329,17 @@ impl Library {
     /// Deletes album or folder `id` (a folder with what it holds); the
     /// photos stay in the library.
     pub fn delete_album(&self, id: i64) -> Result<(), RenderError> {
-        Ok(self.catalog().delete_collection(CollectionId(id))?)
+        self.catalog().remove_collections(&[CollectionId(id)])?;
+        Ok(())
     }
 
     /// Adds photos `ids` to album `album`, or with `add` false takes them out.
     pub fn change_album(&self, album: i64, ids: Vec<i64>, add: bool) -> Result<(), RenderError> {
         let ids: Vec<PhotoId> = ids.into_iter().map(PhotoId).collect();
         let (add_ids, remove) = if add { (ids, vec![]) } else { (vec![], ids) };
-        Ok(self
-            .catalog()
-            .change_collection(CollectionId(album), &add_ids, &remove)?)
+        self.catalog()
+            .change_collection(CollectionId(album), &add_ids, &remove)?;
+        Ok(())
     }
 
     /// Adds photos `ids` to the Quick Collection, or takes them out.

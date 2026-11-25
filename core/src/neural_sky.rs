@@ -1,12 +1,16 @@
 //! Select Sky on the Neural Engine: UperNet ConvNeXt-base converted to a half-precision
 //! Core ML model with one function per photo shape (build/Sky-ANE.mlpackage, made by
-//! scripts/convert-sky-ane.py and bundled with the app). A photo whose shape has no
+//! scripts/convert-sky-ane.py and bundled with the app). It answers the sky's
+//! probability and the class scores RAWmakase's Select Sky reads around it. A photo
+//! whose shape has no
 //! function, or a model that fails, is left to the ONNX model on the CPU, as before.
 
-use crate::coreml::{self, Model, Units};
-use rawmakase_inference::process::preprocess_sized;
-use rawmakase_inference::runtime::sky_input_size;
-use rawmakase_inference::{Coverage, InferenceError, RgbImage, SKY};
+use crate::coreml::{self, Input, Model, Units, Values};
+use rawmakase_cancel::Cancel;
+use rawmakase_inference::InferenceError;
+use rawmakase_selection::process::preprocess_sized;
+use rawmakase_selection::runtime::sky_input_size;
+use rawmakase_selection::{Coverage, RgbImage, SKY};
 use std::collections::HashSet;
 #[cfg(test)]
 use std::path::Path;
@@ -40,7 +44,7 @@ impl NeuralSky {
         }
     }
 
-    /// The photo's sky, as [`rawmakase_inference::SkySession::select`] answers it, or
+    /// The photo's sky, as [`rawmakase_selection::SkySession::select`] answers it, or
     /// `None` when the model has no function for the photo's shape. On the Neural Engine,
     /// and on the GPU when the Neural Engine fails.
     pub(crate) fn select(&mut self, image: &RgbImage) -> Result<Option<Coverage>, InferenceError> {
@@ -55,28 +59,31 @@ impl NeuralSky {
             let Some(model) = self.function(width, height, units) else {
                 continue;
             };
-            let run = model.predict(
-                "pixel_values",
-                &[1, 3, height, width],
-                |data| data.copy_from_slice(&input),
-                "sky",
-                &[1, height, width],
-                1.,
+            let run = model.run(
+                &[Input {
+                    name: "pixel_values",
+                    shape: &[1, 3, height, width],
+                    values: Values::F32(&input),
+                }],
+                &["sky", "logits"],
             );
-            match run {
-                Ok(mut probability) if probability.iter().all(|p| p.is_finite()) => {
+            match run.as_deref() {
+                Ok([(sky_shape, probability), (logit_shape, logits)])
+                    if sky_shape[..] == [1, height, width]
+                        && probability.iter().chain(logits).all(|v| v.is_finite()) =>
+                {
                     // Half precision can land a hair outside 0..=1.
-                    for p in &mut probability {
-                        *p = p.clamp(0., 1.);
-                    }
-                    answer = Some(probability);
+                    let probability: Vec<f32> =
+                        probability.iter().map(|p| p.clamp(0., 1.)).collect();
+                    let logit_shape: Vec<i64> = logit_shape.iter().map(|&d| d as i64).collect();
+                    answer = Some((probability, logit_shape, logits.clone()));
                     break;
                 }
                 // Not finite, or failed: the same function on the next units.
                 _ => self.loaded = None,
             }
         }
-        let Some(probability) = answer else {
+        let Some((probability, logit_shape, logits)) = answer else {
             if self.missing.contains(&(width, height)) {
                 return Ok(None);
             }
@@ -84,7 +91,18 @@ impl NeuralSky {
                 "the sky model failed on the Neural Engine and the GPU".into(),
             ));
         };
-        rawmakase_inference::auto::sky(image, &probability, width, height).map(Some)
+        // RAWmakase's last step: the sky's edge snapped and moved as what surrounds it
+        // calls for.
+        rawmakase_selection::runtime::sky_from_answers(
+            image,
+            &probability,
+            width,
+            height,
+            &logit_shape,
+            &logits,
+            Cancel::NEVER,
+        )
+        .map(Some)
     }
 
     /// The function for `width` x `height` on `units`, loaded if it is not, or `None`
@@ -123,7 +141,7 @@ impl NeuralSky {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rawmakase_inference::process::output_size;
+    use rawmakase_selection::process::output_size;
 
     /// A photo-like test image: a blue sky over darker, textured ground.
     fn landscape(width: usize, height: usize) -> RgbImage {

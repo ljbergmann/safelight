@@ -9,10 +9,10 @@
 //! the ONNX model it was made from, which must be the one RAWmakase installs.
 
 use crate::coreml::{self, Model, Units};
-use crate::from_desktop::ai_denoise::{Loader, load_model};
 use rawmakase_cancel::Cancel;
+use rawmakase_denoise::Loader;
 use rawmakase_inference::denoise::TileModel;
-use rawmakase_inference::{InferenceError, Provider, RAWNIND};
+use rawmakase_inference::{Denoiser, InferenceError, LoadOptions, Provider, RAWNIND};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -95,25 +95,71 @@ impl TileModel for NeuralDenoiser {
 }
 
 /// The provider AI Denoise asks for: the Neural Engine on an iPad or iPhone, as
-/// [`loader`] runs it; elsewhere RAWmakase's choice.
+/// [`loader`] runs it, unless a Neural Engine load has outlasted its limit in this
+/// process (then CoreML's GPU); elsewhere RAWmakase's choice.
 pub(crate) fn provider() -> Provider {
-    if cfg!(target_os = "ios") {
+    if cfg!(target_os = "ios") && coreml::neural_engine_stalled() {
+        Provider::CoreML
+    } else if cfg!(target_os = "ios") {
         Provider::NeuralEngine
     } else {
-        crate::from_desktop::ai_denoise::preferred_provider()
+        rawmakase_denoise::preferred_provider()
     }
 }
 
+/// The installed ONNX model in `dir` on `provider`, through ONNX Runtime, with the
+/// library in [`crate::models::runtime_dir`] when it is there. Fewer threads than
+/// rendering's, as RAWmakase's own loader takes, so a job leaves the editor room.
+pub(crate) fn load_onnx(
+    dir: &Path,
+    provider: Provider,
+) -> Result<Box<dyn TileModel + Send>, String> {
+    let runtime = crate::models::runtime_dir();
+    let runtime_library = rawmakase_inference::runtime::runtime_file_names()
+        .iter()
+        .map(|name| runtime.join(name))
+        .find(|path| path.is_file());
+    Denoiser::load_with(
+        dir,
+        &LoadOptions {
+            runtime_library,
+            threads: Some(
+                rawmakase_inference::runtime::default_threads()
+                    .saturating_sub(2)
+                    .max(2),
+            ),
+            provider: Some(provider),
+            ..Default::default()
+        },
+    )
+    .map(|d| Box::new(d) as Box<dyn TileModel + Send>)
+    .map_err(|e| e.to_string())
+}
+
+/// Opens the RAW at `path` and packs its mosaic for AI Denoise, as RAWmakase's
+/// service does.
+pub(crate) fn source() -> rawmakase_denoise::Source {
+    Arc::new(|path: &Path, cancel: Cancel<'_>| {
+        if !rawmakase_model::storage::is_raw(path) {
+            return Err(anyhow::Error::new(
+                rawmakase_decode::ai::denoise::Unsupported("AI Denoise works on RAW files only."),
+            ));
+        }
+        rawmakase_decode::photo::open(path)?.packed_bayer(cancel)
+    })
+}
+
 /// AI Denoise's model loader: the bundled model on [`Provider::NeuralEngine`], and
-/// ONNX Runtime with the installed model otherwise. When the bundled model will not load
-/// or answers a tile with a value that is not finite, the service moves the job to
-/// CoreML's GPU, then to the CPU, so this loads those too.
+/// ONNX Runtime with the installed model otherwise. A tile that comes out not finite
+/// moves the job to the CPU (RAWmakase's service does that); a bundled model that won't
+/// load fails the job, and once a load has outlasted its limit the next service asks
+/// for CoreML's GPU instead ([`provider`]).
 pub(crate) fn loader() -> Loader {
     Arc::new(|dir: &Path, provider: Provider| match provider {
         Provider::NeuralEngine => {
             NeuralDenoiser::bundled().map(|d| Box::new(d) as Box<dyn TileModel + Send>)
         }
-        other => load_model(dir, other),
+        other => load_onnx(dir, other),
     })
 }
 

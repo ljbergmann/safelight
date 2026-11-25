@@ -51,6 +51,7 @@ pub use import::{ImportCandidate, ImportJob, ImportMode};
 mod live;
 mod masks;
 mod metadata;
+mod models;
 mod neural_denoise;
 mod neural_sky;
 pub use library::{Added, CollectionInfo, Library, LibraryPhoto, SortChoice, sort_orders};

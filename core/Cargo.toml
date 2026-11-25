@@ -22,6 +22,9 @@ uniffi = { version = "0.32", features = ["cli"] }
 # as the vendor/rawmakase submodule at the commit this repository pins.
 rawmakase-cancel = { path = "../vendor/rawmakase/crates/rawmakase-cancel" }
 rawmakase-inference = { path = "../vendor/rawmakase/crates/rawmakase-inference" }
+rawmakase-denoise = { path = "../vendor/rawmakase/crates/rawmakase-denoise" }
+rawmakase-model-install = { path = "../vendor/rawmakase/crates/rawmakase-model-install" }
+rawmakase-selection = { path = "../vendor/rawmakase/crates/rawmakase-selection" }
 rawmakase-catalog = { path = "../vendor/rawmakase/crates/rawmakase-catalog" }
 rawmakase-decode = { path = "../vendor/rawmakase/crates/rawmakase-decode" }
 rawmakase-engine = { path = "../vendor/rawmakase/crates/rawmakase-engine" }

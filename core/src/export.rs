@@ -488,7 +488,16 @@ impl Library {
             files: vec![],
             problems: vec![],
         };
-        for (name, outcome) in names.iter().zip(batch::run(&batch, Cancel::NEVER, |_| {})) {
+        // As many photos at once as the CPUs and the memory this app may still use
+        // allow: the editor's photo is open too.
+        let lanes = batch::Lanes::for_machine(
+            std::thread::available_parallelism().map_or(4, usize::from),
+            available_memory(),
+        );
+        for (name, outcome) in names
+            .iter()
+            .zip(batch::run(&batch, lanes, Cancel::NEVER, |_| {}))
+        {
             match outcome {
                 Outcome::Exported { path, notes } => {
                     result.files.push(path.display().to_string());
@@ -519,6 +528,23 @@ fn settings_of(v: &serde_json::Value) -> Option<ExportSettings> {
 /// Settings as the desktop writes them, later releases' choices kept.
 fn settings_json(s: &ExportSettings) -> anyhow::Result<serde_json::Value> {
     s.to_value()
+}
+
+/// The memory iOS still lets this app take (`os_proc_available_memory`); unknown
+/// elsewhere, where the export uses its own budget.
+fn available_memory() -> Option<u64> {
+    #[cfg(target_os = "ios")]
+    {
+        unsafe extern "C" {
+            fn os_proc_available_memory() -> usize;
+        }
+        // SAFETY: it takes nothing and only reads the process's memory limit.
+        Some(unsafe { os_proc_available_memory() } as u64)
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        None
+    }
 }
 
 #[cfg(test)]

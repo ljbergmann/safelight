@@ -119,7 +119,8 @@ impl Library {
                 | ItemResult::Renamed { .. }
                 | ItemResult::FolderRenamed
                 | ItemResult::FolderMoved
-                | ItemResult::Created { .. } => change.changed += item.photos.len() as u32,
+                | ItemResult::Created { .. }
+                | ItemResult::Imported => change.changed += item.photos.len() as u32,
                 ItemResult::Unchanged(Some(why)) | ItemResult::NeedsRecovery(why) => {
                     change.problems.push(why)
                 }

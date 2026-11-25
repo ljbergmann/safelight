@@ -3,16 +3,17 @@
 //! (build/Subject-CoreML.mlpackage, made by scripts/convert-subject-coreml.py and bundled
 //! with the app). They are nearly all of Select Subject's time; SAM 2's decoder, about
 //! 10 ms a call, runs on the CPU from the downloaded model, through RAWmakase's
-//! [`Session::analyze_from`](rawmakase_inference::Session::analyze_from).
+//! [`Session::analyze_from`](rawmakase_selection::Session::analyze_from).
 //!
 //! Not on the Neural Engine: on an M1 iPad, loading either network for it takes the app
 //! down, and keeps the Neural Engine's compiler busy for minutes after.
 
 use crate::coreml::{self, Input, Model, Units, Values};
-use rawmakase_inference::panoptic::Labels;
-use rawmakase_inference::process::{preprocess, preprocess_sized};
-use rawmakase_inference::runtime::{panoptic_input_size, panoptic_labels};
-use rawmakase_inference::{Embedding, InferenceError, PANOPTIC, RgbImage, SUBJECT};
+use rawmakase_inference::InferenceError;
+use rawmakase_selection::panoptic::Labels;
+use rawmakase_selection::process::{preprocess, preprocess_sized};
+use rawmakase_selection::runtime::{panoptic_input_size, panoptic_labels};
+use rawmakase_selection::{Embedding, PANOPTIC, RgbImage, SUBJECT};
 use std::path::PathBuf;
 
 /// The compiled model's name in the app bundle.
@@ -49,7 +50,7 @@ impl CoreMLSubject {
         }
     }
 
-    /// What [`Session::analyze_from`](rawmakase_inference::Session::analyze_from) takes for
+    /// What [`Session::analyze_from`](rawmakase_selection::Session::analyze_from) takes for
     /// `image`: SAM 2's embedding and DETR's labels, or `None` when the model has no DETR
     /// for the photo's shape or will not load.
     pub(crate) fn inputs(
@@ -187,7 +188,8 @@ fn detr_shapes(model: &Model) -> Vec<(usize, usize)> {
 mod compare {
     use super::*;
     use rawmakase_cancel::Cancel;
-    use rawmakase_inference::{Coverage, LoadOptions, Subject};
+    use rawmakase_inference::LoadOptions;
+    use rawmakase_selection::{Coverage, Subject};
     use std::path::Path;
 
     fn iou(a: &Coverage, b: &Coverage) -> f64 {

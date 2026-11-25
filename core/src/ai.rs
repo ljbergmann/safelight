@@ -13,15 +13,14 @@
 //! provenance the desktop records, so a mask made on the iPad reads the same
 //! in RAWmakase on a computer.
 
-use crate::from_desktop::ai_denoise::Service;
-use crate::from_desktop::model_install::{self, InstallError, Pack, Progress};
 use crate::from_desktop::selection::{self, ModelId};
 use crate::library::Library;
+use crate::models::{self as model_install, InstallError, Pack, Progress};
 use crate::neural_sky::NeuralSky;
 use crate::render::RenderError;
 use crate::subject_coreml::CoreMLSubject;
 use rawmakase_cancel::Cancel;
-use rawmakase_inference::{Analysis, Prompt, RgbImage, Session, Sky, SkySession, Subject};
+use rawmakase_denoise::Service;
 use rawmakase_model::camera_data::CameraImage;
 use rawmakase_model::model::masks::{
     BITMAP_SAMPLING, BitmapMask, BitmapSource, FEATURE_SKY, FEATURE_SUBJECT, MAX_GROUPS,
@@ -30,6 +29,7 @@ use rawmakase_model::model::masks::{
 use rawmakase_model::model::recipe::Recipe;
 use rawmakase_model::storage::bitmaps::Bitmap;
 use rawmakase_model::storage::mask_assets;
+use rawmakase_selection::{Analysis, Prompt, RgbImage, Session, Sky, SkySession, Subject};
 use std::sync::{Arc, Mutex, PoisonError};
 
 /// A model pack the app can install.
@@ -66,7 +66,8 @@ pub struct AiModelInfo {
 /// Every model pack and whether it is installed.
 #[uniffi::export]
 pub fn ai_models() -> Vec<AiModelInfo> {
-    use rawmakase_inference::{PANOPTIC, RAWNIND, SKY, SUBJECT};
+    use rawmakase_inference::RAWNIND;
+    use rawmakase_selection::{PANOPTIC, SKY, SUBJECT};
     [
         (
             AiModel::Subject,
@@ -195,9 +196,10 @@ impl Ai {
         let cache = rawmakase_decode::ai::cache::AiCache::default();
         cache.set_folder(Some(caches));
         Self {
-            denoise: Service::with_loader(
+            denoise: Service::with(
                 cache,
                 crate::neural_denoise::provider(),
+                crate::neural_denoise::source(),
                 crate::neural_denoise::loader(),
             ),
             subject: Mutex::new(None),
@@ -456,8 +458,8 @@ pub(crate) fn refine(
     let prompt = Prompt {
         points: points
             .iter()
-            .take(rawmakase_inference::process::MAX_POINTS)
-            .map(|([x, y], positive)| rawmakase_inference::Point {
+            .take(rawmakase_selection::process::MAX_POINTS)
+            .map(|([x, y], positive)| rawmakase_selection::Point {
                 x: *x,
                 y: *y,
                 positive: *positive,

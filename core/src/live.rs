@@ -13,10 +13,10 @@
 use crate::ai::AiSelection;
 use crate::controls::{Control, Switch};
 use crate::edit::{EditState, OpenEdit, Orientation};
-use crate::from_desktop::ai_denoise::{Request as AiRequest, State as AiState};
 use crate::library::Library;
 use crate::render::{DecodeSize, RenderError, STACK_BYTES, on_core_thread};
 use rawmakase_cancel::Cancel;
+use rawmakase_denoise::{Request as AiRequest, State as AiState};
 use rawmakase_engine::develop::gpu::{self, Display, Processor, Slot};
 use rawmakase_engine::develop::quality::Output;
 use rawmakase_engine::develop::{AiSource, Geometry, PreviewRenderer};
@@ -2242,7 +2242,7 @@ fn ai_denoise(shared: &Arc<Shared>, p: &Photo, recipe: &Recipe) -> Option<AiSour
             return None;
         };
         let service = library.ai.denoise();
-        if !crate::from_desktop::model_install::Pack::Denoise.is_installed() {
+        if !crate::models::Pack::Denoise.is_installed() {
             ai.status = Some("Install the AI Denoise model to use it.".into());
             return None;
         }
@@ -2273,7 +2273,7 @@ fn ai_denoise(shared: &Arc<Shared>, p: &Photo, recipe: &Recipe) -> Option<AiSour
 
 /// An update from the service: kept when it is for the image asked for, which
 /// renders again with it.
-fn ai_update(shared: &Shared, update: crate::from_desktop::ai_denoise::Update) {
+fn ai_update(shared: &Shared, update: rawmakase_denoise::Update) {
     {
         let mut ai = shared.ai.lock().unwrap_or_else(PoisonError::into_inner);
         let current = ai
@@ -3110,6 +3110,8 @@ impl Screen {
         )?;
         let (texture, backend, histogram) = match out {
             Output::Frame(frame) => (frame.texture, "GPU", *frame.histogram),
+            // Only `render_hdr_to` presents an HDR frame, and the live view doesn't call it.
+            Output::Hdr(_) => anyhow::bail!("an HDR frame from an SDR render"),
             Output::Pixels(pixels) => {
                 let histogram = pixels.histogram();
                 (

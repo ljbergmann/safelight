@@ -67,6 +67,7 @@ SOURCE_URL = ("https://huggingface.co/pch/rawmakase-models/resolve/"
               "upernet-convnext-base-sky-fp16.onnx")
 SOURCE_SHA256 = "ed75b2ad81ad209949c9580071ed486a72a423037822a49faa4e98991a43b891"
 SKY = 2  # ADE20K's class
+LOGITS = "/model/decode_head/classifier/Conv_output_0"  # SKY.logits in rawmakase-selection
 LONG_EDGE = 1024
 SHORT_EDGES = [683, 768, 576, 1024]  # 3:2, 4:3, 16:9, 1:1
 MEAN = np.array([0.485, 0.456, 0.406], np.float32)
@@ -79,14 +80,22 @@ MOST_MEAN_DIFFERENCE = 0.01
 
 
 class Sky(nn.Module):
-    """RAWmakase's export: the probability of ADE20K's sky at each pixel."""
+    """RAWmakase's export: the probability of ADE20K's sky at each pixel, and the decode
+    head's class scores on its quarter-size grid (the ONNX file's
+    `/model/decode_head/classifier/Conv_output_0`), which RAWmakase's Select Sky reads to
+    see what surrounds the sky. The forward pass is UperNetForSemanticSegmentation's,
+    with the scores kept before they are upsampled."""
 
     def __init__(self, model):
         super().__init__()
         self.model = model
 
     def forward(self, pixel_values):
-        return self.model(pixel_values=pixel_values, return_dict=True).logits.softmax(1)[:, SKY]
+        features = self.model.backbone.forward_with_filtered_kwargs(pixel_values).feature_maps
+        logits = self.model.decode_head(features)
+        upsampled = nn.functional.interpolate(
+            logits, size=pixel_values.shape[2:], mode="bilinear", align_corners=False)
+        return upsampled.softmax(1)[:, SKY], logits
 
 
 def source(argv) -> Path:
@@ -208,7 +217,7 @@ def convert(path: Path) -> None:
             converted = ct.convert(
                 traced,
                 inputs=[ct.TensorType(name="pixel_values", shape=(1, 3, height, width))],
-                outputs=[ct.TensorType(name="sky")],
+                outputs=[ct.TensorType(name="sky"), ct.TensorType(name="logits")],
                 compute_precision=ct.precision.FLOAT16,
                 minimum_deployment_target=ct.target.iOS18,
                 convert_to="mlprogram",
@@ -226,7 +235,8 @@ def convert(path: Path) -> None:
         merged.license = "MIT (openmmlab/upernet-convnext-base's card)"
         merged.short_description = (
             "Select Sky's UperNet ConvNeXt-base, half precision. Input: pixel_values, ImageNet-"
-            "normalized RGB; output: sky, the probability of sky at each pixel.")
+            "normalized RGB; outputs: sky, the probability of sky at each pixel, and logits, "
+            "the 150 classes' scores on a quarter-size grid.")
         merged.user_defined_metadata.update({
             "source_sha256": SOURCE_SHA256,
             "long_edge": str(LONG_EDGE),
@@ -239,18 +249,31 @@ def convert(path: Path) -> None:
 
 def check(path: Path) -> None:
     """Each shape on this Mac's Neural Engine against ONNX Runtime's CPU."""
-    reference = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    # The class scores are an internal tensor of the ONNX file, made an output here as
+    # RAWmakase's Select Sky makes it one.
+    graph = onnx.load(str(path))
+    graph.graph.output.append(onnx.helper.make_tensor_value_info(LOGITS, onnx.TensorProto.FLOAT, None))
+    reference = ort.InferenceSession(graph.SerializeToString(), providers=["CPUExecutionProvider"])
     samples = pictures()
-    worst, farthest, mean = 1.0, 0.0, 0.0
+    worst, farthest, mean, score_gap = 1.0, 0.0, 0.0, 0.0
     for width, height in shapes():
         engine = ct.models.MLModel(str(OUT), compute_units=ct.ComputeUnit.CPU_AND_NE,
                                    function_name=f"sky_{width}x{height}")
         for picture in samples:
             x = tensor(picture, width, height)
-            probability = reference.run(None, {"pixel_values": x})[0]
-            got = engine.predict({"pixel_values": x})["sky"]
-            if not np.isfinite(got).all():
+            probability, scores = reference.run(["sky", LOGITS], {"pixel_values": x})
+            answer = engine.predict({"pixel_values": x})
+            got, logits = answer["sky"], answer["logits"]
+            if not (np.isfinite(got).all() and np.isfinite(logits).all()):
                 sys.exit(f"{width}x{height}: the Neural Engine answered with values that are not finite")
+            if logits.shape != scores.shape:
+                sys.exit(f"{width}x{height}: class scores of shape {logits.shape}, not {scores.shape}")
+            # The scores pass through a softmax that keeps their differences: what counts
+            # is how they rank, so they are compared after it.
+            def soft(v):
+                e = np.exp(v - v.max(axis=1, keepdims=True))
+                return e / e.sum(axis=1, keepdims=True)
+            score_gap = max(score_gap, float(np.abs(soft(logits) - soft(scores)).max()))
             difference = np.abs(got - probability)
             farthest = max(farthest, float(difference.max()))
             mean = max(mean, float(difference.mean()))
@@ -258,11 +281,13 @@ def check(path: Path) -> None:
             if (want | have).any():
                 worst = min(worst, float((want & have).sum() / (want | have).sum()))
         print(f"checked {width}x{height}: largest difference {farthest:.3f}, mean {mean:.4f}, "
-              f"worst IoU {worst:.4f} so far", flush=True)
+              f"class shares within {score_gap:.3f}, worst IoU {worst:.4f} so far", flush=True)
         # Core ML crashes loading many functions into one process while the others are
         # still alive: let each go before the next.
         del engine
         gc.collect()
+    if score_gap > MOST_DIFFERENCE:
+        sys.exit(f"the Neural Engine's class scores are too far from the CPU's: shares within {score_gap:.3f}")
     if farthest > MOST_DIFFERENCE or mean > MOST_MEAN_DIFFERENCE:
         sys.exit(f"the Neural Engine's answers are too far from the CPU's: largest difference "
                  f"{farthest:.3f}, mean {mean:.4f}")

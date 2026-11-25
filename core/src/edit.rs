@@ -224,7 +224,13 @@ impl OpenEdit {
             spread,
             metadata: &self.metadata,
         });
-        after.choose_treatment(treatment, first, self.start.profile.clone(), &self.metadata);
+        after.choose_treatment(
+            treatment,
+            first,
+            self.start.profile.clone(),
+            &self.profiles,
+            &self.metadata,
+        );
         let name = if black_white {
             "Convert to Black & White"
         } else {

@@ -112,6 +112,12 @@ pub(crate) fn spots(image: &CameraImage, r: &Recipe, shown: [f32; 2]) -> Vec<Spo
                 RetouchShape::Brush { points, .. } => {
                     points.iter().flat_map(|p| m.to_view(*p)).collect()
                 }
+                // AI Retouch's, from the desktop: its strokes' dabs, one path.
+                RetouchShape::Strokes { strokes, .. } => strokes
+                    .iter()
+                    .flat_map(|s| s.iter())
+                    .flat_map(|p| m.to_view(*p))
+                    .collect(),
             };
             SpotInfo {
                 index: i as u32,
@@ -174,6 +180,7 @@ pub(crate) fn add_spot(
         feather: feather.clamp(0., 1.),
         opacity: opacity.clamp(0., 1.),
         offset: [0., 0.],
+        patch: None,
     };
     op.offset = find_source(image, &op, &r.retouch, &[]).unwrap_or_else(|| fallback_offset(&op));
     op.validate().ok()?;
